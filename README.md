@@ -14,13 +14,13 @@ Opens a local webpage showing all your Desktop screenshots as thumbnails. Drag a
 ## Install
 
 ```bash
-pip install -r requirements.txt
+uv sync
 ```
 
 ## Run
 
 ```bash
-python app.py
+uv run python app.py
 ```
 
 Your browser opens automatically at `http://localhost:5000`.

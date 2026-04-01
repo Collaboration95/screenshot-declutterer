@@ -1,0 +1,34 @@
+[project]
+name = "screenshot-declutterer"
+version = "0.1.0"
+description = "A simple macOS tool to quickly sort and trash Desktop screenshots"
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.9"
+dependencies = [
+    "flask>=3.0",
+    "send2trash>=1.8",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
+    "ruff>=0.11",
+    "pyright>=1.1",
+    "pre-commit>=4.0",
+]
+
+[tool.ruff]
+target-version = "py39"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "SIM", "RUF"]
+
+[tool.pyright]
+pythonVersion = "3.9"
+typeCheckingMode = "basic"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]

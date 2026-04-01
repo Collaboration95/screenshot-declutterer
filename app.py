@@ -1,3 +1,4 @@
+import contextlib
 import os
 import threading
 import time
@@ -71,10 +72,8 @@ def _open_browser():
     # Guard against Flask's reloader launching a second process.
     if os.environ.get("WERKZEUG_RUN_MAIN") != "true":
         time.sleep(1)
-        try:
+        with contextlib.suppress(Exception):
             webbrowser.open_new_tab("http://localhost:5000")
-        except Exception:
-            pass  # headless / CI environment — ignore
 
 
 if __name__ == "__main__":
