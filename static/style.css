@@ -1,0 +1,162 @@
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  background: #f0f0f0;
+  color: #1a1a1a;
+  min-height: 100vh;
+}
+
+/* ── Header ──────────────────────────────────────────────── */
+header {
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 24px;
+  background: #fff;
+  border-bottom: 1px solid #e0e0e0;
+  box-shadow: 0 1px 4px rgba(0,0,0,.08);
+}
+
+header h1 {
+  font-size: 1.1rem;
+  font-weight: 600;
+}
+
+.header-right {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+#status-msg {
+  font-size: 0.85rem;
+  color: #666;
+}
+
+#done-btn {
+  padding: 8px 20px;
+  border: none;
+  border-radius: 8px;
+  background: #007aff;
+  color: #fff;
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s, opacity 0.15s;
+}
+
+#done-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+#done-btn:not(:disabled):hover {
+  background: #0062cc;
+}
+
+/* ── Grid ─────────────────────────────────────────────────── */
+main {
+  padding: 24px;
+}
+
+#screenshot-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 12px;
+}
+
+/* ── Card ─────────────────────────────────────────────────── */
+.card {
+  position: relative;
+  border-radius: 8px;
+  overflow: hidden;
+  background: #fff;
+  box-shadow: 0 1px 4px rgba(0,0,0,.10);
+  cursor: grab;
+  user-select: none;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.card:active {
+  cursor: grabbing;
+}
+
+.card img {
+  display: block;
+  width: 100%;
+  aspect-ratio: 9 / 16;
+  object-fit: cover;
+}
+
+/* ── Drag-state tints ────────────────────────────────────── */
+.card.keep {
+  box-shadow: 0 0 0 3px #34c759;
+}
+
+.card.trash {
+  box-shadow: 0 0 0 3px #ff3b30;
+}
+
+/* ── Overlay hint (shown on hover) ───────────────────────── */
+.card-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  padding: 6px;
+  opacity: 0;
+  transition: opacity 0.2s;
+  pointer-events: none;
+}
+
+.card:hover .card-overlay {
+  opacity: 1;
+}
+
+.hint {
+  font-size: 0.65rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  padding: 2px 5px;
+  border-radius: 4px;
+  color: #fff;
+}
+
+.hint-keep  { background: rgba(52, 199, 89,  0.85); }
+.hint-trash { background: rgba(255, 59, 48, 0.85); }
+
+/* ── Stamp label (after decision) ────────────────────────── */
+.stamp {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  font-size: 0.6rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .05em;
+  padding: 2px 6px;
+  border-radius: 4px;
+  color: #fff;
+  pointer-events: none;
+}
+
+.stamp-keep  { background: #34c759; }
+.stamp-trash { background: #ff3b30; }
+
+/* ── Empty state ─────────────────────────────────────────── */
+#empty-msg {
+  text-align: center;
+  color: #888;
+  margin-top: 60px;
+  font-size: 1rem;
+}
