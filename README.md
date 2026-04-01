@@ -23,7 +23,7 @@ uv sync
 uv run python app.py
 ```
 
-Your browser opens automatically at `http://localhost:5000`.
+Your browser opens automatically at `http://localhost:5001`.
 
 ## How it works
 

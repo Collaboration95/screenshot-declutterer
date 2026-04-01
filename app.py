@@ -73,9 +73,9 @@ def _open_browser():
     if os.environ.get("WERKZEUG_RUN_MAIN") != "true":
         time.sleep(1)
         with contextlib.suppress(Exception):
-            webbrowser.open_new_tab("http://localhost:5000")
+            webbrowser.open_new_tab("http://localhost:5001")
 
 
 if __name__ == "__main__":
     threading.Thread(target=_open_browser, daemon=True).start()
-    app.run(debug=False, port=5000)
+    app.run(debug=False, port=5001)
