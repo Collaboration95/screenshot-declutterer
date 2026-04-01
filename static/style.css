@@ -6,9 +6,12 @@
 
 body {
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  background: #f0f0f0;
+  background: #f5f5f7;
   color: #1a1a1a;
-  min-height: 100vh;
+  height: 100vh;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
 }
 
 /* ── Header ──────────────────────────────────────────────── */
@@ -22,7 +25,8 @@ header {
   padding: 12px 24px;
   background: #fff;
   border-bottom: 1px solid #e0e0e0;
-  box-shadow: 0 1px 4px rgba(0,0,0,.08);
+  box-shadow: 0 1px 4px rgba(0,0,0,.06);
+  flex-shrink: 0;
 }
 
 header h1 {
@@ -33,7 +37,7 @@ header h1 {
 .header-right {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 14px;
 }
 
 #status-msg {
@@ -41,8 +45,29 @@ header h1 {
   color: #666;
 }
 
+#undo-btn {
+  padding: 8px 22px;
+  border: none;
+  border-radius: 8px;
+  background: #8e8e93;
+  color: #fff;
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s, opacity 0.15s;
+}
+
+#undo-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+#undo-btn:not(:disabled):hover {
+  background: #6e6e73;
+}
+
 #done-btn {
-  padding: 8px 20px;
+  padding: 8px 22px;
   border: none;
   border-radius: 8px;
   background: #007aff;
@@ -62,96 +87,222 @@ header h1 {
   background: #0062cc;
 }
 
-/* ── Grid ─────────────────────────────────────────────────── */
-main {
-  padding: 24px;
+/* ── Kanban layout ───────────────────────────────────────── */
+.kanban {
+  display: flex;
+  flex: 1;
+  overflow: hidden;
+  gap: 0;
 }
 
-#screenshot-grid {
+.column {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border-right: 1px solid #e5e5e5;
+}
+
+.column:last-child {
+  border-right: none;
+}
+
+.column-trash,
+.column-keep {
+  width: 22%;
+  min-width: 180px;
+  background: #fafafa;
+}
+
+.column-unsorted {
+  flex: 1;
+  background: #f5f5f7;
+}
+
+/* ── Column header ───────────────────────────────────────── */
+.column-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 16px;
+  border-bottom: 1px solid #e5e5e5;
+  flex-shrink: 0;
+}
+
+.column-title {
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #888;
+}
+
+.column-trash .column-title { color: #ff3b30; }
+.column-keep  .column-title { color: #34c759; }
+
+.column-count {
+  font-size: 0.7rem;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 10px;
+  background: #eee;
+  color: #666;
+}
+
+.column-trash .column-count { background: #fff0f0; color: #ff3b30; }
+.column-keep  .column-count { background: #f0fff4; color: #34c759; }
+
+/* ── Column cards container ──────────────────────────────── */
+.column-cards {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px;
+  min-height: 0;
+}
+
+.column-unsorted .column-cards {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
   gap: 12px;
+  align-content: start;
 }
 
-/* ── Card ─────────────────────────────────────────────────── */
+.column-trash .column-cards,
+.column-keep .column-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* ── Drop zone highlight ─────────────────────────────────── */
+.column.drag-over {
+  background: rgba(0, 122, 255, 0.04);
+}
+
+.column-trash.drag-over {
+  background: rgba(255, 59, 48, 0.06);
+}
+
+.column-trash.drag-over .column-cards {
+  outline: 2px dashed rgba(255, 59, 48, 0.35);
+  outline-offset: -4px;
+  border-radius: 8px;
+}
+
+.column-keep.drag-over {
+  background: rgba(52, 199, 89, 0.06);
+}
+
+.column-keep.drag-over .column-cards {
+  outline: 2px dashed rgba(52, 199, 89, 0.35);
+  outline-offset: -4px;
+  border-radius: 8px;
+}
+
+/* ── Card ────────────────────────────────────────────────── */
 .card {
   position: relative;
-  border-radius: 8px;
-  overflow: hidden;
+  border-radius: 10px;
+  overflow: clip;
   background: #fff;
-  box-shadow: 0 1px 4px rgba(0,0,0,.10);
+  box-shadow: 0 1px 6px rgba(0,0,0,.08);
   cursor: grab;
   user-select: none;
-  transition: transform 0.15s ease, box-shadow 0.15s ease;
+  transition: box-shadow 0.15s ease, transform 0.15s ease;
+}
+
+.card:hover {
+  box-shadow: 0 3px 12px rgba(0,0,0,.14);
 }
 
 .card:active {
   cursor: grabbing;
 }
 
+.card.dragging {
+  opacity: 0.5;
+  transform: scale(0.96);
+}
+
 .card img {
   display: block;
   width: 100%;
-  aspect-ratio: 9 / 16;
+  aspect-ratio: 16 / 9;
   object-fit: cover;
+  pointer-events: none;
 }
 
-/* ── Drag-state tints ────────────────────────────────────── */
-.card.keep {
-  box-shadow: 0 0 0 3px #34c759;
-}
-
-.card.trash {
-  box-shadow: 0 0 0 3px #ff3b30;
-}
-
-/* ── Overlay hint (shown on hover) ───────────────────────── */
-.card-overlay {
+/* ── Card action buttons overlay ─────────────────────────── */
+.card-actions {
   position: absolute;
   inset: 0;
   display: flex;
-  justify-content: space-between;
-  align-items: flex-end;
-  padding: 6px;
+  justify-content: center;
+  align-items: center;
+  gap: 8px;
   opacity: 0;
-  transition: opacity 0.2s;
+  transition: opacity 0.15s;
   pointer-events: none;
+  background: rgba(0, 0, 0, 0.25);
 }
 
-.card:hover .card-overlay {
+.card:hover .card-actions {
   opacity: 1;
+  pointer-events: auto;
 }
 
-.hint {
-  font-size: 0.65rem;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: .04em;
-  padding: 2px 5px;
-  border-radius: 4px;
+.action-btn {
+  padding: 6px 14px;
+  border: none;
+  border-radius: 6px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  cursor: pointer;
   color: #fff;
+  transition: transform 0.1s, background 0.15s;
+  backdrop-filter: blur(4px);
 }
 
-.hint-keep  { background: rgba(52, 199, 89,  0.85); }
-.hint-trash { background: rgba(255, 59, 48, 0.85); }
-
-/* ── Stamp label (after decision) ────────────────────────── */
-.stamp {
-  position: absolute;
-  top: 6px;
-  right: 6px;
-  font-size: 0.6rem;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: .05em;
-  padding: 2px 6px;
-  border-radius: 4px;
-  color: #fff;
-  pointer-events: none;
+.action-btn:hover {
+  transform: scale(1.05);
 }
 
-.stamp-keep  { background: #34c759; }
-.stamp-trash { background: #ff3b30; }
+.action-btn:active {
+  transform: scale(0.97);
+}
+
+.btn-keep {
+  background: rgba(52, 199, 89, 0.9);
+}
+
+.btn-keep:hover {
+  background: #2db84e;
+}
+
+.btn-trash {
+  background: rgba(255, 59, 48, 0.9);
+}
+
+.btn-trash:hover {
+  background: #e0342a;
+}
+
+.btn-undo {
+  background: rgba(100, 100, 100, 0.85);
+}
+
+.btn-undo:hover {
+  background: rgba(80, 80, 80, 0.95);
+}
+
+.btn-preview {
+  background: rgba(255, 255, 255, 0.25);
+  backdrop-filter: blur(6px);
+  border: 1px solid rgba(255, 255, 255, 0.4);
+}
+
+.btn-preview:hover {
+  background: rgba(255, 255, 255, 0.4);
+}
 
 /* ── Empty state ─────────────────────────────────────────── */
 #empty-msg {
@@ -159,4 +310,127 @@ main {
   color: #888;
   margin-top: 60px;
   font-size: 1rem;
+}
+
+/* ── Lightbox ────────────────────────────────────────────── */
+.lightbox[hidden],
+.modal-overlay[hidden] {
+  display: none !important;
+}
+
+.lightbox {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.lightbox-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.8);
+  backdrop-filter: blur(8px);
+}
+
+.lightbox-img {
+  position: relative;
+  max-width: 90vw;
+  max-height: 90vh;
+  border-radius: 8px;
+  box-shadow: 0 8px 40px rgba(0, 0, 0, 0.5);
+  object-fit: contain;
+}
+
+.lightbox-close {
+  position: absolute;
+  top: 16px;
+  right: 20px;
+  background: rgba(255, 255, 255, 0.15);
+  border: none;
+  color: #fff;
+  font-size: 1.5rem;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s;
+  backdrop-filter: blur(4px);
+}
+
+.lightbox-close:hover {
+  background: rgba(255, 255, 255, 0.3);
+}
+
+/* ── Confirm modal ───────────────────────────────────────── */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.45);
+  backdrop-filter: blur(4px);
+}
+
+.modal {
+  background: #fff;
+  border-radius: 14px;
+  padding: 28px 32px 24px;
+  max-width: 380px;
+  width: 90%;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.2);
+  text-align: center;
+}
+
+.modal-title {
+  font-size: 1.05rem;
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+
+.modal-desc {
+  font-size: 0.85rem;
+  color: #666;
+  margin-bottom: 24px;
+  line-height: 1.5;
+}
+
+.modal-actions {
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+}
+
+.modal-btn {
+  padding: 10px 22px;
+  border: none;
+  border-radius: 8px;
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.modal-cancel {
+  background: #f0f0f0;
+  color: #333;
+}
+
+.modal-cancel:hover {
+  background: #e4e4e4;
+}
+
+.modal-confirm {
+  background: #ff3b30;
+  color: #fff;
+}
+
+.modal-confirm:hover {
+  background: #e0342a;
 }

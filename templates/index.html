@@ -11,14 +11,59 @@
     <h1>Screenshot Declutterer</h1>
     <div class="header-right">
       <span id="status-msg"></span>
+      <button id="undo-btn" disabled>Undo</button>
       <button id="done-btn" disabled>Done</button>
     </div>
   </header>
 
-  <main>
-    <div id="screenshot-grid"></div>
-    <p id="empty-msg" hidden>No screenshots found on your Desktop.</p>
-  </main>
+  <div class="kanban">
+    <!-- Keep column (left) -->
+    <section class="column column-keep" id="col-keep" data-column="keep">
+      <div class="column-header">
+        <span class="column-title">Keep</span>
+        <span class="column-count" id="count-keep">0</span>
+      </div>
+      <div class="column-cards" id="cards-keep"></div>
+    </section>
+
+    <!-- Unsorted column (center) -->
+    <section class="column column-unsorted" id="col-unsorted" data-column="unsorted">
+      <div class="column-header">
+        <span class="column-title">Unsorted</span>
+        <span class="column-count" id="count-unsorted">0</span>
+      </div>
+      <div class="column-cards" id="cards-unsorted"></div>
+      <p id="empty-msg" hidden>No screenshots found on your Desktop.</p>
+    </section>
+
+    <!-- Trash column (right) -->
+    <section class="column column-trash" id="col-trash" data-column="trash">
+      <div class="column-header">
+        <span class="column-title">Trash</span>
+        <span class="column-count" id="count-trash">0</span>
+      </div>
+      <div class="column-cards" id="cards-trash"></div>
+    </section>
+  </div>
+
+  <!-- Lightbox -->
+  <div id="lightbox" class="lightbox" hidden>
+    <div class="lightbox-backdrop"></div>
+    <img class="lightbox-img" id="lightbox-img" src="" alt="" />
+    <button class="lightbox-close" id="lightbox-close" aria-label="Close">&times;</button>
+  </div>
+
+  <!-- Confirm modal -->
+  <div id="confirm-modal" class="modal-overlay" hidden>
+    <div class="modal">
+      <p class="modal-title" id="modal-title">Move screenshots to Trash?</p>
+      <p class="modal-desc">This uses macOS Trash — you can recover files if needed.</p>
+      <div class="modal-actions">
+        <button class="modal-btn modal-cancel" id="modal-cancel">Cancel</button>
+        <button class="modal-btn modal-confirm" id="modal-confirm">Move to Trash</button>
+      </div>
+    </div>
+  </div>
 
   <script src="/static/app.js"></script>
 </body>

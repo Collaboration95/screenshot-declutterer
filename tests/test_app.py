@@ -27,6 +27,23 @@ def test_index_returns_html(client):
     assert b"Screenshot Declutterer" in r.data
 
 
+def test_index_has_undo_button(client):
+    """Global undo button should be present in the header."""
+    c, _ = client
+    r = c.get("/")
+    assert b'id="undo-btn"' in r.data
+
+
+def test_index_column_order_keep_unsorted_trash(client):
+    """Keep column should appear before Unsorted, Trash should appear last."""
+    c, _ = client
+    html = c.get("/").data.decode()
+    keep_pos = html.index('id="col-keep"')
+    unsorted_pos = html.index('id="col-unsorted"')
+    trash_pos = html.index('id="col-trash"')
+    assert keep_pos < unsorted_pos < trash_pos
+
+
 # ── GET /api/screenshots ──────────────────────────────────────────────────────
 
 
