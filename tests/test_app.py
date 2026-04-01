@@ -242,7 +242,7 @@ def test_open_browser_opens_tab(monkeypatch):
 
     with patch("app.time.sleep"), patch("app.webbrowser") as mock_wb:
         flask_app._open_browser()
-    mock_wb.open_new_tab.assert_called_once_with("http://localhost:5000")
+    mock_wb.open_new_tab.assert_called_once_with("http://localhost:5001")
 
 
 def test_get_screenshots_returns_list(client):
