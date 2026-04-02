@@ -40,8 +40,8 @@ Nothing leaves your machine — the entire app runs locally.
 ```bash
 git clone https://github.com/Collaboration95/screenshot-declutterer.git
 cd screenshot-declutterer
-uv sync
-uv run python app.py
+make install
+make run
 ```
 
 Your browser opens automatically at `http://localhost:5001`.
@@ -73,26 +73,14 @@ Your browser opens automatically at `http://localhost:5001`.
 ## Development
 
 ```bash
-# Install dev dependencies
-uv sync --group dev
-
-# Run tests
-uv run pytest
-
-# Lint & type-check
-uv run ruff check .
-uv run pyright
+make dev        # Install dev dependencies
+make test       # Run tests
+make lint       # Lint with Ruff
+make typecheck  # Type-check with Pyright
+make check      # Run all checks (lint + typecheck + tests)
 ```
 
-## Contributing
-
-Contributions are welcome! Please open an issue first to discuss what you'd like to change.
-
-1. Fork the repo
-2. Create your feature branch (`git checkout -b feature/my-feature`)
-3. Commit your changes
-4. Push to the branch (`git push origin feature/my-feature`)
-5. Open a Pull Request
+Run `make` or `make help` to see all available targets.
 
 ## License
 
