@@ -1,12 +1,37 @@
+// ── State ─────────────────────────────────────────────────────────────────────
 // decisions: Map<filename, 'keep' | 'trash'>
 const decisions = new Map();
+const undoStack = []; // { filename, from, to }
 
-const grid      = document.getElementById("screenshot-grid");
+// ── DOM refs ─────────────────────────────────────────────────────────────────
+const cardsUnsorted = document.getElementById("cards-unsorted");
+const cardsTrash    = document.getElementById("cards-trash");
+const cardsKeep     = document.getElementById("cards-keep");
+
+const colUnsorted = document.getElementById("col-unsorted");
+const colTrash    = document.getElementById("col-trash");
+const colKeep     = document.getElementById("col-keep");
+
+const countUnsorted = document.getElementById("count-unsorted");
+const countTrash    = document.getElementById("count-trash");
+const countKeep     = document.getElementById("count-keep");
+
+const undoBtn   = document.getElementById("undo-btn");
 const doneBtn   = document.getElementById("done-btn");
 const statusMsg = document.getElementById("status-msg");
 const emptyMsg  = document.getElementById("empty-msg");
 
-// ── Bootstrap ─────────────────────────────────────────────────────────────────
+const lightbox    = document.getElementById("lightbox");
+const lightboxImg = document.getElementById("lightbox-img");
+
+const confirmModal = document.getElementById("confirm-modal");
+const modalTitle   = document.getElementById("modal-title");
+const modalCancel  = document.getElementById("modal-cancel");
+const modalConfirm = document.getElementById("modal-confirm");
+
+const columns = [colTrash, colUnsorted, colKeep];
+
+// ── Bootstrap ────────────────────────────────────────────────────────────────
 fetch("/api/screenshots")
   .then(r => r.json())
   .then(filenames => {
@@ -14,156 +39,280 @@ fetch("/api/screenshots")
       emptyMsg.hidden = false;
       return;
     }
-    filenames.forEach(filename => grid.appendChild(makeCard(filename)));
-    updateStatus();
+    filenames.forEach(f => cardsUnsorted.appendChild(makeCard(f, "unsorted")));
+    updateCounts();
   })
   .catch(() => {
     statusMsg.textContent = "Failed to load screenshots.";
   });
 
-// ── Card factory ──────────────────────────────────────────────────────────────
-function makeCard(filename) {
+// ── Card factory ─────────────────────────────────────────────────────────────
+function makeCard(filename, column) {
   const card = document.createElement("article");
-  card.className = "card unsorted";
+  card.className = "card";
   card.dataset.filename = filename;
+  card.draggable = true;
+  card.tabIndex = 0;
 
   const img = document.createElement("img");
   img.src = `/api/image/${encodeURIComponent(filename)}`;
   img.alt = filename;
   img.loading = "lazy";
 
-  const overlay = document.createElement("div");
-  overlay.className = "card-overlay";
-  overlay.innerHTML =
-    '<span class="hint hint-keep">← Keep</span>' +
-    '<span class="hint hint-trash">Trash →</span>';
+  const actions = document.createElement("div");
+  actions.className = "card-actions";
 
   card.appendChild(img);
-  card.appendChild(overlay);
+  card.appendChild(actions);
 
+  setCardActions(card, column);
   attachDrag(card);
+  attachPreview(card);
+  attachKeyboard(card);
+
   return card;
 }
 
-// ── Drag interaction ──────────────────────────────────────────────────────────
-// Works via both HTML5 drag events (mouse) and pointer events (trackpad / touch).
-function attachDrag(card) {
-  let startX = null;
+// ── Card action buttons ──────────────────────────────────────────────────────
+function setCardActions(card, column) {
+  const actions = card.querySelector(".card-actions");
+  actions.innerHTML = "";
 
-  // ── Pointer-based drag (trackpad / touch) ─────────────────────────────────
-  card.addEventListener("pointerdown", e => {
-    startX = e.clientX;
-    card.setPointerCapture(e.pointerId);
-    card.style.transition = "none";
-  });
-
-  card.addEventListener("pointermove", e => {
-    if (startX === null) return;
-    const delta = e.clientX - startX;
-    card.style.transform = `translateX(${delta}px)`;
-    card.style.opacity = 1 - Math.min(Math.abs(delta) / 300, 0.4);
-  });
-
-  card.addEventListener("pointerup", e => {
-    if (startX === null) return;
-    const delta = e.clientX - startX;
-    finalizeDrag(card, delta);
-    startX = null;
-  });
-
-  card.addEventListener("pointercancel", () => {
-    snapBack(card);
-    startX = null;
-  });
-}
-
-// ── Drag outcome ──────────────────────────────────────────────────────────────
-const THRESHOLD = 80; // px
-
-function finalizeDrag(card, delta) {
-  card.style.transition = "transform 0.2s ease, opacity 0.2s ease";
-
-  if (delta > THRESHOLD) {
-    markCard(card, "trash");
-  } else if (delta < -THRESHOLD) {
-    markCard(card, "keep");
+  if (column === "unsorted") {
+    const keepBtn = makeActionBtn("\u2190 Keep", "btn-keep", () => moveCard(card, "keep"));
+    const previewBtn = makeActionBtn("Preview", "btn-preview", () => openLightbox(card));
+    const trashBtn = makeActionBtn("Trash \u2192", "btn-trash", () => moveCard(card, "trash"));
+    actions.appendChild(keepBtn);
+    actions.appendChild(previewBtn);
+    actions.appendChild(trashBtn);
   } else {
-    snapBack(card);
+    const previewBtn = makeActionBtn("Preview", "btn-preview", () => openLightbox(card));
+    const undoBtn = makeActionBtn("\u21A9 Undo", "btn-undo", () => moveCard(card, "unsorted"));
+    actions.appendChild(previewBtn);
+    actions.appendChild(undoBtn);
   }
 }
 
-function snapBack(card) {
-  card.style.transition = "transform 0.2s ease, opacity 0.2s ease";
-  card.style.transform  = "";
-  card.style.opacity    = "";
+function makeActionBtn(label, cls, onClick) {
+  const btn = document.createElement("button");
+  btn.className = `action-btn ${cls}`;
+  btn.textContent = label;
+  btn.addEventListener("click", e => {
+    e.stopPropagation();
+    onClick();
+  });
+  return btn;
 }
 
-function markCard(card, decision) {
+// ── Move card between columns ────────────────────────────────────────────────
+function moveCard(card, toColumn) {
   const filename = card.dataset.filename;
+  const fromColumn = getCardColumn(card);
 
-  // Reset visual state
-  card.classList.remove("keep", "trash", "unsorted");
-  card.style.transform = "";
-  card.style.opacity   = "";
+  if (fromColumn === toColumn) return;
 
-  // Apply new state
-  card.classList.add(decision);
-  decisions.set(filename, decision);
-
-  // Update / replace stamp
-  const existing = card.querySelector(".stamp");
-  if (existing) existing.remove();
-
-  const stamp = document.createElement("span");
-  stamp.className = `stamp stamp-${decision}`;
-  stamp.textContent = decision === "keep" ? "Keep" : "Trash";
-  card.appendChild(stamp);
-
-  updateStatus();
-  checkAutoComplete();
-}
-
-// ── Status line ───────────────────────────────────────────────────────────────
-function updateStatus() {
-  const total   = grid.querySelectorAll(".card").length;
-  const sorted  = decisions.size;
-  const trashed = [...decisions.values()].filter(v => v === "trash").length;
-
-  if (sorted === 0) {
-    statusMsg.textContent = `${total} screenshot${total !== 1 ? "s" : ""} — drag to sort`;
+  // Update decisions map
+  if (toColumn === "unsorted") {
+    decisions.delete(filename);
   } else {
-    statusMsg.textContent = `${sorted}/${total} sorted · ${trashed} to trash`;
+    decisions.set(filename, toColumn);
   }
 
-  doneBtn.disabled = trashed === 0;
-}
+  // Push undo
+  undoStack.push({ filename, from: fromColumn, to: toColumn });
 
-// ── Auto-complete when every card is sorted ───────────────────────────────────
-function checkAutoComplete() {
-  const unsorted = grid.querySelectorAll(".unsorted").length;
-  const trashed  = [...decisions.values()].filter(v => v === "trash").length;
-  if (unsorted === 0 && trashed > 0) {
-    handleDone();
+  // Move DOM
+  const target = toColumn === "trash" ? cardsTrash
+               : toColumn === "keep"  ? cardsKeep
+               : cardsUnsorted;
+
+  if (toColumn === "unsorted") {
+    target.prepend(card);
+  } else {
+    target.prepend(card);
   }
+
+  setCardActions(card, toColumn);
+  updateCounts();
 }
 
-// ── Done button ───────────────────────────────────────────────────────────────
-doneBtn.addEventListener("click", handleDone);
+function getCardColumn(card) {
+  if (cardsTrash.contains(card)) return "trash";
+  if (cardsKeep.contains(card)) return "keep";
+  return "unsorted";
+}
 
-function handleDone() {
-  const toTrash = [...decisions.entries()]
-    .filter(([, v]) => v === "trash")
-    .map(([filename]) => filename);
+// ── HTML5 Drag & Drop ────────────────────────────────────────────────────────
+let draggedCard = null;
+
+function attachDrag(card) {
+  card.addEventListener("dragstart", e => {
+    draggedCard = card;
+    card.classList.add("dragging");
+    e.dataTransfer.effectAllowed = "move";
+    e.dataTransfer.setData("text/plain", card.dataset.filename);
+  });
+
+  card.addEventListener("dragend", () => {
+    card.classList.remove("dragging");
+    draggedCard = null;
+    columns.forEach(c => c.classList.remove("drag-over"));
+  });
+}
+
+// Column drop zones
+columns.forEach(col => {
+  col.addEventListener("dragover", e => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "move";
+    col.classList.add("drag-over");
+  });
+
+  col.addEventListener("dragleave", e => {
+    if (!col.contains(e.relatedTarget)) {
+      col.classList.remove("drag-over");
+    }
+  });
+
+  col.addEventListener("drop", e => {
+    e.preventDefault();
+    col.classList.remove("drag-over");
+    if (!draggedCard) return;
+
+    const targetColumn = col.dataset.column;
+    moveCard(draggedCard, targetColumn);
+  });
+});
+
+// ── Preview / Lightbox ───────────────────────────────────────────────────────
+function attachPreview(card) {
+  card.addEventListener("dblclick", e => {
+    e.preventDefault();
+    openLightbox(card);
+  });
+}
+
+function openLightbox(card) {
+  const filename = card.dataset.filename;
+  lightboxImg.src = `/api/image/${encodeURIComponent(filename)}`;
+  lightboxImg.alt = filename;
+  lightbox.hidden = false;
+}
+
+function closeLightbox() {
+  lightbox.hidden = true;
+  lightboxImg.src = "";
+}
+
+document.getElementById("lightbox-close").addEventListener("click", closeLightbox);
+document.querySelector(".lightbox-backdrop").addEventListener("click", closeLightbox);
+
+// ── Keyboard shortcuts ───────────────────────────────────────────────────────
+function attachKeyboard(card) {
+  card.addEventListener("keydown", e => {
+    const col = getCardColumn(card);
+    if (col === "unsorted") {
+      if (e.key === "ArrowLeft") { e.preventDefault(); moveCard(card, "keep"); }
+      if (e.key === "ArrowRight") { e.preventDefault(); moveCard(card, "trash"); }
+    } else {
+      if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
+        e.preventDefault();
+        moveCard(card, "unsorted");
+      }
+    }
+  });
+}
+
+document.addEventListener("keydown", e => {
+  // Esc closes lightbox
+  if (e.key === "Escape") {
+    if (!lightbox.hidden) { closeLightbox(); return; }
+    if (!confirmModal.hidden) { closeModal(); return; }
+  }
+
+  // Cmd/Ctrl+Z = undo
+  if ((e.metaKey || e.ctrlKey) && e.key === "z") {
+    e.preventDefault();
+    performUndo();
+  }
+});
+
+// ── Undo ─────────────────────────────────────────────────────────────────────
+undoBtn.addEventListener("click", () => performUndo());
+function performUndo() {
+  if (undoStack.length === 0) return;
+  const action = undoStack.pop();
+  const card = document.querySelector(`[data-filename="${CSS.escape(action.filename)}"]`);
+  if (!card) return;
+
+  // Move back without pushing to undo stack
+  const fromColumn = action.from;
+  const filename = action.filename;
+
+  if (fromColumn === "unsorted") {
+    decisions.delete(filename);
+  } else {
+    decisions.set(filename, fromColumn);
+  }
+
+  const target = fromColumn === "trash" ? cardsTrash
+               : fromColumn === "keep"  ? cardsKeep
+               : cardsUnsorted;
+  target.prepend(card);
+
+  setCardActions(card, fromColumn);
+  updateCounts();
+}
+
+// ── Counts & status ──────────────────────────────────────────────────────────
+function updateCounts() {
+  const nUnsorted = cardsUnsorted.querySelectorAll(".card").length;
+  const nTrash    = cardsTrash.querySelectorAll(".card").length;
+  const nKeep     = cardsKeep.querySelectorAll(".card").length;
+  const total     = nUnsorted + nTrash + nKeep;
+
+  countUnsorted.textContent = nUnsorted;
+  countTrash.textContent    = nTrash;
+  countKeep.textContent     = nKeep;
+
+  if (nTrash + nKeep === 0) {
+    statusMsg.textContent = `${total} screenshot${total !== 1 ? "s" : ""} \u2014 drag to sort`;
+  } else {
+    statusMsg.textContent = `${nTrash + nKeep}/${total} sorted \u00B7 ${nTrash} to trash`;
+  }
+
+  undoBtn.disabled = undoStack.length === 0;
+  doneBtn.disabled = nTrash === 0;
+}
+
+// ── Done button / modal ──────────────────────────────────────────────────────
+doneBtn.addEventListener("click", () => {
+  const nTrash = cardsTrash.querySelectorAll(".card").length;
+  if (nTrash === 0) return;
+
+  modalTitle.textContent = `Move ${nTrash} screenshot${nTrash !== 1 ? "s" : ""} to Trash?`;
+  confirmModal.hidden = false;
+});
+
+function closeModal() {
+  confirmModal.hidden = true;
+}
+
+modalCancel.addEventListener("click", closeModal);
+confirmModal.addEventListener("click", e => {
+  if (e.target === confirmModal) closeModal();
+});
+
+modalConfirm.addEventListener("click", () => {
+  closeModal();
+
+  const toTrash = [...cardsTrash.querySelectorAll(".card")]
+    .map(c => c.dataset.filename);
 
   if (toTrash.length === 0) return;
 
-  const confirmed = window.confirm(
-    `Move ${toTrash.length} screenshot${toTrash.length !== 1 ? "s" : ""} to Trash?\n\nThis cannot be undone from here.`
-  );
-  if (!confirmed) return;
-
   doneBtn.disabled = true;
-  statusMsg.textContent = "Moving to Trash…";
+  statusMsg.textContent = "Moving to Trash\u2026";
 
   fetch("/api/done", {
     method: "POST",
@@ -176,27 +325,30 @@ function handleDone() {
         alert("Some files could not be moved:\n" + data.errors.join("\n"));
       }
 
-      // Remove successfully trashed cards from the DOM
       const failed = new Set((data.errors || []).map(e => e.split(":")[0].trim()));
       toTrash.forEach(filename => {
         if (!failed.has(filename)) {
-          const card = grid.querySelector(`[data-filename="${CSS.escape(filename)}"]`);
+          const card = cardsTrash.querySelector(`[data-filename="${CSS.escape(filename)}"]`);
           if (card) card.remove();
           decisions.delete(filename);
         }
       });
 
-      updateStatus();
+      // Clear undo stack for trashed files
+      undoStack.length = 0;
 
-      if (grid.querySelectorAll(".card").length === 0) {
+      updateCounts();
+
+      const remaining = document.querySelectorAll(".card").length;
+      if (remaining === 0) {
         emptyMsg.hidden = false;
         statusMsg.textContent = "All done!";
         doneBtn.disabled = true;
       }
     })
     .catch(() => {
-      alert("Network error — please try again.");
+      alert("Network error \u2014 please try again.");
       doneBtn.disabled = false;
-      updateStatus();
+      updateCounts();
     });
-}
+});
