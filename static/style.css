@@ -173,6 +173,13 @@ header h1 {
   gap: 8px;
 }
 
+/* ── Compact thumbnails in Keep/Trash columns ─────────────── */
+.column-keep .card img,
+.column-trash .card img {
+  width: 62%;
+  margin: 0 auto;
+}
+
 /* ── Drop zone highlight ─────────────────────────────────── */
 .column.drag-over {
   background: rgba(0, 122, 255, 0.04);
