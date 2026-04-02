@@ -5,7 +5,7 @@ import time
 import webbrowser
 from pathlib import Path
 
-from flask import Flask, abort, jsonify, render_template, request, send_file
+from flask import Flask, abort, jsonify, make_response, render_template, request, send_file
 from send2trash import send2trash
 
 app = Flask(__name__)
@@ -39,7 +39,9 @@ def api_image(filename):
         abort(400)
     if not image_path.exists():
         abort(404)
-    return send_file(image_path)
+    response = make_response(send_file(image_path))
+    response.headers["Cache-Control"] = "private, max-age=3600"
+    return response
 
 
 @app.route("/api/done", methods=["POST"])

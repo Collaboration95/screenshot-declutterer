@@ -229,6 +229,18 @@ def test_api_image_content_type_png(client):
     assert "image/png" in r.content_type
 
 
+def test_api_image_has_cache_control_header(client):
+    """Image endpoint should include a Cache-Control header for browser caching."""
+    c, desktop = client
+    img = desktop / "Screenshot 2024-05-01 at 12.00.00 PM.png"
+    img.write_bytes(b"\x89PNG\r\n\x1a\n")
+
+    r = c.get("/api/image/Screenshot 2024-05-01 at 12.00.00 PM.png")
+    assert r.status_code == 200
+    assert "Cache-Control" in r.headers
+    assert "max-age" in r.headers["Cache-Control"]
+
+
 def test_api_screenshots_ignores_non_png_screenshot_files(client):
     """Files like Screenshot*.jpg should not appear in the listing."""
     c, desktop = client

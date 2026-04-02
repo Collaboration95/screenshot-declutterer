@@ -2,6 +2,7 @@
 // decisions: Map<filename, 'keep' | 'trash'>
 const decisions = new Map();
 const undoStack = []; // { filename, from, to }
+let totalCards = 0;
 
 // ── DOM refs ─────────────────────────────────────────────────────────────────
 const cardsUnsorted = document.getElementById("cards-unsorted");
@@ -39,6 +40,7 @@ fetch("/api/screenshots")
       emptyMsg.hidden = false;
       return;
     }
+    totalCards = filenames.length;
     filenames.forEach(f => cardsUnsorted.appendChild(makeCard(f, "unsorted")));
     updateCounts();
   })
@@ -58,6 +60,7 @@ function makeCard(filename, column) {
   img.src = `/api/image/${encodeURIComponent(filename)}`;
   img.alt = filename;
   img.loading = "lazy";
+  img.decoding = "async";
 
   const actions = document.createElement("div");
   actions.className = "card-actions";
@@ -266,10 +269,13 @@ function performUndo() {
 
 // ── Counts & status ──────────────────────────────────────────────────────────
 function updateCounts() {
-  const nUnsorted = cardsUnsorted.querySelectorAll(".card").length;
-  const nTrash    = cardsTrash.querySelectorAll(".card").length;
-  const nKeep     = cardsKeep.querySelectorAll(".card").length;
-  const total     = nUnsorted + nTrash + nKeep;
+  let nKeep = 0, nTrash = 0;
+  for (const v of decisions.values()) {
+    if (v === "keep") nKeep++;
+    else nTrash++;
+  }
+  const nUnsorted = totalCards - nKeep - nTrash;
+  const total     = totalCards;
 
   countUnsorted.textContent = nUnsorted;
   countTrash.textContent    = nTrash;
@@ -329,7 +335,7 @@ modalConfirm.addEventListener("click", () => {
       toTrash.forEach(filename => {
         if (!failed.has(filename)) {
           const card = cardsTrash.querySelector(`[data-filename="${CSS.escape(filename)}"]`);
-          if (card) card.remove();
+          if (card) { card.remove(); totalCards--; }
           decisions.delete(filename);
         }
       });
