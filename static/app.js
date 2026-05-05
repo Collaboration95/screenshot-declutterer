@@ -1,10 +1,8 @@
-// ── State ─────────────────────────────────────────────────────────────────────
-// decisions: Map<filename, 'keep' | 'trash'>
 const decisions = new Map();
-const undoStack = []; // { filename, from, to }
+const undoStack = [];
 let totalCards = 0;
+let currentSort = "date_desc";
 
-// ── DOM refs ─────────────────────────────────────────────────────────────────
 const cardsUnsorted = document.getElementById("cards-unsorted");
 const cardsTrash    = document.getElementById("cards-trash");
 const cardsKeep     = document.getElementById("cards-keep");
@@ -21,6 +19,7 @@ const undoBtn   = document.getElementById("undo-btn");
 const doneBtn   = document.getElementById("done-btn");
 const statusMsg = document.getElementById("status-msg");
 const emptyMsg  = document.getElementById("empty-msg");
+const sortSelect = document.getElementById("sort-select");
 
 const lightbox    = document.getElementById("lightbox");
 const lightboxImg = document.getElementById("lightbox-img");
@@ -33,20 +32,68 @@ const modalConfirm = document.getElementById("modal-confirm");
 const columns = [colTrash, colUnsorted, colKeep];
 
 // ── Bootstrap ────────────────────────────────────────────────────────────────
-fetch("/api/screenshots")
-  .then(r => r.json())
-  .then(filenames => {
-    if (filenames.length === 0) {
-      emptyMsg.hidden = false;
-      return;
-    }
-    totalCards = filenames.length;
-    filenames.forEach(f => cardsUnsorted.appendChild(makeCard(f, "unsorted")));
-    updateCounts();
-  })
-  .catch(() => {
-    statusMsg.textContent = "Failed to load screenshots.";
+function init() {
+  fetch("/api/state")
+    .then(r => r.json())
+    .then(state => loadScreenshots(state.decisions || {}))
+    .catch(() => loadScreenshots({}));
+}
+
+function loadScreenshots(savedDecisions) {
+  fetch(`/api/screenshots?sort=${encodeURIComponent(currentSort)}`)
+    .then(r => r.json())
+    .then(files => {
+      if (files.length === 0) {
+        emptyMsg.hidden = false;
+        return;
+      }
+      totalCards = files.length;
+      const existing = new Set(files.map(f => f.name));
+
+      for (const [name, col] of Object.entries(savedDecisions)) {
+        if (existing.has(name) && (col === "keep" || col === "trash")) {
+          decisions.set(name, col);
+        }
+      }
+      for (const name of Array.from(decisions.keys())) {
+        if (!existing.has(name)) decisions.delete(name);
+      }
+
+      files.forEach(f => {
+        const col = decisions.has(f.name) ? decisions.get(f.name) : "unsorted";
+        const target = col === "trash" ? cardsTrash
+                     : col === "keep"  ? cardsKeep
+                     : cardsUnsorted;
+        target.appendChild(makeCard(f.name, col));
+      });
+      updateCounts();
+      saveState();
+    })
+    .catch(() => {
+      statusMsg.textContent = "Failed to load screenshots.";
+    });
+}
+
+init();
+
+// ── Sort ─────────────────────────────────────────────────────────────────────
+sortSelect.addEventListener("change", () => {
+  currentSort = sortSelect.value;
+  undoStack.length = 0;
+  document.querySelectorAll(".card").forEach(c => c.remove());
+  loadScreenshots(Object.fromEntries(decisions));
+});
+
+// ── Persist state ────────────────────────────────────────────────────────────
+function saveState() {
+  const obj = {};
+  for (const [k, v] of decisions) obj[k] = v;
+  fetch("/api/state", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ decisions: obj }),
   });
+}
 
 // ── Card factory ─────────────────────────────────────────────────────────────
 function makeCard(filename, column) {
@@ -57,7 +104,7 @@ function makeCard(filename, column) {
   card.tabIndex = 0;
 
   const img = document.createElement("img");
-  img.src = `/api/image/${encodeURIComponent(filename)}`;
+  img.src = `/api/thumb/${encodeURIComponent(filename)}`;
   img.alt = filename;
   img.loading = "lazy";
   img.decoding = "async";
@@ -114,29 +161,23 @@ function moveCard(card, toColumn) {
 
   if (fromColumn === toColumn) return;
 
-  // Update decisions map
   if (toColumn === "unsorted") {
     decisions.delete(filename);
   } else {
     decisions.set(filename, toColumn);
   }
 
-  // Push undo
   undoStack.push({ filename, from: fromColumn, to: toColumn });
 
-  // Move DOM
   const target = toColumn === "trash" ? cardsTrash
                : toColumn === "keep"  ? cardsKeep
                : cardsUnsorted;
 
-  if (toColumn === "unsorted") {
-    target.prepend(card);
-  } else {
-    target.prepend(card);
-  }
+  target.prepend(card);
 
   setCardActions(card, toColumn);
   updateCounts();
+  saveState();
 }
 
 function getCardColumn(card) {
@@ -145,7 +186,7 @@ function getCardColumn(card) {
   return "unsorted";
 }
 
-// ── HTML5 Drag & Drop ────────────────────────────────────────────────────────
+// ── HTML5 Drag & Drop ───────────────────────────────────────────────────────
 let draggedCard = null;
 
 function attachDrag(card) {
@@ -163,7 +204,6 @@ function attachDrag(card) {
   });
 }
 
-// Column drop zones
 columns.forEach(col => {
   col.addEventListener("dragover", e => {
     e.preventDefault();
@@ -227,13 +267,11 @@ function attachKeyboard(card) {
 }
 
 document.addEventListener("keydown", e => {
-  // Esc closes lightbox
   if (e.key === "Escape") {
     if (!lightbox.hidden) { closeLightbox(); return; }
     if (!confirmModal.hidden) { closeModal(); return; }
   }
 
-  // Cmd/Ctrl+Z = undo
   if ((e.metaKey || e.ctrlKey) && e.key === "z") {
     e.preventDefault();
     performUndo();
@@ -248,23 +286,20 @@ function performUndo() {
   const card = document.querySelector(`[data-filename="${CSS.escape(action.filename)}"]`);
   if (!card) return;
 
-  // Move back without pushing to undo stack
-  const fromColumn = action.from;
-  const filename = action.filename;
-
-  if (fromColumn === "unsorted") {
-    decisions.delete(filename);
+  if (action.from === "unsorted") {
+    decisions.delete(action.filename);
   } else {
-    decisions.set(filename, fromColumn);
+    decisions.set(action.filename, action.from);
   }
 
-  const target = fromColumn === "trash" ? cardsTrash
-               : fromColumn === "keep"  ? cardsKeep
+  const target = action.from === "trash" ? cardsTrash
+               : action.from === "keep"  ? cardsKeep
                : cardsUnsorted;
   target.prepend(card);
 
-  setCardActions(card, fromColumn);
+  setCardActions(card, action.from);
   updateCounts();
+  saveState();
 }
 
 // ── Counts & status ──────────────────────────────────────────────────────────
@@ -340,10 +375,10 @@ modalConfirm.addEventListener("click", () => {
         }
       });
 
-      // Clear undo stack for trashed files
       undoStack.length = 0;
 
       updateCounts();
+      saveState();
 
       const remaining = document.querySelectorAll(".card").length;
       if (remaining === 0) {
