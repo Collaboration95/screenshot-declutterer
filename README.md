@@ -29,14 +29,6 @@ Nothing leaves your machine — the entire app runs locally.
 
 ## Quick Start
 
-### Prerequisites
-
-- macOS
-- Python 3.9+
-- [uv](https://docs.astral.sh/uv/) (recommended) or pip
-
-### Install & Run
-
 ```bash
 git clone https://github.com/Collaboration95/screenshot-declutterer.git
 cd screenshot-declutterer
@@ -63,24 +55,9 @@ Your browser opens automatically at `http://localhost:5001`.
 3. **Sorts** via vanilla JS drag-and-drop in the browser
 4. **Trashes** using `send2trash`, which calls the native macOS Trash API
 
-## Tech Stack
-
-- **Backend:** Python / Flask
-- **Frontend:** Vanilla HTML, CSS, JavaScript (no build step)
-- **Linting:** Ruff + Pyright
-- **Testing:** pytest
-
 ## Development
 
-```bash
-make dev        # Install dev dependencies
-make test       # Run tests
-make lint       # Lint with Ruff
-make typecheck  # Type-check with Pyright
-make check      # Run all checks (lint + typecheck + tests)
-```
-
-Run `make` or `make help` to see all available targets.
+See [DEVELOPMENT.md](DEVELOPMENT.md) for setup instructions, tech stack details, and available make targets.
 
 ## License
 
