@@ -78,6 +78,20 @@ header h1 {
   transition: background 0.15s, opacity 0.15s;
 }
 
+#sort-select {
+  padding: 6px 10px;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  font-size: 0.8rem;
+  color: #333;
+  background: #fff;
+  cursor: pointer;
+}
+
+#sort-select:hover {
+  border-color: #bbb;
+}
+
 #done-btn:disabled {
   opacity: 0.35;
   cursor: not-allowed;

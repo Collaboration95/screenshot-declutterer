@@ -7,6 +7,7 @@ license = "MIT"
 requires-python = ">=3.9"
 dependencies = [
     "flask>=3.0",
+    "pillow>=10.0",
     "send2trash>=1.8",
 ]
 
