@@ -222,4 +222,5 @@ def _open_browser() -> None:
 
 if __name__ == "__main__":
     threading.Thread(target=_open_browser, daemon=True).start()
-    app.run(debug=False, port=5002)
+    debug = os.environ.get("FLASK_DEBUG", "0") == "1"
+    app.run(debug=debug, port=5002)
