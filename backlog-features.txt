@@ -1,0 +1,86 @@
+Screenshot Declutterer — Feature Backlog
+==========================================
+
+Features under active planning or development.
+Status: planned | in-progress | done
+
+
+SCOPE EXPANSION
+---------------
+
+[ ] FE-001  Support non-PNG screenshots
+           macOS also produces .jpg screenshots and screen recordings.
+           Expand SCREENSHOT_GLOB to match multiple extensions and
+           handle MIME types accordingly.
+
+[ ] FE-002  Recursive / subdirectory scanning
+           Currently scans top-level ~/Desktop only. Add option to
+           recurse into subdirectories and surface nested screenshots.
+
+[ ] FE-003  Configurable source folders
+           Allow users to configure which directories to scan instead
+           of hardcoding ~/Desktop. Could be a simple settings UI or
+           a config file.
+
+
+NEW ACTIONS
+-----------
+
+[ ] FE-004  Move to folder
+           Add a fourth action alongside Keep/Trash that lets users
+           move screenshots into a chosen destination folder.
+
+[ ] FE-005  Bulk rename
+           Rename screenshots based on patterns (date, sequential
+           numbering, custom prefix) directly from the UI.
+
+[ ] FE-006  Duplicate detection
+           Find and highlight visually similar or exact-duplicate
+           screenshots so users can de-duplicate before sorting.
+
+
+UX IMPROVEMENTS
+---------------
+
+[ ] FE-007  Keyboard-driven workflow
+           Vim-style keys (j/k to cycle cards, h/l to triage) for
+           fast keyboard-only operation.
+
+[ ] FE-008  Sort and filter by date range, file size, or screen region
+           Let users narrow down visible screenshots before sorting.
+
+[ ] FE-009  Persistent user preferences
+           Remember default sort order, column widths, and other
+           settings across sessions.
+
+
+SMARTER FEATURES
+----------------
+
+[ ] FE-010  OCR text extraction
+           Extract text from screenshots using on-device OCR so users
+           can search screenshots by content.
+
+[ ] FE-011  Auto-categorization
+           Use on-device ML to suggest which column (Keep/Trash) a
+           screenshot belongs to based on learned patterns.
+
+[ ] FE-012  Screenshot clustering
+           Group screenshots by application or window to make bulk
+           triage faster.
+
+
+QUALITY OF LIFE
+---------------
+
+[ ] FE-013  Dark mode toggle
+           Add a dark theme option that respects system preference
+           by default.
+
+[ ] FE-014  Progress indicator for large batches
+           Show a progress bar or spinner when trashing a large
+           number of files.
+
+[ ] FE-015  Multi-level undo
+           Extend undo beyond a single level so users can step back
+           through their full sorting history.

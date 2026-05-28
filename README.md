@@ -23,6 +23,8 @@ Nothing leaves your machine — the entire app runs locally.
 - **Safe delete** — files go to macOS Trash via [`send2trash`](https://github.com/arsenetar/send2trash), never permanently deleted
 - **Confirmation dialog** — always asks before trashing
 
+See [backlog-features.txt](backlog-features.txt) for features under development.
+
 <p align="center">
   <img src="docs/assets/screenshot-confirm.png" alt="Confirmation dialog" width="820" />
 </p>
