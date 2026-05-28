@@ -3,6 +3,11 @@ const undoStack = [];
 let totalCards = 0;
 let currentSort = "date_desc";
 
+try {
+  const saved = sessionStorage.getItem("undoStack");
+  if (saved) undoStack.push(...JSON.parse(saved));
+} catch (_) {}
+
 const cardsUnsorted = document.getElementById("cards-unsorted");
 const cardsTrash    = document.getElementById("cards-trash");
 const cardsKeep     = document.getElementById("cards-keep");
@@ -182,6 +187,7 @@ function moveCard(card, toColumn) {
   }
 
   undoStack.push({ filename, from: fromColumn, to: toColumn });
+  _persistUndoStack();
 
   const target = toColumn === "trash" ? cardsTrash
                : toColumn === "keep"  ? cardsKeep
@@ -293,10 +299,15 @@ document.addEventListener("keydown", e => {
 });
 
 // ── Undo ─────────────────────────────────────────────────────────────────────
+function _persistUndoStack() {
+  try { sessionStorage.setItem("undoStack", JSON.stringify(undoStack)); } catch (_) {}
+}
+
 undoBtn.addEventListener("click", () => performUndo());
 function performUndo() {
   if (undoStack.length === 0) return;
   const action = undoStack.pop();
+  _persistUndoStack();
   const card = document.querySelector(`[data-filename="${CSS.escape(action.filename)}"]`);
   if (!card) return;
 
