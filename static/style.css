@@ -467,3 +467,36 @@ header h1 {
   white-space: nowrap;
   border: 0;
 }
+
+@media (max-width: 768px) {
+  header {
+    flex-wrap: wrap;
+    gap: 8px;
+    padding: 8px 12px;
+  }
+
+  .header-right {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .kanban {
+    flex-direction: column;
+  }
+
+  .column-trash,
+  .column-keep {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .column {
+    border-right: none;
+    border-bottom: 1px solid #e5e5e5;
+    max-height: 40vh;
+  }
+
+  .column-unsorted .column-cards {
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  }
+}
