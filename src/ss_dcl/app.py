@@ -8,7 +8,7 @@ import threading
 import time
 import webbrowser
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 
 from flask import (
     Flask,
@@ -94,6 +94,15 @@ def _generate_thumbnail(src: Path, dst: Path) -> None:
         img.save(dst, "PNG")
 
 
+def _validate_desktop_path(filename: str) -> Optional[Path]:
+    if filename != Path(filename).name:
+        return None
+    resolved = (DESKTOP / filename).resolve()
+    if not resolved.is_relative_to(DESKTOP.resolve()):
+        return None
+    return resolved
+
+
 @app.route("/")
 def index():
     return render_template("index.html")
@@ -107,10 +116,8 @@ def api_screenshots():
 
 @app.route("/api/image/<filename>")
 def api_image(filename: str):
-    if filename != Path(filename).name:
-        abort(400)
-    image_path = (DESKTOP / filename).resolve()
-    if not image_path.is_relative_to(DESKTOP.resolve()):
+    image_path = _validate_desktop_path(filename)
+    if image_path is None:
         abort(400)
     if not image_path.exists():
         abort(404)
@@ -121,10 +128,8 @@ def api_image(filename: str):
 
 @app.route("/api/thumb/<filename>")
 def api_thumb(filename: str):
-    if filename != Path(filename).name:
-        abort(400)
-    image_path = (DESKTOP / filename).resolve()
-    if not image_path.is_relative_to(DESKTOP.resolve()):
+    image_path = _validate_desktop_path(filename)
+    if image_path is None:
         abort(400)
     if not image_path.exists():
         abort(404)
@@ -177,15 +182,12 @@ def api_done():
 
     errors = []
     for filename in filenames:
-        if filename != Path(filename).name:
+        file_path = _validate_desktop_path(filename)
+        if file_path is None:
             errors.append(f"{filename}: invalid path")
             continue
         if not fnmatch.fnmatch(filename, SCREENSHOT_GLOB):
             errors.append(f"{filename}: invalid filename pattern")
-            continue
-        file_path = (DESKTOP / filename).resolve()
-        if not file_path.is_relative_to(DESKTOP.resolve()):
-            errors.append(f"{filename}: invalid path")
             continue
         if not file_path.exists():
             errors.append(f"{filename}: not found")
