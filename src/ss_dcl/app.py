@@ -52,7 +52,8 @@ DESKTOP = Path.home() / "Desktop"
 SCREENSHOT_GLOB = "Screenshot*.png"
 THUMB_DIR = Path.home() / ".cache" / "ss-dcl" / "thumbs"
 STATE_FILE = Path.home() / ".ss-dcl" / "state.json"
-THUMB_SIZE = (400, 300)
+_THUMB_SIZE_RAW = os.environ.get("THUMB_SIZE", "400x300").split("x")
+THUMB_SIZE: tuple[int, int] = (int(_THUMB_SIZE_RAW[0]), int(_THUMB_SIZE_RAW[1]))
 
 SORT_OPTIONS = {
     "name": ("name", False),
