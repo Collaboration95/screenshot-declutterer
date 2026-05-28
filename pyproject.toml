@@ -18,6 +18,8 @@ dev = [
     "pytest>=8.0",
     "pyright>=1.1",
     "ruff>=0.11",
+    "playwright>=1.60.0",
+    "pytest-playwright>=0.7.1",
 ]
 
 [tool.ruff]
