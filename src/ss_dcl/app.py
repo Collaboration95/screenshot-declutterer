@@ -143,7 +143,11 @@ def api_thumb(filename: str):
 @app.route("/api/state", methods=["GET"])
 def api_get_state():
     if STATE_FILE.exists():
-        return jsonify(json.loads(STATE_FILE.read_text()))
+        try:
+            return jsonify(json.loads(STATE_FILE.read_text()))
+        except json.JSONDecodeError:
+            logger.warning("State file corruption detected on read")
+            return jsonify({"decisions": {}})
     return jsonify({"decisions": {}})
 
 
