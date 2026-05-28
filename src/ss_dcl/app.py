@@ -192,6 +192,7 @@ def api_done():
     filenames = data.get("filenames", [])
 
     errors = []
+    logger.info("Starting trash batch: %d files", len(filenames))
     for filename in filenames:
         file_path = _validate_desktop_path(filename)
         if file_path is None:
