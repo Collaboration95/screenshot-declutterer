@@ -20,6 +20,7 @@ from flask import (
     request,
     send_file,
 )
+from PIL import Image
 from send2trash import send2trash
 
 logging.basicConfig(
@@ -86,8 +87,6 @@ def get_screenshots(sort: str = "name") -> list[dict[str, Any]]:
 
 
 def _generate_thumbnail(src: Path, dst: Path) -> None:
-    from PIL import Image
-
     dst.parent.mkdir(parents=True, exist_ok=True)
     with Image.open(src) as img:
         img.thumbnail(THUMB_SIZE)
