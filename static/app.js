@@ -256,10 +256,23 @@ function attachPreview(card) {
 }
 
 function openLightbox(card) {
-  const filename = card.dataset.filename;
-  lightboxImg.src = `/api/image/${encodeURIComponent(filename)}`;
-  lightboxImg.alt = filename;
+  lightbox.dataset.currentFilename = card.dataset.filename;
+  lightboxImg.src = `/api/image/${encodeURIComponent(card.dataset.filename)}`;
+  lightboxImg.alt = sanitise(card.dataset.filename);
   lightbox.hidden = false;
+}
+
+function _lightboxNavigate(direction) {
+  const allCards = [...document.querySelectorAll(".card")];
+  const current = lightbox.dataset.currentFilename;
+  const idx = allCards.findIndex(c => c.dataset.filename === current);
+  if (idx < 0) return;
+  const next = idx + direction;
+  if (next < 0 || next >= allCards.length) return;
+  const nextCard = allCards[next];
+  lightbox.dataset.currentFilename = nextCard.dataset.filename;
+  lightboxImg.src = `/api/image/${encodeURIComponent(nextCard.dataset.filename)}`;
+  lightboxImg.alt = sanitise(nextCard.dataset.filename);
 }
 
 function closeLightbox() {
@@ -287,6 +300,10 @@ function attachKeyboard(card) {
 }
 
 document.addEventListener("keydown", e => {
+  if (!lightbox.hidden) {
+    if (e.key === "ArrowLeft") { e.preventDefault(); _lightboxNavigate(-1); return; }
+    if (e.key === "ArrowRight") { e.preventDefault(); _lightboxNavigate(1); return; }
+  }
   if (e.key === "Escape") {
     if (!lightbox.hidden) { closeLightbox(); return; }
     if (!confirmModal.hidden) { closeModal(); return; }
