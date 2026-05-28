@@ -7,6 +7,7 @@ import tempfile
 import threading
 import time
 import webbrowser
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any, Optional
 
@@ -87,6 +88,9 @@ def get_screenshots(sort: str = "name") -> list[dict[str, Any]]:
     return sorted(files, key=lambda f: f[key], reverse=reverse)
 
 
+_THUMB_EXECUTOR = ThreadPoolExecutor(max_workers=2, thread_name_prefix="thumb")
+
+
 def _generate_thumbnail(src: Path, dst: Path) -> None:
     dst.parent.mkdir(parents=True, exist_ok=True)
     with Image.open(src) as img:
@@ -138,7 +142,8 @@ def api_thumb(filename: str):
     thumb_path = THUMB_DIR / filename
     if not thumb_path.exists() or image_path.stat().st_mtime > thumb_path.stat().st_mtime:
         try:
-            _generate_thumbnail(image_path, thumb_path)
+            future = _THUMB_EXECUTOR.submit(_generate_thumbnail, image_path, thumb_path)
+            future.result(timeout=5)
         except Exception:
             logger.warning("Thumbnail generation failed for %s, serving full image", filename)
             return api_image(filename)
