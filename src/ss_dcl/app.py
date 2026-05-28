@@ -48,7 +48,7 @@ def set_security_headers(response: Response) -> Response:
     return response
 
 
-DESKTOP = Path.home() / "Desktop"
+DESKTOP = Path(os.environ.get("SS_DCL_DESKTOP", str(Path.home() / "Desktop")))
 SCREENSHOT_GLOB = "Screenshot*.png"
 THUMB_DIR = Path.home() / ".cache" / "ss-dcl" / "thumbs"
 STATE_FILE = Path.home() / ".ss-dcl" / "state.json"
