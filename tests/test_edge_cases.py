@@ -49,13 +49,12 @@ def test_thumbnail_regeneration_on_mtime_change(client):
     assert r2.status_code == 200
 
 
-def test_invalid_sort_parameter_fallback(client):
+def test_invalid_sort_parameter_rejected(client):
     c, desktop = client
     (desktop / "Screenshot B.png").write_bytes(b"")
     (desktop / "Screenshot A.png").write_bytes(b"")
     r = c.get("/api/screenshots?sort=invalid_sort")
-    names = [f["name"] for f in r.get_json()]
-    assert names == ["Screenshot A.png", "Screenshot B.png"]
+    assert r.status_code == 400
 
 
 def test_state_file_unexpected_json_structure(client):

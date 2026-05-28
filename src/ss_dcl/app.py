@@ -111,6 +111,8 @@ def index():
 @app.route("/api/screenshots")
 def api_screenshots():
     sort = request.args.get("sort", "name")
+    if sort not in SORT_OPTIONS:
+        abort(400)
     return jsonify(get_screenshots(sort))
 
 
