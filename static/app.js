@@ -24,6 +24,7 @@ const undoBtn   = document.getElementById("undo-btn");
 const doneBtn   = document.getElementById("done-btn");
 const statusMsg = document.getElementById("status-msg");
 const emptyMsg  = document.getElementById("empty-msg");
+const loadingMsg = document.getElementById("loading-msg");
 const sortSelect = document.getElementById("sort-select");
 
 const lightbox    = document.getElementById("lightbox");
@@ -55,6 +56,7 @@ function loadScreenshots(savedDecisions) {
   fetch(`/api/screenshots?sort=${encodeURIComponent(currentSort)}`)
     .then(r => r.json())
     .then(files => {
+      loadingMsg.hidden = true;
       if (files.length === 0) {
         emptyMsg.hidden = false;
         return;
@@ -82,6 +84,7 @@ function loadScreenshots(savedDecisions) {
       saveState();
     })
     .catch(() => {
+      loadingMsg.hidden = true;
       statusMsg.textContent = "Failed to load screenshots.";
     });
 }
