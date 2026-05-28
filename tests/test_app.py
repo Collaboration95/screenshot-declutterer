@@ -5,8 +5,7 @@ import json
 from unittest.mock import patch
 
 import pytest
-
-import app as flask_app
+import src.ss_dcl.app as flask_app
 
 
 def _make_png(width=10, height=10, color="red"):
@@ -291,7 +290,7 @@ def test_api_done_moves_files_to_trash(client):
     f = desktop / "Screenshot 2024-01-01 at 12.00.00 PM.png"
     f.write_bytes(b"")
 
-    with patch("app.send2trash") as mock_trash:
+    with patch("src.ss_dcl.app.send2trash") as mock_trash:
         r = c.post(
             "/api/done",
             data=json.dumps({"filenames": [f.name]}),
@@ -343,7 +342,7 @@ def test_api_done_mixed_valid_and_invalid(client):
     valid = desktop / "Screenshot 2024-06-01 at 10.00.00 AM.png"
     valid.write_bytes(b"")
 
-    with patch("app.send2trash"):
+    with patch("src.ss_dcl.app.send2trash"):
         r = c.post(
             "/api/done",
             data=json.dumps({"filenames": [valid.name, "ghost.png"]}),
@@ -370,7 +369,7 @@ def test_api_done_multiple_files_trashed(client):
     f1.write_bytes(b"")
     f2.write_bytes(b"")
 
-    with patch("app.send2trash") as mock_trash:
+    with patch("src.ss_dcl.app.send2trash") as mock_trash:
         r = c.post(
             "/api/done",
             data=json.dumps({"filenames": [f1.name, f2.name]}),
@@ -388,7 +387,7 @@ def test_api_done_cleans_up_state(client):
     state = {"decisions": {f.name: "trash", "Screenshot other.png": "keep"}}
     c.put("/api/state", data=json.dumps(state), content_type="application/json")
 
-    with patch("app.send2trash"):
+    with patch("src.ss_dcl.app.send2trash"):
         c.post(
             "/api/done",
             data=json.dumps({"filenames": [f.name]}),
@@ -410,7 +409,7 @@ def test_api_done_cleans_up_thumbnail(client):
     thumb_dir = desktop / "thumbs"
     assert (thumb_dir / f.name).exists()
 
-    with patch("app.send2trash"):
+    with patch("src.ss_dcl.app.send2trash"):
         c.post(
             "/api/done",
             data=json.dumps({"filenames": [f.name]}),
@@ -436,9 +435,9 @@ def test_api_screenshots_ignores_non_png_screenshot_files(client):
 def test_open_browser_skips_when_werkzeug_reloader(monkeypatch):
     monkeypatch.setenv("WERKZEUG_RUN_MAIN", "true")
 
-    import app as flask_app
+    from src.ss_dcl import app as flask_app
 
-    with patch("app.webbrowser") as mock_wb:
+    with patch("src.ss_dcl.app.webbrowser") as mock_wb:
         flask_app._open_browser()
     mock_wb.open_new_tab.assert_not_called()
 
@@ -446,9 +445,9 @@ def test_open_browser_skips_when_werkzeug_reloader(monkeypatch):
 def test_open_browser_opens_tab(monkeypatch):
     monkeypatch.delenv("WERKZEUG_RUN_MAIN", raising=False)
 
-    import app as flask_app
+    from src.ss_dcl import app as flask_app
 
-    with patch("app.time.sleep"), patch("app.webbrowser") as mock_wb:
+    with patch("src.ss_dcl.app.time.sleep"), patch("src.ss_dcl.app.webbrowser") as mock_wb:
         flask_app._open_browser()
     mock_wb.open_new_tab.assert_called_once_with("http://localhost:5002")
 

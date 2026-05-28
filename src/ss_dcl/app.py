@@ -19,7 +19,8 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-app = Flask(__name__)
+_HERE = Path(__file__).resolve().parent.parent.parent
+app = Flask(__name__, template_folder=str(_HERE / "templates"), static_folder=str(_HERE / "static"))
 
 
 @app.after_request
