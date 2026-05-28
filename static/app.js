@@ -92,16 +92,21 @@ sortSelect.addEventListener("change", () => {
 });
 
 // ── Persist state ────────────────────────────────────────────────────────────
+let _saveTimer = null;
 function saveState() {
-  const obj = {};
-  for (const [k, v] of decisions) obj[k] = v;
-  fetch("/api/state", {
-    method: "PUT",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ decisions: obj }),
-  }).catch(() => {
-    statusMsg.textContent = "Warning: failed to save state.";
-  });
+  if (_saveTimer) clearTimeout(_saveTimer);
+  _saveTimer = setTimeout(() => {
+    const obj = {};
+    for (const [k, v] of decisions) obj[k] = v;
+    fetch("/api/state", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ decisions: obj }),
+    }).catch(() => {
+      statusMsg.textContent = "Warning: failed to save state.";
+    });
+    _saveTimer = null;
+  }, 300);
 }
 
 // ── Card factory ─────────────────────────────────────────────────────────────
