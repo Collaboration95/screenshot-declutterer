@@ -169,7 +169,11 @@ def _atomic_write(path: Path, content: str) -> None:
 
 @app.route("/api/state", methods=["PUT"])
 def api_save_state():
+    if not request.is_json:
+        abort(400)
     data = request.get_json(silent=True) or {}
+    if not isinstance(data, dict) or "decisions" not in data:
+        abort(400)
     _atomic_write(STATE_FILE, json.dumps(data))
     return jsonify({"ok": True})
 
