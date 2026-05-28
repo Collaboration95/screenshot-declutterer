@@ -53,12 +53,16 @@ SORT_OPTIONS = {
 }
 
 
-def _ensure_dirs():
-    THUMB_DIR.mkdir(parents=True, exist_ok=True)
-    STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
+_dirs_initialized = False
 
 
-_ensure_dirs()
+@app.before_request
+def _init_dirs():
+    global _dirs_initialized
+    if not _dirs_initialized:
+        THUMB_DIR.mkdir(parents=True, exist_ok=True)
+        STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
+        _dirs_initialized = True
 
 
 def get_screenshots(sort="name"):
