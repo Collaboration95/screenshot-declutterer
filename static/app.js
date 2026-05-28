@@ -31,6 +31,13 @@ const modalConfirm = document.getElementById("modal-confirm");
 
 const columns = [colTrash, colUnsorted, colKeep];
 
+// ── Sanitise filenames for safe DOM insertion ────────────────────────────────
+function sanitise(str) {
+  const el = document.createElement("span");
+  el.textContent = str;
+  return el.innerHTML;
+}
+
 // ── Bootstrap ────────────────────────────────────────────────────────────────
 function init() {
   fetch("/api/state")
@@ -107,7 +114,7 @@ function makeCard(filename, column) {
 
   const img = document.createElement("img");
   img.src = `/api/thumb/${encodeURIComponent(filename)}`;
-  img.alt = filename;
+  img.alt = sanitise(filename);
   img.loading = "lazy";
   img.decoding = "async";
 
