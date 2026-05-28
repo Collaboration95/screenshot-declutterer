@@ -85,7 +85,7 @@ def api_image(filename):
     if filename != Path(filename).name:
         abort(400)
     image_path = (DESKTOP / filename).resolve()
-    if not str(image_path).startswith(str(DESKTOP.resolve())):
+    if not image_path.is_relative_to(DESKTOP.resolve()):
         abort(400)
     if not image_path.exists():
         abort(404)
@@ -99,7 +99,7 @@ def api_thumb(filename):
     if filename != Path(filename).name:
         abort(400)
     image_path = (DESKTOP / filename).resolve()
-    if not str(image_path).startswith(str(DESKTOP.resolve())):
+    if not image_path.is_relative_to(DESKTOP.resolve()):
         abort(400)
     if not image_path.exists():
         abort(404)
@@ -139,7 +139,7 @@ def api_done():
             errors.append(f"{filename}: invalid path")
             continue
         file_path = (DESKTOP / filename).resolve()
-        if not str(file_path).startswith(str(DESKTOP.resolve())):
+        if not file_path.is_relative_to(DESKTOP.resolve()):
             errors.append(f"{filename}: invalid path")
             continue
         if not file_path.exists():
