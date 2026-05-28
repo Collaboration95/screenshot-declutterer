@@ -1,4 +1,5 @@
 import contextlib
+import fnmatch
 import json
 import os
 import threading
@@ -137,6 +138,9 @@ def api_done():
     for filename in filenames:
         if filename != Path(filename).name:
             errors.append(f"{filename}: invalid path")
+            continue
+        if not fnmatch.fnmatch(filename, SCREENSHOT_GLOB):
+            errors.append(f"{filename}: invalid filename pattern")
             continue
         file_path = (DESKTOP / filename).resolve()
         if not file_path.is_relative_to(DESKTOP.resolve()):
