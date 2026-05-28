@@ -375,7 +375,12 @@ modalConfirm.addEventListener("click", () => {
         alert("Some files could not be moved:\n" + data.errors.join("\n"));
       }
 
-      const failed = new Set((data.errors || []).map(e => e.split(":")[0].trim()));
+      const failed = new Set();
+      (data.errors || []).forEach(e => {
+        const parts = e.split(":");
+        const name = parts.length > 1 ? parts[0].trim() : e.trim();
+        if (name) failed.add(name);
+      });
       toTrash.forEach(filename => {
         if (!failed.has(filename)) {
           const card = cardsTrash.querySelector(`[data-filename="${CSS.escape(filename)}"]`);
