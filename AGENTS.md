@@ -23,7 +23,7 @@ tests/test_app.py       ~40 pytest tests covering all routes and edge cases
 - **Flask over heavier frameworks** — single-user local tool, no need for async/ORMs
 - **Vanilla JS, no React/Vue** — UI is simple enough (395 lines); a framework would add a build step for no benefit
 - **No build step** — static files served directly by Flask; no transpilation, bundling, or minification
-- **Port 5001** — avoids conflict with macOS AirPlay Receiver on port 5000
+- **Port 5002** — avoids conflict with macOS AirPlay Receiver on port 5000
 - **send2trash** — files go to native macOS Trash (recoverable), never permanently deleted
 - **State as JSON file** (`~/.ss-dcl/state.json`) — no database needed; single-user tool with no concurrent access
 - **Thumbnail caching** — generated on-demand with Pillow, cached at `~/.cache/ss-dcl/thumbs/`, staleness checked via `st_mtime`

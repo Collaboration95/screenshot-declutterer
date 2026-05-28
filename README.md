@@ -38,7 +38,7 @@ make install
 make run
 ```
 
-Your browser opens automatically at `http://localhost:5001`.
+Your browser opens automatically at `http://localhost:5002`.
 
 ## Keyboard Shortcuts
 
