@@ -3,6 +3,7 @@ import fnmatch
 import json
 import logging
 import os
+import tempfile
 import threading
 import time
 import webbrowser
@@ -131,10 +132,22 @@ def api_get_state():
     return jsonify({"decisions": {}})
 
 
+def _atomic_write(path, content):
+    tmp_fd, tmp_path = tempfile.mkstemp(dir=path.parent, suffix=".tmp")
+    try:
+        with os.fdopen(tmp_fd, "w") as f:
+            f.write(content)
+        os.replace(tmp_path, path)
+    except BaseException:
+        with contextlib.suppress(OSError):
+            os.unlink(tmp_path)
+        raise
+
+
 @app.route("/api/state", methods=["PUT"])
 def api_save_state():
     data = request.get_json(silent=True) or {}
-    STATE_FILE.write_text(json.dumps(data))
+    _atomic_write(STATE_FILE, json.dumps(data))
     return jsonify({"ok": True})
 
 
@@ -171,7 +184,7 @@ def api_done():
             decisions = state.get("decisions", {})
             for fn in filenames:
                 decisions.pop(fn, None)
-            STATE_FILE.write_text(json.dumps(state))
+            _atomic_write(STATE_FILE, json.dumps(state))
         except (json.JSONDecodeError, KeyError):
             logger.warning("State file corruption detected during cleanup")
 
