@@ -10,8 +10,9 @@
   <header>
     <h1>Screenshot Declutterer</h1>
     <div class="header-right">
-      <span id="status-msg"></span>
-      <select id="sort-select">
+      <span id="status-msg" role="status" aria-live="polite"></span>
+      <label for="sort-select" class="sr-only">Sort order</label>
+      <select id="sort-select" aria-label="Sort screenshots">
         <option value="date_desc">Newest first</option>
         <option value="date">Oldest first</option>
         <option value="name">Name (A–Z)</option>
@@ -19,14 +20,14 @@
         <option value="size">Smallest first</option>
         <option value="size_desc">Largest first</option>
       </select>
-      <button id="undo-btn" disabled>Undo</button>
-      <button id="done-btn" disabled>Done</button>
+      <button id="undo-btn" disabled aria-label="Undo last move">Undo</button>
+      <button id="done-btn" disabled aria-label="Move screenshots to trash">Done</button>
     </div>
   </header>
 
-  <div class="kanban">
+  <main class="kanban" role="region" aria-label="Screenshot sorting board">
     <!-- Keep column (left) -->
-    <section class="column column-keep" id="col-keep" data-column="keep">
+    <section class="column column-keep" id="col-keep" data-column="keep" role="list" aria-label="Keep column">
       <div class="column-header">
         <span class="column-title">Keep</span>
         <span class="column-count" id="count-keep">0</span>
@@ -35,7 +36,7 @@
     </section>
 
     <!-- Unsorted column (center) -->
-    <section class="column column-unsorted" id="col-unsorted" data-column="unsorted">
+    <section class="column column-unsorted" id="col-unsorted" data-column="unsorted" role="list" aria-label="Unsorted column">
       <div class="column-header">
         <span class="column-title">Unsorted</span>
         <span class="column-count" id="count-unsorted">0</span>
@@ -45,24 +46,24 @@
     </section>
 
     <!-- Trash column (right) -->
-    <section class="column column-trash" id="col-trash" data-column="trash">
+    <section class="column column-trash" id="col-trash" data-column="trash" role="list" aria-label="Trash column">
       <div class="column-header">
         <span class="column-title">Trash</span>
         <span class="column-count" id="count-trash">0</span>
       </div>
       <div class="column-cards" id="cards-trash"></div>
     </section>
-  </div>
+  </main>
 
   <!-- Lightbox -->
-  <div id="lightbox" class="lightbox" hidden>
+  <div id="lightbox" class="lightbox" hidden role="dialog" aria-label="Image preview">
     <div class="lightbox-backdrop"></div>
     <img class="lightbox-img" id="lightbox-img" src="" alt="" decoding="async" />
     <button class="lightbox-close" id="lightbox-close" aria-label="Close">&times;</button>
   </div>
 
   <!-- Confirm modal -->
-  <div id="confirm-modal" class="modal-overlay" hidden>
+  <div id="confirm-modal" class="modal-overlay" hidden role="dialog" aria-labelledby="modal-title">
     <div class="modal">
       <p class="modal-title" id="modal-title">Move screenshots to Trash?</p>
       <p class="modal-desc">This uses macOS Trash — you can recover files if needed.</p>

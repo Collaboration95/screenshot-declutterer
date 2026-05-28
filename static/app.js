@@ -118,6 +118,8 @@ function saveState() {
 function makeCard(filename, column) {
   const card = document.createElement("article");
   card.className = "card";
+  card.setAttribute("role", "listitem");
+  card.setAttribute("aria-label", filename);
   card.dataset.filename = filename;
   card.draggable = true;
   card.tabIndex = 0;
