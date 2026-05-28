@@ -92,6 +92,8 @@ function saveState() {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ decisions: obj }),
+  }).catch(() => {
+    statusMsg.textContent = "Warning: failed to save state.";
   });
 }
 
