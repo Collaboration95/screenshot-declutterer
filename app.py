@@ -1,6 +1,7 @@
 import contextlib
 import fnmatch
 import json
+import logging
 import os
 import threading
 import time
@@ -9,6 +10,13 @@ from pathlib import Path
 
 from flask import Flask, abort, jsonify, make_response, render_template, request, send_file
 from send2trash import send2trash
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+    datefmt="%H:%M:%S",
+)
+logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
 
@@ -109,6 +117,7 @@ def api_thumb(filename):
         try:
             _generate_thumbnail(image_path, thumb_path)
         except Exception:
+            logger.warning("Thumbnail generation failed for %s, serving full image", filename)
             return api_image(filename)
     response = make_response(send_file(thumb_path))
     response.headers["Cache-Control"] = "private, max-age=86400"
@@ -150,6 +159,7 @@ def api_done():
             errors.append(f"{filename}: not found")
             continue
         send2trash(str(file_path))
+        logger.info("Trashed file: %s", filename)
         thumb = THUMB_DIR / filename
         with contextlib.suppress(Exception):
             if thumb.exists():
@@ -163,9 +173,10 @@ def api_done():
                 decisions.pop(fn, None)
             STATE_FILE.write_text(json.dumps(state))
         except (json.JSONDecodeError, KeyError):
-            pass
+            logger.warning("State file corruption detected during cleanup")
 
     if errors:
+        logger.error("Trash operation had errors: %s", errors)
         return jsonify({"ok": False, "errors": errors}), 207
     return jsonify({"ok": True})
 
