@@ -8,8 +8,18 @@ import threading
 import time
 import webbrowser
 from pathlib import Path
+from typing import Any
 
-from flask import Flask, abort, jsonify, make_response, render_template, request, send_file
+from flask import (
+    Flask,
+    Response,
+    abort,
+    jsonify,
+    make_response,
+    render_template,
+    request,
+    send_file,
+)
 from send2trash import send2trash
 
 logging.basicConfig(
@@ -24,7 +34,7 @@ app = Flask(__name__, template_folder=str(_HERE / "templates"), static_folder=st
 
 
 @app.after_request
-def set_security_headers(response):
+def set_security_headers(response: Response) -> Response:
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["X-Frame-Options"] = "DENY"
     response.headers["Content-Security-Policy"] = (
@@ -65,7 +75,7 @@ def _init_dirs():
         _dirs_initialized = True
 
 
-def get_screenshots(sort="name"):
+def get_screenshots(sort: str = "name") -> list[dict[str, Any]]:
     files = [
         {"name": p.name, "size": p.stat().st_size, "mtime": p.stat().st_mtime}
         for p in DESKTOP.glob(SCREENSHOT_GLOB)
@@ -75,7 +85,7 @@ def get_screenshots(sort="name"):
     return sorted(files, key=lambda f: f[key], reverse=reverse)
 
 
-def _generate_thumbnail(src, dst):
+def _generate_thumbnail(src: Path, dst: Path) -> None:
     from PIL import Image
 
     dst.parent.mkdir(parents=True, exist_ok=True)
@@ -96,7 +106,7 @@ def api_screenshots():
 
 
 @app.route("/api/image/<filename>")
-def api_image(filename):
+def api_image(filename: str):
     if filename != Path(filename).name:
         abort(400)
     image_path = (DESKTOP / filename).resolve()
@@ -110,7 +120,7 @@ def api_image(filename):
 
 
 @app.route("/api/thumb/<filename>")
-def api_thumb(filename):
+def api_thumb(filename: str):
     if filename != Path(filename).name:
         abort(400)
     image_path = (DESKTOP / filename).resolve()
@@ -137,7 +147,7 @@ def api_get_state():
     return jsonify({"decisions": {}})
 
 
-def _atomic_write(path, content):
+def _atomic_write(path: Path, content: str) -> None:
     tmp_fd, tmp_path = tempfile.mkstemp(dir=path.parent, suffix=".tmp")
     try:
         with os.fdopen(tmp_fd, "w") as f:
@@ -199,7 +209,7 @@ def api_done():
     return jsonify({"ok": True})
 
 
-def _open_browser():
+def _open_browser() -> None:
     if os.environ.get("WERKZEUG_RUN_MAIN") != "true":
         time.sleep(1)
         with contextlib.suppress(Exception):
