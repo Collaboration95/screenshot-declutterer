@@ -83,6 +83,29 @@ def test_api_done_no_json_body(client):
     assert json.loads(r.data) == {"ok": True}
 
 
+def test_api_done_rejects_non_json_content_type(client):
+    c, _ = client
+    r = c.post("/api/done", data="not json", content_type="text/plain")
+    assert r.status_code == 400
+
+
+def test_api_done_send2trash_failure_returns_207(client):
+    c, desktop = client
+    f = desktop / "Screenshot 2024-01-01 at 12.00.00 PM.png"
+    f.write_bytes(b"")
+
+    with patch("src.ss_dcl.app.send2trash", side_effect=OSError("permission denied")):
+        r = c.post(
+            "/api/done",
+            data=json.dumps({"filenames": [f.name]}),
+            content_type="application/json",
+        )
+    assert r.status_code == 207
+    body = json.loads(r.data)
+    assert body["ok"] is False
+    assert any("trash failed" in e for e in body["errors"])
+
+
 def test_api_done_multiple_files_trashed(client):
     c, desktop = client
     f1 = desktop / "Screenshot 2024-01-01 at 10.00.00 AM.png"

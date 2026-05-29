@@ -53,8 +53,17 @@ DESKTOP = Path(os.environ.get("SS_DCL_DESKTOP", str(Path.home() / "Desktop")))
 SCREENSHOT_GLOB = "Screenshot*.png"
 THUMB_DIR = Path.home() / ".cache" / "ss-dcl" / "thumbs"
 STATE_FILE = Path.home() / ".ss-dcl" / "state.json"
-_THUMB_SIZE_RAW = os.environ.get("THUMB_SIZE", "400x300").split("x")
-THUMB_SIZE: tuple[int, int] = (int(_THUMB_SIZE_RAW[0]), int(_THUMB_SIZE_RAW[1]))
+
+
+def _parse_thumb_size(raw: str) -> tuple[int, int]:
+    try:
+        parts = raw.split("x")
+        return (int(parts[0]), int(parts[1]))
+    except (ValueError, IndexError):
+        return (400, 300)
+
+
+THUMB_SIZE: tuple[int, int] = _parse_thumb_size(os.environ.get("THUMB_SIZE", "400x300"))
 
 SORT_OPTIONS = {
     "name": ("name", False),
@@ -158,7 +167,8 @@ def api_get_state():
         try:
             return jsonify(json.loads(STATE_FILE.read_text()))
         except json.JSONDecodeError:
-            logger.warning("State file corruption detected on read")
+            logger.warning("State file corruption detected on read, resetting")
+            _atomic_write(STATE_FILE, json.dumps({"decisions": {}}))
             return jsonify({"decisions": {}})
     return jsonify({"decisions": {}})
 
@@ -188,6 +198,8 @@ def api_save_state():
 
 @app.route("/api/done", methods=["POST"])
 def api_done():
+    if not request.is_json:
+        abort(400)
     data = request.get_json(silent=True) or {}
     filenames = data.get("filenames", [])
 
@@ -204,8 +216,13 @@ def api_done():
         if not file_path.exists():
             errors.append(f"{filename}: not found")
             continue
-        send2trash(str(file_path))
-        logger.info("Trashed file: %s", filename)
+        try:
+            send2trash(str(file_path))
+            logger.info("Trashed file: %s", filename)
+        except Exception as exc:
+            logger.error("Failed to trash %s: %s", filename, exc)
+            errors.append(f"{filename}: trash failed ({exc})")
+            continue
         thumb = THUMB_DIR / filename
         with contextlib.suppress(Exception):
             if thumb.exists():

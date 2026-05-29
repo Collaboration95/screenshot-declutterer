@@ -34,7 +34,7 @@ select = ["E", "F", "W", "I", "UP", "B", "SIM", "RUF"]
 [tool.pyright]
 pythonVersion = "3.9"
 typeCheckingMode = "basic"
-include = ["src", "app.py"]
+include = ["src"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

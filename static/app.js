@@ -329,9 +329,12 @@ undoBtn.addEventListener("click", () => performUndo());
 function performUndo() {
   if (undoStack.length === 0) return;
   const action = undoStack.pop();
-  _persistUndoStack();
   const card = document.querySelector(`[data-filename="${CSS.escape(action.filename)}"]`);
-  if (!card) return;
+  if (!card) {
+    undoStack.push(action);
+    return;
+  }
+  _persistUndoStack();
 
   if (action.from === "unsorted") {
     decisions.delete(action.filename);
