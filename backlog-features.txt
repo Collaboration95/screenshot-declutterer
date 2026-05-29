@@ -34,11 +34,6 @@ NEW ACTIONS
            Rename screenshots based on patterns (date, sequential
            numbering, custom prefix) directly from the UI.
 
-[ ] FE-006  Duplicate detection
-           Find and highlight visually similar or exact-duplicate
-           screenshots so users can de-duplicate before sorting.
-
-
 UX IMPROVEMENTS
 ---------------
 
@@ -56,10 +51,6 @@ UX IMPROVEMENTS
 
 SMARTER FEATURES
 ----------------
-
-[ ] FE-010  OCR text extraction
-           Extract text from screenshots using on-device OCR so users
-           can search screenshots by content.
 
 [ ] FE-011  Auto-categorization
            Use on-device ML to suggest which column (Keep/Trash) a
