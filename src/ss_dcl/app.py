@@ -1,5 +1,4 @@
 import contextlib
-import fnmatch
 import json
 import logging
 import os
@@ -45,9 +44,10 @@ def set_security_headers(response: Response) -> Response:
 
 
 DESKTOP = Path(os.environ.get("SS_DCL_DESKTOP", str(Path.home() / "Desktop")))
-SCREENSHOT_GLOB = "Screenshot*.png"
 THUMB_DIR = Path.home() / ".cache" / "ss-dcl" / "thumbs"
 STATE_FILE = Path.home() / ".ss-dcl" / "state.json"
+# TODO Need to check if rendering changes for .tiff or .bmp needs to be handled seperately
+SUPPORTED_IMAGE_EXTENSION = (".png", ".jpg", ".jpeg", ".tiff", ".bmp")
 
 
 def _parse_thumb_size(raw: str) -> tuple[int, int]:
@@ -83,11 +83,18 @@ def _init_dirs():
 
 
 def get_screenshots(sort: str = "name") -> list[dict[str, Any]]:
-    files = [
-        {"name": p.name, "size": p.stat().st_size, "mtime": p.stat().st_mtime}
-        for p in DESKTOP.glob(SCREENSHOT_GLOB)
-        if p.is_file()
-    ]
+    files = []
+    for p in DESKTOP.glob("Screenshot*.*"):
+        # only continue if it's a file and has a supported image extension (case-insensitive)
+        if not p.is_file() or (p.suffix.lower() not in SUPPORTED_IMAGE_EXTENSION):
+            continue
+        files.append(
+            {
+                "name": p.name,
+                "size": p.stat().st_size,
+                "mtime": p.stat().st_mtime,
+            }
+        )
     key, reverse = SORT_OPTIONS.get(sort, ("name", False))
     return sorted(files, key=lambda f: f[key], reverse=reverse)
 
@@ -205,7 +212,7 @@ def api_done():
         if file_path is None:
             errors.append(f"{filename}: invalid path")
             continue
-        if not fnmatch.fnmatch(filename, SCREENSHOT_GLOB):
+        if Path(filename).suffix.lower() not in SUPPORTED_IMAGE_EXTENSION:
             errors.append(f"{filename}: invalid filename pattern")
             continue
         if not file_path.exists():

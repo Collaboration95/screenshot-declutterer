@@ -73,9 +73,9 @@ def test_atomic_write_cleanup_on_failure(tmp_path):
 
 def test_done_with_pattern_mismatch(client):
     c, desktop = client
-    non_screenshot = desktop / "photo.png"
+    non_screenshot = desktop / "photo.txt"
     non_screenshot.write_bytes(b"data")
-    r = c.post("/api/done", json={"filenames": ["photo.png"]})
+    r = c.post("/api/done", json={"filenames": ["photo.txt"]})
     assert r.status_code == 207
     body = r.get_json()
     assert any("invalid filename pattern" in e for e in body["errors"])

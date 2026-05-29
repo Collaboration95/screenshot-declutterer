@@ -8,7 +8,7 @@ Status: planned | in-progress | done
 SCOPE EXPANSION
 ---------------
 
-[ ] FE-001  Support non-PNG screenshots
+[x] FE-001  Support non-PNG screenshots
            macOS also produces .jpg screenshots and screen recordings.
            Expand SCREENSHOT_GLOB to match multiple extensions and
            handle MIME types accordingly.
