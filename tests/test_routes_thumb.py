@@ -1,4 +1,4 @@
-from conftest import _make_png
+from helpers import _make_png
 
 
 def test_api_thumb_returns_thumbnail(client):

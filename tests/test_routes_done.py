@@ -3,7 +3,7 @@ from unittest.mock import patch
 
 import src.ss_dcl.app as flask_app
 
-from conftest import _make_png
+from helpers import _make_png
 
 
 def test_api_done_moves_files_to_trash(client):

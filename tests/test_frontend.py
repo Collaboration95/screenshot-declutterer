@@ -1,6 +1,6 @@
 from unittest.mock import patch
 
-from conftest import _make_png
+from helpers import _make_png
 
 
 def _screenshot(tmp_path, name="Screenshot 2024-01-01 at 12.00.00 PM.png"):

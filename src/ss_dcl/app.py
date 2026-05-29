@@ -24,11 +24,6 @@ from flask import (
 from PIL import Image
 from send2trash import send2trash
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-    datefmt="%H:%M:%S",
-)
 logger = logging.getLogger(__name__)
 
 _HERE = Path(__file__).resolve().parent.parent.parent
@@ -252,6 +247,11 @@ def _open_browser() -> None:
 
 
 if __name__ == "__main__":
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+        datefmt="%H:%M:%S",
+    )
     threading.Thread(target=_open_browser, daemon=True).start()
     debug = os.environ.get("FLASK_DEBUG", "0") == "1"
     app.run(debug=debug, port=5002)

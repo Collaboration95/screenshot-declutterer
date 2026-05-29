@@ -5,7 +5,7 @@ import pytest
 import src.ss_dcl.app as flask_app
 from src.ss_dcl.app import _atomic_write
 
-from conftest import _make_png
+from helpers import _make_png
 
 
 def test_state_file_corruption(client):

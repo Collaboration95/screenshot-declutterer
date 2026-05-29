@@ -39,9 +39,12 @@ const columns = [colTrash, colUnsorted, colKeep];
 
 // ── Sanitise filenames for safe DOM insertion ────────────────────────────────
 function sanitise(str) {
-  const el = document.createElement("span");
-  el.textContent = str;
-  return el.innerHTML;
+  return str
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
 }
 
 // ── Bootstrap ────────────────────────────────────────────────────────────────
