@@ -11,11 +11,14 @@ Local macOS web tool that scans `~/Desktop` for `Screenshot*.png` files, present
 Single-file backend + single-file frontend. Zero build steps.
 
 ```
-app.py                  Flask backend (all routes, scanning, thumbnails, state, trash)
-static/app.js           Frontend JS (Kanban, drag-and-drop, undo, lightbox, modal)
-static/style.css        All CSS (Kanban layout, cards, lightbox, modal)
-templates/index.html    SPA shell — three-column layout + lightbox + confirm modal
-tests/test_app.py       ~40 pytest tests covering all routes and edge cases
+src/ss_dcl/app.py        Flask backend (all routes, scanning, thumbnails, state, trash)
+static/app.js            Frontend JS (Kanban, drag-and-drop, undo, lightbox, modal)
+static/style.css         All CSS (Kanban layout, cards, lightbox, modal)
+templates/index.html     SPA shell — three-column layout + lightbox + confirm modal
+tests/conftest.py        Shared pytest fixtures and helpers
+tests/test_routes_*.py   Route-specific test files
+tests/test_edge_cases.py Edge case tests
+tests/test_frontend.py   Frontend integration tests
 ```
 
 ## Design Decisions
@@ -70,7 +73,7 @@ All in `static/app.js` (~395 lines):
 ## Dependencies
 
 **Runtime:** Flask >= 3.0, Pillow >= 10.0, send2trash >= 1.8
-**Dev:** pytest >= 8.0, Ruff >= 0.11, Pyright >= 1.1, pre-commit >= 4.0
+**Dev:** pytest >= 8.0, Ruff >= 0.11, Pyright >= 1.1, pre-commit >= 4.0, pytest-cov >= 5.0, pip-audit >= 0.5
 
 ## Testing
 
@@ -78,13 +81,13 @@ All in `static/app.js` (~395 lines):
 - Fixture: `client(tmp_path, monkeypatch)` — temp dir as fake Desktop, patches `DESKTOP`, `THUMB_DIR`, `STATE_FILE`
 - `send2trash` always mocked to avoid actually trashing files
 - Helper `_make_png()` creates valid minimal PNGs in-memory
-- ~40 tests covering all routes, sorting, path traversal, state round-trip, partial failures, edge cases
+- ~61 tests across focused test files covering all routes, sorting, path traversal, state round-trip, partial failures, edge cases
 
 ## Tooling Config
 
 - **Ruff**: target py39, line-length 100, rules: E, F, W, I, UP, B, SIM, RUF
 - **Pyright**: pythonVersion 3.9, typeCheckingMode basic
-- **pytest**: testpaths `["tests"]`, pythonpath `["."]`
+- **pytest**: testpaths `["tests"]`, pythonpath `["src", "."]`
 - **Pre-commit**: Ruff (lint+format), Pyright, pytest
 
 ## Key Gotchas

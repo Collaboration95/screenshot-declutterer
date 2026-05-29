@@ -247,7 +247,7 @@ header h1 {
 .card img {
   display: block;
   width: 100%;
-  aspect-ratio: 16 / 9;
+  aspect-ratio: 4 / 3;
   object-fit: cover;
   pointer-events: none;
 }
@@ -454,4 +454,49 @@ header h1 {
 
 .modal-confirm:hover {
   background: #e0342a;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+@media (max-width: 768px) {
+  header {
+    flex-wrap: wrap;
+    gap: 8px;
+    padding: 8px 12px;
+  }
+
+  .header-right {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .kanban {
+    flex-direction: column;
+  }
+
+  .column-trash,
+  .column-keep {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .column {
+    border-right: none;
+    border-bottom: 1px solid #e5e5e5;
+    max-height: 40vh;
+  }
+
+  .column-unsorted .column-cards {
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  }
 }

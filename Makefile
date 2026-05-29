@@ -3,8 +3,8 @@
 install:            ## Install production dependencies
 	uv sync
 
-run:                ## Start the app (opens browser at localhost:5001)
-	uv run python app.py
+run:                ## Start the app (opens browser at localhost:5002)
+	uv run python -m src.ss_dcl.app
 
 dev:                ## Install all dependencies including dev tools
 	uv sync --group dev

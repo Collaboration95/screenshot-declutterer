@@ -3,6 +3,11 @@ const undoStack = [];
 let totalCards = 0;
 let currentSort = "date_desc";
 
+try {
+  const saved = sessionStorage.getItem("undoStack");
+  if (saved) undoStack.push(...JSON.parse(saved));
+} catch (_) {}
+
 const cardsUnsorted = document.getElementById("cards-unsorted");
 const cardsTrash    = document.getElementById("cards-trash");
 const cardsKeep     = document.getElementById("cards-keep");
@@ -19,6 +24,7 @@ const undoBtn   = document.getElementById("undo-btn");
 const doneBtn   = document.getElementById("done-btn");
 const statusMsg = document.getElementById("status-msg");
 const emptyMsg  = document.getElementById("empty-msg");
+const loadingMsg = document.getElementById("loading-msg");
 const sortSelect = document.getElementById("sort-select");
 
 const lightbox    = document.getElementById("lightbox");
@@ -30,6 +36,16 @@ const modalCancel  = document.getElementById("modal-cancel");
 const modalConfirm = document.getElementById("modal-confirm");
 
 const columns = [colTrash, colUnsorted, colKeep];
+
+// ── Sanitise filenames for safe DOM insertion ────────────────────────────────
+function sanitise(str) {
+  return str
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
 
 // ── Bootstrap ────────────────────────────────────────────────────────────────
 function init() {
@@ -43,6 +59,7 @@ function loadScreenshots(savedDecisions) {
   fetch(`/api/screenshots?sort=${encodeURIComponent(currentSort)}`)
     .then(r => r.json())
     .then(files => {
+      loadingMsg.hidden = true;
       if (files.length === 0) {
         emptyMsg.hidden = false;
         return;
@@ -70,6 +87,7 @@ function loadScreenshots(savedDecisions) {
       saveState();
     })
     .catch(() => {
+      loadingMsg.hidden = true;
       statusMsg.textContent = "Failed to load screenshots.";
     });
 }
@@ -85,27 +103,36 @@ sortSelect.addEventListener("change", () => {
 });
 
 // ── Persist state ────────────────────────────────────────────────────────────
+let _saveTimer = null;
 function saveState() {
-  const obj = {};
-  for (const [k, v] of decisions) obj[k] = v;
-  fetch("/api/state", {
-    method: "PUT",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ decisions: obj }),
-  });
+  if (_saveTimer) clearTimeout(_saveTimer);
+  _saveTimer = setTimeout(() => {
+    const obj = {};
+    for (const [k, v] of decisions) obj[k] = v;
+    fetch("/api/state", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ decisions: obj }),
+    }).catch(() => {
+      statusMsg.textContent = "Warning: failed to save state.";
+    });
+    _saveTimer = null;
+  }, 300);
 }
 
 // ── Card factory ─────────────────────────────────────────────────────────────
 function makeCard(filename, column) {
   const card = document.createElement("article");
   card.className = "card";
+  card.setAttribute("role", "listitem");
+  card.setAttribute("aria-label", filename);
   card.dataset.filename = filename;
   card.draggable = true;
   card.tabIndex = 0;
 
   const img = document.createElement("img");
   img.src = `/api/thumb/${encodeURIComponent(filename)}`;
-  img.alt = filename;
+  img.alt = sanitise(filename);
   img.loading = "lazy";
   img.decoding = "async";
 
@@ -168,6 +195,7 @@ function moveCard(card, toColumn) {
   }
 
   undoStack.push({ filename, from: fromColumn, to: toColumn });
+  _persistUndoStack();
 
   const target = toColumn === "trash" ? cardsTrash
                : toColumn === "keep"  ? cardsKeep
@@ -236,10 +264,23 @@ function attachPreview(card) {
 }
 
 function openLightbox(card) {
-  const filename = card.dataset.filename;
-  lightboxImg.src = `/api/image/${encodeURIComponent(filename)}`;
-  lightboxImg.alt = filename;
+  lightbox.dataset.currentFilename = card.dataset.filename;
+  lightboxImg.src = `/api/image/${encodeURIComponent(card.dataset.filename)}`;
+  lightboxImg.alt = sanitise(card.dataset.filename);
   lightbox.hidden = false;
+}
+
+function _lightboxNavigate(direction) {
+  const allCards = [...document.querySelectorAll(".card")];
+  const current = lightbox.dataset.currentFilename;
+  const idx = allCards.findIndex(c => c.dataset.filename === current);
+  if (idx < 0) return;
+  const next = idx + direction;
+  if (next < 0 || next >= allCards.length) return;
+  const nextCard = allCards[next];
+  lightbox.dataset.currentFilename = nextCard.dataset.filename;
+  lightboxImg.src = `/api/image/${encodeURIComponent(nextCard.dataset.filename)}`;
+  lightboxImg.alt = sanitise(nextCard.dataset.filename);
 }
 
 function closeLightbox() {
@@ -267,6 +308,10 @@ function attachKeyboard(card) {
 }
 
 document.addEventListener("keydown", e => {
+  if (!lightbox.hidden) {
+    if (e.key === "ArrowLeft") { e.preventDefault(); _lightboxNavigate(-1); return; }
+    if (e.key === "ArrowRight") { e.preventDefault(); _lightboxNavigate(1); return; }
+  }
   if (e.key === "Escape") {
     if (!lightbox.hidden) { closeLightbox(); return; }
     if (!confirmModal.hidden) { closeModal(); return; }
@@ -279,12 +324,20 @@ document.addEventListener("keydown", e => {
 });
 
 // ── Undo ─────────────────────────────────────────────────────────────────────
+function _persistUndoStack() {
+  try { sessionStorage.setItem("undoStack", JSON.stringify(undoStack)); } catch (_) {}
+}
+
 undoBtn.addEventListener("click", () => performUndo());
 function performUndo() {
   if (undoStack.length === 0) return;
   const action = undoStack.pop();
   const card = document.querySelector(`[data-filename="${CSS.escape(action.filename)}"]`);
-  if (!card) return;
+  if (!card) {
+    undoStack.push(action);
+    return;
+  }
+  _persistUndoStack();
 
   if (action.from === "unsorted") {
     decisions.delete(action.filename);
@@ -366,7 +419,12 @@ modalConfirm.addEventListener("click", () => {
         alert("Some files could not be moved:\n" + data.errors.join("\n"));
       }
 
-      const failed = new Set((data.errors || []).map(e => e.split(":")[0].trim()));
+      const failed = new Set();
+      (data.errors || []).forEach(e => {
+        const parts = e.split(":");
+        const name = parts.length > 1 ? parts[0].trim() : e.trim();
+        if (name) failed.add(name);
+      });
       toTrash.forEach(filename => {
         if (!failed.has(filename)) {
           const card = cardsTrash.querySelector(`[data-filename="${CSS.escape(filename)}"]`);
