@@ -189,9 +189,10 @@ def test_open_browser_opens_tab(monkeypatch):
 
     from src.ss_dcl import app as flask_app
 
+    port = flask_app.SELECTED_PORT
     with patch("src.ss_dcl.app.time.sleep"), patch("src.ss_dcl.app.webbrowser") as mock_wb:
         flask_app._open_browser()
-    mock_wb.open_new_tab.assert_called_once_with("http://localhost:5002")
+    mock_wb.open_new_tab.assert_called_once_with(f"http://localhost:{port}")
 
 
 def test_get_screenshots_returns_list(client):

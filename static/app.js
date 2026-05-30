@@ -35,6 +35,13 @@ const modalTitle   = document.getElementById("modal-title");
 const modalCancel  = document.getElementById("modal-cancel");
 const modalConfirm = document.getElementById("modal-confirm");
 
+const renameModal   = document.getElementById("rename-modal");
+const renameInput   = document.getElementById("rename-input");
+const renameCancel  = document.getElementById("rename-cancel");
+const renameConfirm = document.getElementById("rename-confirm");
+const renameError   = document.getElementById("rename-error");
+let renameTarget = null;
+
 const columns = [colTrash, colUnsorted, colKeep];
 
 // ── Sanitise filenames for safe DOM insertion ────────────────────────────────
@@ -155,17 +162,20 @@ function setCardActions(card, column) {
   const actions = card.querySelector(".card-actions");
   actions.innerHTML = "";
 
+  const renameBtn = makeActionBtn("Rename", "btn-rename", () => openRenameModal(card));
+  const previewBtn = makeActionBtn("Preview", "btn-preview", () => openLightbox(card));
+
   if (column === "unsorted") {
     const keepBtn = makeActionBtn("\u2190 Keep", "btn-keep", () => moveCard(card, "keep"));
-    const previewBtn = makeActionBtn("Preview", "btn-preview", () => openLightbox(card));
     const trashBtn = makeActionBtn("Trash \u2192", "btn-trash", () => moveCard(card, "trash"));
     actions.appendChild(keepBtn);
     actions.appendChild(previewBtn);
+    actions.appendChild(renameBtn);
     actions.appendChild(trashBtn);
   } else {
-    const previewBtn = makeActionBtn("Preview", "btn-preview", () => openLightbox(card));
     const undoBtn = makeActionBtn("\u21A9 Undo", "btn-undo", () => moveCard(card, "unsorted"));
     actions.appendChild(previewBtn);
+    actions.appendChild(renameBtn);
     actions.appendChild(undoBtn);
   }
 }
@@ -315,6 +325,7 @@ document.addEventListener("keydown", e => {
   if (e.key === "Escape") {
     if (!lightbox.hidden) { closeLightbox(); return; }
     if (!confirmModal.hidden) { closeModal(); return; }
+    if (!renameModal.hidden) { closeRenameModal(); return; }
   }
 
   if ((e.metaKey || e.ctrlKey) && e.key === "z") {
@@ -377,6 +388,89 @@ function updateCounts() {
 
   undoBtn.disabled = undoStack.length === 0;
   doneBtn.disabled = nTrash === 0;
+}
+
+// ── Rename modal ──────────────────────────────────────────────────────────────
+function openRenameModal(card) {
+  renameTarget = card;
+  renameInput.value = card.dataset.filename;
+  renameError.textContent = "";
+  renameModal.hidden = false;
+  const dotIdx = card.dataset.filename.lastIndexOf(".");
+  renameInput.focus();
+  if (dotIdx > 0) {
+    renameInput.setSelectionRange(0, dotIdx);
+  }
+}
+
+function closeRenameModal() {
+  renameModal.hidden = true;
+  renameTarget = null;
+}
+
+renameCancel.addEventListener("click", closeRenameModal);
+renameModal.addEventListener("click", e => {
+  if (e.target === renameModal) closeRenameModal();
+});
+
+renameConfirm.addEventListener("click", () => {
+  if (!renameTarget) return;
+  const oldName = renameTarget.dataset.filename;
+  const newName = renameInput.value.trim();
+  if (!newName) {
+    renameError.textContent = "Filename cannot be empty.";
+    return;
+  }
+  if (newName === oldName) {
+    closeRenameModal();
+    return;
+  }
+  if (newName !== Path_name(newName)) {
+    renameError.textContent = "Filename must not contain path separators.";
+    return;
+  }
+  renameError.textContent = "";
+  renameConfirm.disabled = true;
+
+  fetch("/api/rename", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ old_name: oldName, new_name: newName }),
+  })
+    .then(r => r.json())
+    .then(data => {
+      renameConfirm.disabled = false;
+      if (!data.ok) {
+        renameError.textContent = data.error || "Rename failed.";
+        return;
+      }
+      const col = getCardColumn(renameTarget);
+      if (col === "unsorted") {
+        decisions.delete(oldName);
+      } else {
+        decisions.delete(oldName);
+        decisions.set(newName, col);
+      }
+      renameTarget.dataset.filename = newName;
+      renameTarget.querySelector("img").alt = newName;
+      setCardActions(renameTarget, col);
+      updateCounts();
+      saveState();
+      closeRenameModal();
+    })
+    .catch(() => {
+      renameConfirm.disabled = false;
+      renameError.textContent = "Network error — please try again.";
+    });
+});
+
+renameInput.addEventListener("keydown", e => {
+  if (e.key === "Enter") { e.preventDefault(); renameConfirm.click(); }
+  if (e.key === "Escape") closeRenameModal();
+});
+
+function Path_name(filename) {
+  return filename.split("/").pop().split("\\").pop();
 }
 
 // ── Done button / modal ──────────────────────────────────────────────────────

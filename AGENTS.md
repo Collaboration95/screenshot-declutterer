@@ -4,19 +4,20 @@ AI agent context file for the Screenshot Declutterer repository.
 
 ## Project Summary
 
-Local macOS web tool that scans `~/Desktop` for `Screenshot*.png` files, presents them in a Kanban-style drag-and-drop interface (Keep / Unsorted / Trash), and trashes selected files via the native macOS Trash API. Everything runs locally — no data leaves the machine.
+Local macOS web tool that scans `~/Desktop` for `Screenshot*.*` files (PNG, JPG, JPEG, TIFF, BMP), presents them in a Kanban-style drag-and-drop interface (Keep / Unsorted / Trash), and trashes selected files via the native macOS Trash API. Supports renaming files directly from the UI. Everything runs locally — no data leaves the machine.
 
 ## Architecture
 
 Single-file backend + single-file frontend. Zero build steps.
 
 ```
-src/ss_dcl/app.py        Flask backend (all routes, scanning, thumbnails, state, trash)
-static/app.js            Frontend JS (Kanban, drag-and-drop, undo, lightbox, modal)
-static/style.css         All CSS (Kanban layout, cards, lightbox, modal)
-templates/index.html     SPA shell — three-column layout + lightbox + confirm modal
+src/ss_dcl/app.py        Flask backend (all routes, scanning, thumbnails, state, trash, rename, port detection)
+static/app.js            Frontend JS (Kanban, drag-and-drop, undo, lightbox, rename modal, confirm modal)
+static/style.css         All CSS (Kanban layout, cards, lightbox, rename modal, confirm modal)
+templates/index.html     SPA shell — three-column layout + lightbox + rename modal + confirm modal
 tests/conftest.py        Shared pytest fixtures and helpers
-tests/test_routes_*.py   Route-specific test files
+tests/test_routes_*.py   Route-specific test files (index, screenshots, image, thumb, state, done, rename)
+tests/test_port_flexibility.py  Port auto-detection tests
 tests/test_edge_cases.py Edge case tests
 tests/test_frontend.py   Frontend integration tests
 ```
@@ -26,7 +27,7 @@ tests/test_frontend.py   Frontend integration tests
 - **Flask over heavier frameworks** — single-user local tool, no need for async/ORMs
 - **Vanilla JS, no React/Vue** — UI is simple enough (395 lines); a framework would add a build step for no benefit
 - **No build step** — static files served directly by Flask; no transpilation, bundling, or minification
-- **Port 5002** — avoids conflict with macOS AirPlay Receiver on port 5000
+- **Port 5002 with auto-fallback** — avoids conflict with macOS AirPlay Receiver on port 5000; `_find_free_port()` auto-increments if occupied; override via `SS_DCL_PORT` env var
 - **send2trash** — files go to native macOS Trash (recoverable), never permanently deleted
 - **State as JSON file** (`~/.ss-dcl/state.json`) — no database needed; single-user tool with no concurrent access
 - **Thumbnail caching** — generated on-demand with Pillow, cached at `~/.cache/ss-dcl/thumbs/`, staleness checked via `st_mtime`
@@ -44,12 +45,13 @@ tests/test_frontend.py   Frontend integration tests
 | GET | `/api/state` | Get persisted decisions `{decisions: {filename: "keep"|"trash"}}` |
 | PUT | `/api/state` | Save decisions state |
 | POST | `/api/done` | Trash files — body `{filenames: [...]}`. Returns 207 on partial failure with per-file errors |
+| POST | `/api/rename` | Rename a file — body `{old_name, new_name}`. Updates state and thumbnail. Returns 409 on conflict |
 
 All filename-accepting routes validate against path traversal: bare name check (`filename == Path(filename).name`) + resolved path must be within `~/Desktop`.
 
 ## Frontend Architecture
 
-All in `static/app.js` (~395 lines):
+All in `static/app.js`:
 
 - **Global state**: `decisions` (Map), `undoStack` (Array), `totalCards`, `currentSort`
 - **Entry**: `init()` → loads saved state → `loadScreenshots()` → creates cards via `makeCard()`
@@ -59,13 +61,14 @@ All in `static/app.js` (~395 lines):
 - **Undo**: `performUndo()` pops from stack, reverses the move
 - **Lightbox**: Double-click or Preview button → full-size overlay. Escape or backdrop click closes
 - **Confirm modal**: Done button → modal with trash count → POST `/api/done`
+- **Rename modal**: Rename button → modal with text input → POST `/api/rename`. Updates card dataset filename, state, and thumbnail
 
 ## Runtime Paths
 
 | Constant | Value |
 |----------|-------|
 | DESKTOP | `~/Desktop` |
-| SCREENSHOT_GLOB | `Screenshot*.png` |
+| SCREENSHOT_GLOB | `Screenshot*.*` (filtered by SUPPORTED_IMAGE_EXTENSION) |
 | THUMB_DIR | `~/.cache/ss-dcl/thumbs/` |
 | STATE_FILE | `~/.ss-dcl/state.json` |
 | THUMB_SIZE | `(400, 300)` |
@@ -81,7 +84,7 @@ All in `static/app.js` (~395 lines):
 - Fixture: `client(tmp_path, monkeypatch)` — temp dir as fake Desktop, patches `DESKTOP`, `THUMB_DIR`, `STATE_FILE`
 - `send2trash` always mocked to avoid actually trashing files
 - Helper `_make_png()` creates valid minimal PNGs in-memory
-- ~61 tests across focused test files covering all routes, sorting, path traversal, state round-trip, partial failures, edge cases
+- ~76 tests across focused test files covering all routes, sorting, path traversal, state round-trip, partial failures, rename, port flexibility, edge cases
 
 ## Tooling Config
 
@@ -93,8 +96,10 @@ All in `static/app.js` (~395 lines):
 ## Key Gotchas
 
 - **macOS-only** — relies on `Screenshot*.png` naming convention, `send2trash`, and `~/Desktop` path
+- **Multi-format** — scans for PNG, JPG, JPEG, TIFF, BMP files matching `Screenshot*.*`
 - **Path traversal defense** — two-layer check: bare filename + resolved path within Desktop
 - **207 Multi-Status** — `/api/done` returns 207 when some files succeed and some fail
 - **Auto-open browser** — daemon thread opens browser after 1s delay; skipped during Werkzeug reloader
 - **Non-recursive scan** — only top-level `~/Desktop` files, not subdirectories
 - **Lazy loading** — card images use `loading="lazy"` and `decoding="async"`
+- **Rename** — POST `/api/rename` validates both old and new names, checks for conflicts (409), moves thumbnails, updates state file
