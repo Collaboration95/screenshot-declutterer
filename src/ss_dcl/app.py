@@ -1,8 +1,8 @@
 import contextlib
-import fnmatch
 import json
 import logging
 import os
+import socket
 import tempfile
 import threading
 import time
@@ -45,9 +45,10 @@ def set_security_headers(response: Response) -> Response:
 
 
 DESKTOP = Path(os.environ.get("SS_DCL_DESKTOP", str(Path.home() / "Desktop")))
-SCREENSHOT_GLOB = "Screenshot*.png"
 THUMB_DIR = Path.home() / ".cache" / "ss-dcl" / "thumbs"
 STATE_FILE = Path.home() / ".ss-dcl" / "state.json"
+# TODO Need to check if rendering changes for .tiff or .bmp needs to be handled seperately
+SUPPORTED_IMAGE_EXTENSION = (".png", ".jpg", ".jpeg", ".tiff", ".bmp")
 
 
 def _parse_thumb_size(raw: str) -> tuple[int, int]:
@@ -83,11 +84,18 @@ def _init_dirs():
 
 
 def get_screenshots(sort: str = "name") -> list[dict[str, Any]]:
-    files = [
-        {"name": p.name, "size": p.stat().st_size, "mtime": p.stat().st_mtime}
-        for p in DESKTOP.glob(SCREENSHOT_GLOB)
-        if p.is_file()
-    ]
+    files = []
+    for p in DESKTOP.glob("Screenshot*.*"):
+        # only continue if it's a file and has a supported image extension (case-insensitive)
+        if not p.is_file() or (p.suffix.lower() not in SUPPORTED_IMAGE_EXTENSION):
+            continue
+        files.append(
+            {
+                "name": p.name,
+                "size": p.stat().st_size,
+                "mtime": p.stat().st_mtime,
+            }
+        )
     key, reverse = SORT_OPTIONS.get(sort, ("name", False))
     return sorted(files, key=lambda f: f[key], reverse=reverse)
 
@@ -205,7 +213,7 @@ def api_done():
         if file_path is None:
             errors.append(f"{filename}: invalid path")
             continue
-        if not fnmatch.fnmatch(filename, SCREENSHOT_GLOB):
+        if Path(filename).suffix.lower() not in SUPPORTED_IMAGE_EXTENSION:
             errors.append(f"{filename}: invalid filename pattern")
             continue
         if not file_path.exists():
@@ -239,11 +247,74 @@ def api_done():
     return jsonify({"ok": True})
 
 
+@app.route("/api/rename", methods=["POST"])
+def api_rename():
+    if not request.is_json:
+        abort(400)
+    data = request.get_json(silent=True) or {}
+    old_name = data.get("old_name", "")
+    new_name = data.get("new_name", "")
+
+    if not old_name or not new_name:
+        return jsonify({"ok": False, "error": "old_name and new_name are required"}), 400
+
+    old_path = _validate_desktop_path(old_name)
+    if old_path is None:
+        return jsonify({"ok": False, "error": "invalid old_name"}), 400
+    if not old_path.exists():
+        return jsonify({"ok": False, "error": "file not found"}), 404
+
+    new_path = _validate_desktop_path(new_name)
+    if new_path is None:
+        return jsonify({"ok": False, "error": "invalid new_name"}), 400
+    if new_path.exists() and new_path != old_path:
+        return jsonify({"ok": False, "error": "a file with that name already exists"}), 409
+
+    try:
+        old_path.rename(new_path)
+    except OSError as exc:
+        logger.error("Failed to rename %s to %s: %s", old_name, new_name, exc)
+        return jsonify({"ok": False, "error": str(exc)}), 500
+
+    old_thumb = THUMB_DIR / old_name
+    new_thumb = THUMB_DIR / new_name
+    with contextlib.suppress(Exception):
+        if old_thumb.exists():
+            old_thumb.rename(new_thumb)
+
+    if STATE_FILE.exists():
+        try:
+            state = json.loads(STATE_FILE.read_text())
+            decisions = state.get("decisions", {})
+            if old_name in decisions:
+                decisions[new_name] = decisions.pop(old_name)
+                _atomic_write(STATE_FILE, json.dumps(state))
+        except (json.JSONDecodeError, KeyError):
+            logger.warning("State file corruption detected during rename")
+
+    logger.info("Renamed %s -> %s", old_name, new_name)
+    return jsonify({"ok": True, "new_name": new_name})
+
+
+def _find_free_port(start: int, max_tries: int = 100) -> int:
+    for port in range(start, start + max_tries):
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            try:
+                s.bind(("127.0.0.1", port))
+                return port
+            except OSError:
+                continue
+    raise RuntimeError(f"No free port found in range {start}-{start + max_tries - 1}")
+
+
+SELECTED_PORT: int = int(os.environ.get("SS_DCL_PORT", "0")) or _find_free_port(5002)
+
+
 def _open_browser() -> None:
     if os.environ.get("WERKZEUG_RUN_MAIN") != "true":
         time.sleep(1)
         with contextlib.suppress(Exception):
-            webbrowser.open_new_tab("http://localhost:5002")
+            webbrowser.open_new_tab(f"http://localhost:{SELECTED_PORT}")
 
 
 if __name__ == "__main__":
@@ -254,4 +325,5 @@ if __name__ == "__main__":
     )
     threading.Thread(target=_open_browser, daemon=True).start()
     debug = os.environ.get("FLASK_DEBUG", "0") == "1"
-    app.run(debug=debug, port=5002)
+    logger.info("Starting server on port %d", SELECTED_PORT)
+    app.run(debug=debug, port=SELECTED_PORT)

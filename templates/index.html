@@ -75,6 +75,20 @@
     </div>
   </div>
 
+  <!-- Rename modal -->
+  <div id="rename-modal" class="modal-overlay" hidden role="dialog" aria-labelledby="rename-title">
+    <div class="modal">
+      <p class="modal-title" id="rename-title">Rename Screenshot</p>
+      <p class="modal-desc">Enter a new filename (extension will be preserved if unchanged).</p>
+      <input id="rename-input" type="text" class="rename-input" autocomplete="off" spellcheck="false" />
+      <p id="rename-error" class="rename-error"></p>
+      <div class="modal-actions">
+        <button class="modal-btn modal-cancel" id="rename-cancel">Cancel</button>
+        <button class="modal-btn modal-confirm rename-confirm-btn" id="rename-confirm">Rename</button>
+      </div>
+    </div>
+  </div>
+
   <script src="/static/app.js"></script>
 </body>
 </html>

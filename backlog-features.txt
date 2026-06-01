@@ -8,7 +8,7 @@ Status: planned | in-progress | done
 SCOPE EXPANSION
 ---------------
 
-[ ] FE-001  Support non-PNG screenshots
+[x] FE-001  Support non-PNG screenshots
            macOS also produces .jpg screenshots and screen recordings.
            Expand SCREENSHOT_GLOB to match multiple extensions and
            handle MIME types accordingly.
@@ -31,8 +31,11 @@ NEW ACTIONS
            move screenshots into a chosen destination folder.
 
 [ ] FE-005  Bulk rename
-           Rename screenshots based on patterns (date, sequential
-           numbering, custom prefix) directly from the UI.
+            Rename screenshots based on patterns (date, sequential
+            numbering, custom prefix) directly from the UI.
+            NOTE: Single-file rename is now implemented via the
+            Rename button on each card. Bulk pattern-based rename
+            remains a future enhancement.
 
 UX IMPROVEMENTS
 ---------------

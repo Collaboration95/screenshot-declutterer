@@ -34,3 +34,16 @@ Run `make` or `make help` to see all available targets.
 - **Frontend:** Vanilla HTML, CSS, JavaScript (no build step)
 - **Linting:** Ruff + Pyright
 - **Testing:** pytest
+
+## API Endpoints
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| GET | `/` | Serve SPA |
+| GET | `/api/screenshots?sort=<mode>` | List screenshots (sort: name, name_desc, date, date_desc, size, size_desc) |
+| GET | `/api/image/<filename>` | Serve full-size image (cache: 1h) |
+| GET | `/api/thumb/<filename>` | Serve thumbnail (cache: 24h), falls back to full image |
+| GET | `/api/state` | Get persisted decisions |
+| PUT | `/api/state` | Save decisions state |
+| POST | `/api/rename` | Rename a file — body `{old_name, new_name}` |
+| POST | `/api/done` | Trash files — body `{filenames: [...]}`. Returns 207 on partial failure |

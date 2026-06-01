@@ -163,14 +163,15 @@ def test_api_done_cleans_up_thumbnail(client):
     assert not (thumb_dir / f.name).exists()
 
 
-def test_api_screenshots_ignores_non_png_screenshot_files(client):
+def test_api_screenshots_includes_supported_image_formats(client):
     c, desktop = client
     (desktop / "Screenshot 2024-01-01 at 12.00.00 PM.png").write_bytes(b"")
     (desktop / "Screenshot 2024-01-01 at 12.00.00 PM.jpg").write_bytes(b"")
 
     names = [f["name"] for f in json.loads(c.get("/api/screenshots").data)]
-    assert len(names) == 1
-    assert names[0].endswith(".png")
+    assert len(names) == 2
+    assert any(n.endswith(".png") for n in names)
+    assert any(n.endswith(".jpg") for n in names)
 
 
 def test_open_browser_skips_when_werkzeug_reloader(monkeypatch):
@@ -188,9 +189,10 @@ def test_open_browser_opens_tab(monkeypatch):
 
     from src.ss_dcl import app as flask_app
 
+    port = flask_app.SELECTED_PORT
     with patch("src.ss_dcl.app.time.sleep"), patch("src.ss_dcl.app.webbrowser") as mock_wb:
         flask_app._open_browser()
-    mock_wb.open_new_tab.assert_called_once_with("http://localhost:5002")
+    mock_wb.open_new_tab.assert_called_once_with(f"http://localhost:{port}")
 
 
 def test_get_screenshots_returns_list(client):

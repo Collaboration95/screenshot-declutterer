@@ -325,6 +325,47 @@ header h1 {
   background: rgba(255, 255, 255, 0.4);
 }
 
+.btn-rename {
+  background: rgba(0, 122, 255, 0.85);
+}
+
+.btn-rename:hover {
+  background: #0062cc;
+}
+
+/* ── Rename modal ────────────────────────────────────────── */
+.rename-input {
+  width: 100%;
+  padding: 8px 12px;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  font-size: 0.9rem;
+  font-family: "SF Mono", "Menlo", "Consolas", monospace;
+  margin-bottom: 6px;
+  outline: none;
+  transition: border-color 0.15s;
+}
+
+.rename-input:focus {
+  border-color: #007aff;
+  box-shadow: 0 0 0 3px rgba(0, 122, 255, 0.15);
+}
+
+.rename-error {
+  color: #ff3b30;
+  font-size: 0.8rem;
+  min-height: 1.2em;
+  margin-bottom: 12px;
+}
+
+.rename-confirm-btn {
+  background: #007aff;
+}
+
+.rename-confirm-btn:hover {
+  background: #0062cc;
+}
+
 /* ── Empty state ─────────────────────────────────────────── */
 #empty-msg {
   text-align: center;

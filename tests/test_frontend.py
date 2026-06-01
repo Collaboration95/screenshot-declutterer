@@ -40,6 +40,12 @@ def test_index_has_confirm_modal(client):
     assert 'id="confirm-modal"' in html
 
 
+def test_index_has_rename_modal(client):
+    c, _ = client
+    html = c.get("/").data.decode()
+    assert 'id="rename-modal"' in html
+
+
 def test_card_creation_with_screenshot(client):
     c, desktop = client
     _screenshot(desktop)
