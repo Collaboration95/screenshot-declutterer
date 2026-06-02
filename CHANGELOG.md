@@ -13,7 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `MemoryStore` class with CRUD operations, status lifecycle tracking (`new → suggested → renamed/ignored/trashed`), and atomic JSON persistence
 - `FileRecord` dataclass with extensible `meta` field for future LLM categorization and clustering features
 - `compute_fingerprint()` — stable identity from filename + file size (already available via `stat()`)
-- `atomic_write()` — shared utility for crash-safe file writes (extracted from app.py)
+- `atomic_write()` — shared utility for crash-safe file writes (imported by app.py)
 - `prune_stale()` — maintenance method to garbage-collect orphaned memory entries
 - Design document at `docs/design-llm-rename-prerequisites.md` outlining the full 4-phase LLM integration plan
 - 60 new unit tests for the memory store covering CRUD, status transitions, persistence, edge cases, and corruption recovery
