@@ -429,6 +429,7 @@ header h1 {
   align-items: center;
   gap: 10px;
   max-height: 90vh;
+  overflow: hidden;
 }
 
 .lightbox-img {

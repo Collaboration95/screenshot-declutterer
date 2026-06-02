@@ -32,6 +32,7 @@ const lightboxImg = document.getElementById("lightbox-img");
 const lightboxFilename = document.getElementById("lightbox-filename");
 const lightboxRenameInput = document.getElementById("lightbox-rename-input");
 const lightboxRenameError = document.getElementById("lightbox-rename-error");
+const lightboxBar = document.querySelector(".lightbox-bar");
 const cardTooltip = document.getElementById("card-tooltip");
 
 const confirmModal = document.getElementById("confirm-modal");
@@ -347,7 +348,7 @@ function _updateLightboxBar(filename) {
   lightboxFilename.hidden = false;
   lightboxRenameError.textContent = "";
   lightboxRenameInput.classList.remove("error");
-  document.querySelector(".lightbox-bar").style.minWidth = "";
+  lightboxBar.style.minWidth = "";
 }
 
 lightboxFilename.addEventListener("click", () => _startLightboxRename());
@@ -387,10 +388,11 @@ function _cancelLightboxRename() {
   lightboxRenameInput.classList.remove("error");
   lightboxRenameError.textContent = "";
   lightboxFilename.hidden = false;
-  document.querySelector(".lightbox-bar").style.minWidth = "";
+  lightboxBar.style.minWidth = "";
 }
 
 function _confirmLightboxRename() {
+  if (lightboxRenameInput.disabled || lightboxRenameInput.hidden || lightbox.hidden) return;
   const oldName = lightbox.dataset.currentFilename;
   const newName = lightboxRenameInput.value.trim();
 
@@ -438,8 +440,11 @@ function _confirmLightboxRename() {
           decisions.set(newName, col);
         }
         card.dataset.filename = newName;
-        card.querySelector("img").alt = newName;
+        const cardImg = card.querySelector("img");
+        cardImg.alt = newName;
+        cardImg.src = `/api/thumb/${encodeURIComponent(newName)}?t=${Date.now()}`;
         setCardActions(card, col);
+        updateCounts();
         saveState();
       }
       lightbox.dataset.currentFilename = newName;
@@ -613,7 +618,9 @@ renameConfirm.addEventListener("click", () => {
         decisions.set(newName, col);
       }
       renameTarget.dataset.filename = newName;
-      renameTarget.querySelector("img").alt = newName;
+      const cardImg = renameTarget.querySelector("img");
+      cardImg.alt = newName;
+      cardImg.src = `/api/thumb/${encodeURIComponent(newName)}?t=${Date.now()}`;
       setCardActions(renameTarget, col);
       updateCounts();
       saveState();
