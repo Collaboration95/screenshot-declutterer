@@ -470,7 +470,7 @@ We already `stat()` every file in the existing code, so size is free.
 ### Phase 1: Memory Store Foundation
 **Goal:** Fingerprint-based identity + persistent memory, no LLM yet.
 
-#### Step 1.1 — Create `src/ss_dcl/memory.py`
+#### Phase 1A — Create `src/ss_dcl/memory.py`
 
 | Component | Description |
 |-----------|-------------|
@@ -488,7 +488,7 @@ We already `stat()` every file in the existing code, so size is free.
 - Prune stale entries
 - lookup_by_name scans values (since key is fingerprint, not name)
 
-#### Step 1.2 — Integrate MemoryStore into `app.py`
+#### Phase 1B — Integrate MemoryStore into `app.py`
 
 | Change | Details |
 |--------|---------|
@@ -510,7 +510,7 @@ We already `stat()` every file in the existing code, so size is free.
 - Memory survives across simulated sessions
 - Stub suggest-names returns empty
 
-#### Step 1.3 — Frontend awareness (minimal)
+#### Phase 1C — Frontend awareness (minimal)
 
 | Change | Details |
 |--------|---------|
