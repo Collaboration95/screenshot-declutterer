@@ -3,7 +3,7 @@ from unittest.mock import patch
 
 import pytest
 import src.ss_dcl.app as flask_app
-from src.ss_dcl.app import _atomic_write
+from src.ss_dcl.memory import atomic_write
 
 from helpers import _make_png
 
@@ -59,16 +59,23 @@ def test_generate_thumbnail_unit(client):
 def test_atomic_write_creates_file(client):
     _c, desktop = client
     target = desktop / "test_atomic.json"
-    _atomic_write(target, '{"test": true}')
+    atomic_write(target, '{"test": true}')
     assert target.exists()
     assert json.loads(target.read_text()) == {"test": True}
 
 
 def test_atomic_write_cleanup_on_failure(tmp_path):
-    target = tmp_path / "subdir" / "nonexistent" / "file.json"
-    with pytest.raises(FileNotFoundError):
-        _atomic_write(target, "content")
-    assert not target.exists()
+    """Verify temp file cleanup when os.replace fails."""
+    from unittest.mock import patch
+
+    target = tmp_path / "data.json"
+    target.write_text('{"original": true}')
+
+    with patch("os.replace", side_effect=PermissionError("nope")), pytest.raises(PermissionError):
+        atomic_write(target, '{"updated": true}')
+
+    # Original file must be untouched
+    assert json.loads(target.read_text()) == {"original": True}
 
 
 def test_done_with_pattern_mismatch(client):

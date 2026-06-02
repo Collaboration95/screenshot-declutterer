@@ -3,7 +3,6 @@ import json
 import logging
 import os
 import socket
-import tempfile
 import threading
 import time
 import webbrowser
@@ -23,6 +22,7 @@ from flask import (
 )
 from PIL import Image
 from send2trash import send2trash
+from src.ss_dcl.memory import atomic_write
 
 logger = logging.getLogger(__name__)
 
@@ -171,21 +171,9 @@ def api_get_state():
             return jsonify(json.loads(STATE_FILE.read_text()))
         except json.JSONDecodeError:
             logger.warning("State file corruption detected on read, resetting")
-            _atomic_write(STATE_FILE, json.dumps({"decisions": {}}))
+            atomic_write(STATE_FILE, json.dumps({"decisions": {}}))
             return jsonify({"decisions": {}})
     return jsonify({"decisions": {}})
-
-
-def _atomic_write(path: Path, content: str) -> None:
-    tmp_fd, tmp_path = tempfile.mkstemp(dir=path.parent, suffix=".tmp")
-    try:
-        with os.fdopen(tmp_fd, "w") as f:
-            f.write(content)
-        os.replace(tmp_path, path)
-    except BaseException:
-        with contextlib.suppress(OSError):
-            os.unlink(tmp_path)
-        raise
 
 
 @app.route("/api/state", methods=["PUT"])
@@ -195,7 +183,7 @@ def api_save_state():
     data = request.get_json(silent=True) or {}
     if not isinstance(data, dict) or "decisions" not in data:
         abort(400)
-    _atomic_write(STATE_FILE, json.dumps(data))
+    atomic_write(STATE_FILE, json.dumps(data))
     return jsonify({"ok": True})
 
 
@@ -237,7 +225,7 @@ def api_done():
             decisions = state.get("decisions", {})
             for fn in filenames:
                 decisions.pop(fn, None)
-            _atomic_write(STATE_FILE, json.dumps(state))
+            atomic_write(STATE_FILE, json.dumps(state))
         except (json.JSONDecodeError, KeyError):
             logger.warning("State file corruption detected during cleanup")
 
@@ -288,7 +276,7 @@ def api_rename():
             decisions = state.get("decisions", {})
             if old_name in decisions:
                 decisions[new_name] = decisions.pop(old_name)
-                _atomic_write(STATE_FILE, json.dumps(state))
+                atomic_write(STATE_FILE, json.dumps(state))
         except (json.JSONDecodeError, KeyError):
             logger.warning("State file corruption detected during rename")
 

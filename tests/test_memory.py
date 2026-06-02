@@ -124,26 +124,30 @@ class TestAtomicWrite:
         atomic_write(target, '{"new": true}')
         assert json.loads(target.read_text()) == {"new": True}
 
-    def test_cleanup_on_failure(self, tmp_path):
-        """atomic_write cleans up temp file on write failure."""
+    def test_temp_file_cleaned_up_on_os_error(self, tmp_path):
+        """Verify temp file is removed when os.replace fails."""
+        from unittest.mock import patch
+
         target = tmp_path / "data.json"
         target.write_text('{"original": true}')
-        # Force a write failure by making the target read-only directory
-        # We test indirectly: write to valid path works fine
-        atomic_write(target, '{"updated": true}')
-        assert json.loads(target.read_text()) == {"updated": True}
 
-    def test_no_partial_writes(self, tmp_path):
-        """On crash mid-write, the original file is untouched."""
-        target = tmp_path / "state.json"
-        original = '{"original": true}'
-        target.write_text(original)
+        with (
+            patch("os.replace", side_effect=PermissionError("denied")),
+            pytest.raises(PermissionError),
+        ):
+            atomic_write(target, '{"updated": true}')
 
-        # Simulate a failed write by writing garbage then raising
-        # (atomic_write protects against this via temp file)
-        atomic_write(target, '{"updated": true}')
-        # Original should be replaced
-        assert json.loads(target.read_text()) == {"updated": True}
+        # Original must be untouched
+        assert json.loads(target.read_text()) == {"original": True}
+        # No stale temp files left behind
+        tmps = list(tmp_path.glob("*.tmp"))
+        assert len(tmps) == 0
+
+    def test_creates_parent_dirs_on_save(self, tmp_path):
+        """atomic_write creates missing parent directories."""
+        target = tmp_path / "deep" / "nested" / "file.json"
+        atomic_write(target, "content")
+        assert target.exists()
 
 
 # ── MemoryStore CRUD ─────────────────────────────────────────────
