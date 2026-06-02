@@ -74,7 +74,6 @@ All in `static/app.js`:
 | THUMB_DIR | `~/.cache/ss-dcl/thumbs/` |
 | STATE_FILE | `~/.ss-dcl/state.json` |
 | MEMORY_FILE | `~/.ss-dcl/memory.json` |
-| STATE_FILE | `~/.ss-dcl/state.json` |
 | THUMB_SIZE | `(400, 300)` |
 
 ## Dependencies
