@@ -70,6 +70,21 @@ SMARTER FEATURES
            Group screenshots by application or window to make bulk
            triage faster.
 
+[ ] FE-016  LLM-powered smart rename
+           Integrate a local LLM (Gemma via Ollama or MLX) to
+           generate plausible screenshot names. Requires persistent
+           file memory (FE-017) to avoid re-processing.
+           Design doc: docs/design-llm-rename-prerequisites.md
+
+[ ] FE-017  Persistent file memory store
+           Track screenshot identity across sessions using metadata
+           fingerprints. Foundation for FE-016 (LLM rename) and
+           FE-011 (auto-categorization).
+           Phase 1A (memory module) is done. Remaining phases:
+             1B: integrate into app.py routes
+             1C: frontend awareness (data attributes, badges)
+           Design doc: docs/design-llm-rename-prerequisites.md
+
 
 QUALITY OF LIFE
 ---------------

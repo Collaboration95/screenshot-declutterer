@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0] - 2026-06-02
+
+### Added
+
+- Persistent file memory store (`src/ss_dcl/memory.py`) — tracks screenshot identity across sessions using metadata fingerprints (`"{name}|{size}"`) instead of content hashing, requiring zero file I/O (#63)
+- `MemoryStore` class with CRUD operations, status lifecycle tracking (`new → suggested → renamed/ignored/trashed`), and atomic JSON persistence
+- `FileRecord` dataclass with extensible `meta` field for future LLM categorization and clustering features
+- `compute_fingerprint()` — stable identity from filename + file size (already available via `stat()`)
+- `atomic_write()` — shared utility for crash-safe file writes (extracted from app.py)
+- `prune_stale()` — maintenance method to garbage-collect orphaned memory entries
+- Design document at `docs/design-llm-rename-prerequisites.md` outlining the full 4-phase LLM integration plan
+- 60 new unit tests for the memory store covering CRUD, status transitions, persistence, edge cases, and corruption recovery
+
 ## [0.2.0] - 2026-06-02
 
 ### Added

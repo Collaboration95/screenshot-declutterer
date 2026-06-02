@@ -12,11 +12,13 @@ Single-file backend + single-file frontend. Zero build steps.
 
 ```
 src/ss_dcl/app.py        Flask backend (all routes, scanning, thumbnails, state, trash, rename, port detection)
+src/ss_dcl/memory.py    Persistent file memory store (fingerprint-keyed identity, status tracking, atomic persistence)
 static/app.js            Frontend JS (Kanban, drag-and-drop, undo, lightbox, rename modal, confirm modal)
 static/style.css         All CSS (Kanban layout, cards, lightbox, rename modal, confirm modal)
 templates/index.html     SPA shell — three-column layout + lightbox + rename modal + confirm modal
 tests/conftest.py        Shared pytest fixtures and helpers
 tests/test_routes_*.py   Route-specific test files (index, screenshots, image, thumb, state, done, rename)
+tests/test_memory.py     Memory store unit tests (fingerprint, CRUD, persistence, status transitions, edge cases)
 tests/test_port_flexibility.py  Port auto-detection tests
 tests/test_edge_cases.py Edge case tests
 tests/test_frontend.py   Frontend integration tests
@@ -70,6 +72,8 @@ All in `static/app.js`:
 | DESKTOP | `~/Desktop` |
 | SCREENSHOT_GLOB | `Screenshot*.*` (filtered by SUPPORTED_IMAGE_EXTENSION) |
 | THUMB_DIR | `~/.cache/ss-dcl/thumbs/` |
+| STATE_FILE | `~/.ss-dcl/state.json` |
+| MEMORY_FILE | `~/.ss-dcl/memory.json` |
 | STATE_FILE | `~/.ss-dcl/state.json` |
 | THUMB_SIZE | `(400, 300)` |
 
