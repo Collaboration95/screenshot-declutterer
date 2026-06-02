@@ -93,6 +93,14 @@ def _now_iso() -> str:
     return datetime.now(tz=timezone.utc).isoformat()
 
 
+def _parse_iso(dt_str: str) -> datetime:
+    """Parse an ISO 8601 datetime string, returning epoch on failure."""
+    try:
+        return datetime.fromisoformat(dt_str)
+    except (ValueError, TypeError):
+        return datetime(1970, 1, 1, tzinfo=timezone.utc)
+
+
 # ---------------------------------------------------------------------------
 # MemoryStore
 # ---------------------------------------------------------------------------
@@ -290,9 +298,20 @@ class MemoryStore:
     def prune_stale(self, active_fingerprints: set[str], max_age_days: int = 90) -> int:
         """Remove records not in *active_fingerprints* and older than *max_age_days*.
 
+        Records that are still within the age window are kept even if
+        inactive (no longer on disk), preserving the ability to recognize
+        recently trashed or renamed files if they reappear.
+
         Returns the number of pruned records.
         """
-        to_prune = [fp for fp in self._files if fp not in active_fingerprints]
+        now = datetime.now(tz=timezone.utc)
+        to_prune: list[str] = []
+        for fp, rec in self._files.items():
+            if fp in active_fingerprints:
+                continue
+            updated = _parse_iso(rec.last_updated)
+            if (now - updated).days > max_age_days:
+                to_prune.append(fp)
         for fp in to_prune:
             del self._files[fp]
         return len(to_prune)

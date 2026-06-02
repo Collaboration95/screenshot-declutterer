@@ -12,6 +12,7 @@ Covers:
 """
 
 import json
+from datetime import datetime, timezone
 
 import pytest
 from src.ss_dcl.memory import (
@@ -469,30 +470,75 @@ class TestGetUnprocessed:
 
 
 class TestPruneStale:
-    def test_prunes_inactive(self, tmp_path):
+    def _make_old_record(self, store, name, size, days_old=100):
+        """Create a record with last_updated set to days_old days ago."""
+        from datetime import timedelta
+
+        rec = store.record_file(name, size)
+        # Wind back last_updated to simulate age
+        old_time = datetime.now(tz=timezone.utc) - timedelta(days=days_old)
+        rec.last_updated = old_time.isoformat()
+        return rec
+
+    def test_prunes_old_inactive_records(self, tmp_path):
         store = MemoryStore(tmp_path / "memory.json")
         rec1 = store.record_file("Screenshot A.png", 100)
-        store.record_file("Screenshot B.png", 200)  # stale — not in active
+        # Make B old and inactive
+        self._make_old_record(store, "Screenshot B.png", 200, days_old=100)
 
         pruned = store.prune_stale(active_fingerprints={rec1.fingerprint})
         assert pruned == 1
         assert store.count == 1
         assert store.lookup(rec1.fingerprint) is not None
 
-    def test_prune_all(self, tmp_path):
+    def test_keeps_recent_inactive_records(self, tmp_path):
+        """Recently trashed/renamed files should not be pruned."""
         store = MemoryStore(tmp_path / "memory.json")
-        store.record_file("Screenshot A.png", 100)
-        store.record_file("Screenshot B.png", 200)
-        pruned = store.prune_stale(active_fingerprints=set())
+        rec1 = store.record_file("Screenshot A.png", 100)
+        # B is inactive but was updated only 10 days ago
+        rec2 = self._make_old_record(store, "Screenshot B.png", 200, days_old=10)
+
+        pruned = store.prune_stale(active_fingerprints={rec1.fingerprint}, max_age_days=90)
+        assert pruned == 0
+        assert store.count == 2
+        assert store.lookup(rec2.fingerprint) is not None
+
+    def test_prune_all_old(self, tmp_path):
+        store = MemoryStore(tmp_path / "memory.json")
+        self._make_old_record(store, "Screenshot A.png", 100, days_old=100)
+        self._make_old_record(store, "Screenshot B.png", 200, days_old=100)
+        pruned = store.prune_stale(active_fingerprints=set(), max_age_days=90)
         assert pruned == 2
         assert store.count == 0
 
-    def test_prune_none(self, tmp_path):
+    def test_prune_none_when_all_active(self, tmp_path):
         store = MemoryStore(tmp_path / "memory.json")
         rec = store.record_file("Screenshot A.png", 100)
         pruned = store.prune_stale(active_fingerprints={rec.fingerprint})
         assert pruned == 0
         assert store.count == 1
+
+    def test_prune_respects_age_threshold_boundary(self, tmp_path):
+        """A record exactly at the threshold should NOT be pruned."""
+        store = MemoryStore(tmp_path / "memory.json")
+        # Record is exactly 90 days old — should be kept (uses >, not >=)
+        self._make_old_record(store, "Screenshot A.png", 100, days_old=90)
+        pruned = store.prune_stale(active_fingerprints=set(), max_age_days=90)
+        assert pruned == 0
+        assert store.count == 1
+
+    def test_trashed_file_preserved_within_window(self, tmp_path):
+        """Simulate the restore-from-trash scenario."""
+        store = MemoryStore(tmp_path / "memory.json")
+        rec = store.record_file("Screenshot A.png", 100)
+        store.mark_trashed(rec.fingerprint)
+        # File was just trashed (last_updated is now), not on Desktop
+        pruned = store.prune_stale(active_fingerprints=set(), max_age_days=90)
+        assert pruned == 0
+        assert store.count == 1
+        # If file reappears, record_file is idempotent and returns the trashed record
+        rec2 = store.record_file("Screenshot A.png", 100)
+        assert rec2.status == "trashed"
 
 
 # ── Edge cases ───────────────────────────────────────────────────
