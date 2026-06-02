@@ -34,6 +34,22 @@ def test_index_has_lightbox(client):
     assert 'id="lightbox"' in html
 
 
+def test_index_has_lightbox_rename_bar(client):
+    c, _ = client
+    html = c.get("/").data.decode()
+    assert 'id="lightbox-filename"' in html
+    assert 'id="lightbox-rename-input"' in html
+    assert 'id="lightbox-rename-error"' in html
+    assert "lightbox-bar" in html
+
+
+def test_index_has_card_tooltip(client):
+    c, _ = client
+    html = c.get("/").data.decode()
+    assert 'id="card-tooltip"' in html
+    assert "card-tooltip" in html
+
+
 def test_index_has_confirm_modal(client):
     c, _ = client
     html = c.get("/").data.decode()

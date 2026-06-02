@@ -56,10 +56,20 @@
     </section>
   </main>
 
+  <!-- Card filename tooltip (shared, positioned via JS) -->
+  <div id="card-tooltip" class="card-tooltip" aria-hidden="true"></div>
+
   <!-- Lightbox -->
   <div id="lightbox" class="lightbox" hidden role="dialog" aria-label="Image preview">
     <div class="lightbox-backdrop"></div>
-    <img class="lightbox-img" id="lightbox-img" src="" alt="" decoding="async" />
+    <div class="lightbox-content">
+      <img class="lightbox-img" id="lightbox-img" src="" alt="" decoding="async" />
+      <div class="lightbox-bar">
+        <span class="lightbox-filename" id="lightbox-filename" role="button" tabindex="0" aria-label="Click to rename"></span>
+        <input class="lightbox-rename-input" id="lightbox-rename-input" type="text" autocomplete="off" spellcheck="false" hidden aria-label="Rename filename" />
+        <p id="lightbox-rename-error" class="lightbox-rename-error" role="alert"></p>
+      </div>
+    </div>
     <button class="lightbox-close" id="lightbox-close" aria-label="Close">&times;</button>
   </div>
 

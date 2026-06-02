@@ -40,6 +40,13 @@ NEW ACTIONS
 UX IMPROVEMENTS
 ---------------
 
+[ ] FE-010  Inline filename display & lightbox rename
+            Show filename on card hover (tooltip) and in the lightbox
+            as an iOS-style semi-transparent rename bar at the bottom.
+            Click to edit inline — no modal needed. Reuses existing
+            POST /api/rename endpoint. No backend changes required.
+            Design doc: docs/design-fe010-inline-rename.md
+
 [ ] FE-007  Keyboard-driven workflow
            Vim-style keys (j/k to cycle cards, h/l to triage) for
            fast keyboard-only operation.

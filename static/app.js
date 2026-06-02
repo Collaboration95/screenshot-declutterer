@@ -29,6 +29,11 @@ const sortSelect = document.getElementById("sort-select");
 
 const lightbox    = document.getElementById("lightbox");
 const lightboxImg = document.getElementById("lightbox-img");
+const lightboxFilename = document.getElementById("lightbox-filename");
+const lightboxRenameInput = document.getElementById("lightbox-rename-input");
+const lightboxRenameError = document.getElementById("lightbox-rename-error");
+const lightboxBar = document.querySelector(".lightbox-bar");
+const cardTooltip = document.getElementById("card-tooltip");
 
 const confirmModal = document.getElementById("confirm-modal");
 const modalTitle   = document.getElementById("modal-title");
@@ -153,6 +158,7 @@ function makeCard(filename, column) {
   attachDrag(card);
   attachPreview(card);
   attachKeyboard(card);
+  attachTooltip(card);
 
   return card;
 }
@@ -277,6 +283,7 @@ function openLightbox(card) {
   lightbox.dataset.currentFilename = card.dataset.filename;
   lightboxImg.src = `/api/image/${encodeURIComponent(card.dataset.filename)}`;
   lightboxImg.alt = sanitise(card.dataset.filename);
+  _updateLightboxBar(card.dataset.filename);
   lightbox.hidden = false;
 }
 
@@ -288,18 +295,170 @@ function _lightboxNavigate(direction) {
   const next = idx + direction;
   if (next < 0 || next >= allCards.length) return;
   const nextCard = allCards[next];
-  lightbox.dataset.currentFilename = nextCard.dataset.filename;
-  lightboxImg.src = `/api/image/${encodeURIComponent(nextCard.dataset.filename)}`;
-  lightboxImg.alt = sanitise(nextCard.dataset.filename);
+  const nextName = nextCard.dataset.filename;
+  lightbox.dataset.currentFilename = nextName;
+  lightboxImg.src = `/api/image/${encodeURIComponent(nextName)}`;
+  lightboxImg.alt = sanitise(nextName);
+  _updateLightboxBar(nextName);
 }
 
 function closeLightbox() {
   lightbox.hidden = true;
   lightboxImg.src = "";
+  lightboxRenameInput.hidden = true;
+  lightboxRenameInput.classList.remove("error");
+  lightboxRenameError.textContent = "";
+  lightboxFilename.hidden = false;
 }
 
 document.getElementById("lightbox-close").addEventListener("click", closeLightbox);
 document.querySelector(".lightbox-backdrop").addEventListener("click", closeLightbox);
+
+// ── Card tooltip ───────────────────────────────────────────────────────────
+function attachTooltip(card) {
+  card.addEventListener("mouseenter", () => {
+    cardTooltip.textContent = card.dataset.filename;
+    cardTooltip.classList.add("visible");
+    requestAnimationFrame(() => {
+      const rect = card.getBoundingClientRect();
+      const tooltipRect = cardTooltip.getBoundingClientRect();
+      let left = rect.left + rect.width / 2 - tooltipRect.width / 2;
+      let top = rect.bottom - tooltipRect.height - 10;
+      if (left < 4) left = 4;
+      if (left + tooltipRect.width > window.innerWidth - 4) {
+        left = window.innerWidth - tooltipRect.width - 4;
+      }
+      if (top < rect.top + 4) {
+        top = rect.top + 4;
+      }
+      cardTooltip.style.left = left + "px";
+      cardTooltip.style.top = top + "px";
+    });
+  });
+  card.addEventListener("mouseleave", () => {
+    cardTooltip.classList.remove("visible");
+  });
+}
+
+// ── Lightbox rename bar ────────────────────────────────────────────────────
+function _updateLightboxBar(filename) {
+  lightboxFilename.textContent = filename;
+  lightboxRenameInput.value = filename;
+  lightboxRenameInput.hidden = true;
+  lightboxFilename.hidden = false;
+  lightboxRenameError.textContent = "";
+  lightboxRenameInput.classList.remove("error");
+  lightboxBar.style.minWidth = "";
+}
+
+lightboxFilename.addEventListener("click", () => _startLightboxRename());
+lightboxFilename.addEventListener("keydown", e => {
+  if (e.key === "Enter" || e.key === " ") { e.preventDefault(); _startLightboxRename(); }
+});
+
+function _startLightboxRename() {
+  const filename = lightbox.dataset.currentFilename;
+  const bar = document.querySelector(".lightbox-bar");
+  bar.style.minWidth = bar.offsetWidth + "px";
+  lightboxFilename.hidden = true;
+  lightboxRenameInput.hidden = false;
+  lightboxRenameInput.value = filename;
+  lightboxRenameInput.classList.remove("error");
+  lightboxRenameError.textContent = "";
+  lightboxRenameInput.focus();
+  const dotIdx = filename.lastIndexOf(".");
+  if (dotIdx > 0) {
+    lightboxRenameInput.setSelectionRange(0, dotIdx);
+  } else {
+    lightboxRenameInput.select();
+  }
+}
+
+lightboxRenameInput.addEventListener("keydown", e => {
+  if (e.key === "Enter") { e.preventDefault(); _confirmLightboxRename(); }
+  if (e.key === "Escape") { e.stopPropagation(); _cancelLightboxRename(); }
+});
+
+lightboxRenameInput.addEventListener("blur", () => {
+  if (!lightboxRenameInput.hidden) _confirmLightboxRename();
+});
+
+function _cancelLightboxRename() {
+  lightboxRenameInput.hidden = true;
+  lightboxRenameInput.classList.remove("error");
+  lightboxRenameError.textContent = "";
+  lightboxFilename.hidden = false;
+  lightboxBar.style.minWidth = "";
+}
+
+function _confirmLightboxRename() {
+  if (lightboxRenameInput.disabled || lightboxRenameInput.hidden || lightbox.hidden) return;
+  const oldName = lightbox.dataset.currentFilename;
+  const newName = lightboxRenameInput.value.trim();
+
+  if (!newName) {
+    lightboxRenameInput.classList.add("error");
+    lightboxRenameError.textContent = "Filename cannot be empty.";
+    lightboxRenameInput.focus();
+    return;
+  }
+  if (newName === oldName) {
+    _cancelLightboxRename();
+    return;
+  }
+  if (newName !== Path_name(newName)) {
+    lightboxRenameInput.classList.add("error");
+    lightboxRenameError.textContent = "Filename must not contain path separators.";
+    lightboxRenameInput.focus();
+    return;
+  }
+
+  lightboxRenameInput.disabled = true;
+  lightboxRenameError.textContent = "";
+
+  fetch("/api/rename", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ old_name: oldName, new_name: newName }),
+  })
+    .then(r => r.json())
+    .then(data => {
+      lightboxRenameInput.disabled = false;
+      if (!data.ok) {
+        lightboxRenameInput.classList.add("error");
+        lightboxRenameError.textContent = data.error || "Rename failed.";
+        lightboxRenameInput.focus();
+        return;
+      }
+      const card = document.querySelector(`[data-filename="${CSS.escape(oldName)}"]`);
+      if (card) {
+        const col = getCardColumn(card);
+        if (col === "unsorted") {
+          decisions.delete(oldName);
+        } else {
+          decisions.delete(oldName);
+          decisions.set(newName, col);
+        }
+        card.dataset.filename = newName;
+        const cardImg = card.querySelector("img");
+        cardImg.alt = newName;
+        cardImg.src = `/api/thumb/${encodeURIComponent(newName)}?t=${Date.now()}`;
+        setCardActions(card, col);
+        updateCounts();
+        saveState();
+      }
+      lightbox.dataset.currentFilename = newName;
+      lightboxImg.src = `/api/image/${encodeURIComponent(newName)}?t=${Date.now()}`;
+      lightboxImg.alt = newName;
+      _updateLightboxBar(newName);
+    })
+    .catch(() => {
+      lightboxRenameInput.disabled = false;
+      lightboxRenameInput.classList.add("error");
+      lightboxRenameError.textContent = "Network error — please try again.";
+      lightboxRenameInput.focus();
+    });
+}
 
 // ── Keyboard shortcuts ───────────────────────────────────────────────────────
 function attachKeyboard(card) {
@@ -319,10 +478,17 @@ function attachKeyboard(card) {
 
 document.addEventListener("keydown", e => {
   if (!lightbox.hidden) {
+    if (document.activeElement === lightboxRenameInput) {
+      return;
+    }
     if (e.key === "ArrowLeft") { e.preventDefault(); _lightboxNavigate(-1); return; }
     if (e.key === "ArrowRight") { e.preventDefault(); _lightboxNavigate(1); return; }
   }
   if (e.key === "Escape") {
+    if (!lightbox.hidden && !lightboxRenameInput.hidden) {
+      _cancelLightboxRename();
+      return;
+    }
     if (!lightbox.hidden) { closeLightbox(); return; }
     if (!confirmModal.hidden) { closeModal(); return; }
     if (!renameModal.hidden) { closeRenameModal(); return; }
@@ -452,7 +618,9 @@ renameConfirm.addEventListener("click", () => {
         decisions.set(newName, col);
       }
       renameTarget.dataset.filename = newName;
-      renameTarget.querySelector("img").alt = newName;
+      const cardImg = renameTarget.querySelector("img");
+      cardImg.alt = newName;
+      cardImg.src = `/api/thumb/${encodeURIComponent(newName)}?t=${Date.now()}`;
       setCardActions(renameTarget, col);
       updateCounts();
       saveState();
