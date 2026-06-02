@@ -366,6 +366,31 @@ header h1 {
   background: #0062cc;
 }
 
+/* ── Card filename tooltip ───────────────────────────────── */
+.card-tooltip {
+  position: fixed;
+  z-index: 50;
+  background: rgba(0, 0, 0, 0.75);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  color: #fff;
+  padding: 6px 12px;
+  border-radius: 8px;
+  font-size: 0.8rem;
+  font-family: -apple-system, "SF Mono", "Menlo", monospace;
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 150ms ease;
+}
+
+.card-tooltip.visible {
+  opacity: 1;
+}
+
 /* ── Empty state ─────────────────────────────────────────── */
 #empty-msg {
   text-align: center;
@@ -396,10 +421,20 @@ header h1 {
   backdrop-filter: blur(8px);
 }
 
+.lightbox-content {
+  position: relative;
+  z-index: 1;
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  max-height: 90vh;
+}
+
 .lightbox-img {
   position: relative;
   max-width: 90vw;
-  max-height: 90vh;
+  max-height: calc(90vh - 80px);
   border-radius: 8px;
   box-shadow: 0 8px 40px rgba(0, 0, 0, 0.5);
   object-fit: contain;
@@ -422,10 +457,75 @@ header h1 {
   justify-content: center;
   transition: background 0.15s;
   backdrop-filter: blur(4px);
+  z-index: 2;
 }
 
 .lightbox-close:hover {
   background: rgba(255, 255, 255, 0.3);
+}
+
+/* ── Lightbox rename bar ────────────────────────────────── */
+.lightbox-bar {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 14px 24px;
+  background: rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border-radius: 14px;
+  z-index: 2;
+  min-width: 280px;
+  max-width: 60vw;
+}
+
+.lightbox-filename {
+  color: rgba(255, 255, 255, 0.9);
+  font-size: 1rem;
+  font-family: -apple-system, "SF Mono", "Menlo", monospace;
+  padding: 6px 16px;
+  border-radius: 8px;
+  cursor: text;
+  transition: background 200ms ease;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: center;
+}
+
+.lightbox-filename:hover {
+  background: rgba(255, 255, 255, 0.15);
+}
+
+.lightbox-rename-input {
+  font-size: 1rem;
+  font-family: -apple-system, "SF Mono", "Menlo", "Consolas", monospace;
+  background: rgba(255, 255, 255, 0.2);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  color: #fff;
+  border: 2px solid rgba(0, 122, 255, 0.8);
+  border-radius: 8px;
+  padding: 6px 16px;
+  outline: none;
+  max-width: 100%;
+  width: 100%;
+  text-align: center;
+  box-shadow: 0 0 0 3px rgba(0, 122, 255, 0.2);
+}
+
+.lightbox-rename-input.error {
+  border-color: rgba(255, 59, 48, 0.9);
+  box-shadow: 0 0 0 3px rgba(255, 59, 48, 0.2);
+}
+
+.lightbox-rename-error {
+  color: #ff3b30;
+  font-size: 0.75rem;
+  min-height: 0;
+  margin-top: 4px;
+  text-align: center;
 }
 
 /* ── Confirm modal ───────────────────────────────────────── */
