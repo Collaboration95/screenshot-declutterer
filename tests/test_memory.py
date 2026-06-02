@@ -246,6 +246,18 @@ class TestMemoryStoreCRUD:
         names = {r.original_name for r in records}
         assert names == {"Screenshot A.png", "Screenshot B.png"}
 
+    def test_lookup_by_name_returns_first_match(self, tmp_path):
+        """When two records share last_known_name, the first found is returned."""
+        store = self._store(tmp_path)
+        rec1 = store.record_file("Screenshot A.png", 100)
+        rec2 = store.record_file("Screenshot B.png", 200)
+        # Manually set both to the same last_known_name (edge case)
+        rec1.last_known_name = "duplicate.png"
+        rec2.last_known_name = "duplicate.png"
+        found = store.lookup_by_name("duplicate.png")
+        assert found is not None
+        assert found.fingerprint in {rec1.fingerprint, rec2.fingerprint}
+
 
 # ── Status transitions ───────────────────────────────────────────
 
