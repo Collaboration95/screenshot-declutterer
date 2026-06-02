@@ -145,6 +145,13 @@ class MemoryStore:
         if not isinstance(raw, dict) or "files" not in raw:
             logger.warning("Memory file has unexpected structure, resetting")
             return
+        if raw.get("version") != self.VERSION:
+            logger.warning(
+                "Memory file version mismatch (got %s, expected %s), resetting",
+                raw.get("version"),
+                self.VERSION,
+            )
+            return
         for fp, entry in raw["files"].items():
             if not isinstance(entry, dict):
                 continue

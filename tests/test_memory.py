@@ -391,6 +391,26 @@ class TestPersistence:
         store.load()
         assert store.count == 0
 
+    def test_load_wrong_version_resets(self, tmp_path):
+        path = tmp_path / "memory.json"
+        data = {
+            "version": 99,
+            "files": {
+                "Screenshot A.png|100": {
+                    "fingerprint": "Screenshot A.png|100",
+                    "original_name": "Screenshot A.png",
+                    "last_known_name": "Screenshot A.png",
+                    "size": 100,
+                    "extension": ".png",
+                    "status": "new",
+                },
+            },
+        }
+        path.write_text(json.dumps(data))
+        store = MemoryStore(path)
+        store.load()
+        assert store.count == 0  # rejected due to version mismatch
+
     def test_load_skips_malformed_entry(self, tmp_path):
         path = tmp_path / "memory.json"
         # One good entry, one bad entry with invalid status
