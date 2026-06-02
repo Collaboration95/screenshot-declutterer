@@ -418,6 +418,38 @@ class TestPersistence:
         assert store.count == 1
         assert store.lookup("good.png|100") is not None
 
+    def test_load_uses_dict_key_as_fingerprint(self, tmp_path):
+        """If stored fingerprint field disagrees with dict key, dict key wins."""
+        path = tmp_path / "memory.json"
+        data = {
+            "version": 1,
+            "files": {
+                "correct_key.png|100": {
+                    "fingerprint": "wrong_value.png|999",
+                    "original_name": "test.png",
+                    "last_known_name": "test.png",
+                    "size": 100,
+                    "extension": ".png",
+                    "status": "new",
+                },
+            },
+        }
+        path.write_text(json.dumps(data))
+
+        store = MemoryStore(path)
+        store.load()
+        rec = store.lookup("correct_key.png|100")
+        assert rec is not None
+        # Fingerprint should be the dict key, not the stored value
+        assert rec.fingerprint == "correct_key.png|100"
+
+        # After save→load cycle, key should remain stable
+        store.save()
+        store2 = MemoryStore(path)
+        store2.load()
+        assert store2.lookup("correct_key.png|100") is not None
+        assert store2.count == 1
+
     def test_load_replaces_in_memory_data(self, tmp_path):
         """Loading replaces whatever was in memory."""
         path = tmp_path / "memory.json"

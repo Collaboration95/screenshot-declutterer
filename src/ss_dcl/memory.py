@@ -150,7 +150,7 @@ class MemoryStore:
                 continue
             try:
                 self._files[fp] = FileRecord(
-                    fingerprint=entry.get("fingerprint", fp),
+                    fingerprint=fp,
                     original_name=entry.get("original_name", ""),
                     last_known_name=entry.get("last_known_name", ""),
                     size=entry.get("size", 0),
