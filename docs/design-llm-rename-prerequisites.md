@@ -703,3 +703,78 @@ No phase depends on a later phase.
 - **Corrupted memory.json:** Same recovery pattern as state.json — reset to empty.
 - **Very large Desktop (200+ screenshots):** Fingerprint computation is O(n) string
   operations. Memory JSON is small (~1KB per file). No performance concern.
+
+---
+
+## 11. Empirical Model Evaluation (2026-06-03)
+
+Hands-on testing of candidate vision models via Ollama on Apple Silicon (16 GB unified memory).
+
+### Test Setup
+
+- **Machine:** Apple Silicon Mac, 16 GB RAM
+- **Ollama version:** 0.22.0
+- **Prompt:** *"Describe this screenshot in 3-5 words as a filename."*
+- **Test images:** Real `~/Desktop` screenshots (1-4 MB PNG files)
+- **Method:** Ollama HTTP API (`/api/chat` with base64-encoded images, `stream: false`)
+
+### Results
+
+| Model | Disk Size | GPU RAM | Quality | Verdict |
+|-------|-----------|---------|---------|---------|
+| **gemma4:e2b** (Q4_K_M) | 6.7 GB | 7.7 GB | ✅ Excellent | **Recommended** |
+| **moondream** | 1.7 GB | 1.3 GB | ❌ Broken | Unusable |
+| **smolvlm** | — | — | — | Not available on Ollama |
+| **minicpm-v** | — | — | — | Pull failed (too large/slow) |
+
+### gemma4:e2b — Sample Outputs
+
+| Screenshot | Original Name | Generated Name |
+|------------|--------------|----------------|
+| Chat thread screenshot | `Screenshot 2025-11-27 at 11.02.40 PM.png` | "Customer onboarding discussion thread" |
+| Messages screenshot | `Screenshot 2025-12-24 at 6.43.58 PM.png` | "Salary delay messages" |
+| Video call screenshot | `Screenshot 2025-05-15 at 10.34.00 PM.png` | "Two men video call" |
+
+Output quality is consistently 3-4 words, descriptive, and filename-appropriate.
+
+### moondream — Sample Outputs
+
+| Screenshot | Output |
+|------------|--------|
+| Chat thread screenshot | *(empty)* |
+| Messages screenshot | *(empty)* |
+| Messages screenshot | "!!!IMPORTANT!!!" |
+
+Produces either empty responses or incoherent output. Not suitable for this task
+despite its small footprint. The model appears to be a proof-of-concept for edge
+deployment, not production-quality vision.
+
+### Key Findings
+
+1. **gemma4:e2b at 7.7 GB GPU RAM is the only viable option** on Ollama right now.
+   Smaller vision models (moondream) are too weak; mid-range models (smolvlm) aren't
+   available via Ollama yet.
+
+2. **7.7 GB on a 16 GB machine is tight but workable** — leaves ~8 GB for OS,
+   browser, IDE. Models auto-unload after 5 min of inactivity (configurable via
+   `OLLAMA_KEEP_ALIVE` env var).
+
+3. **Memory management strategy for Phase 2:**
+   - Set `OLLAMA_KEEP_ALIVE=0` in our integration so the model unloads immediately
+     after each inference batch, freeing GPU RAM
+   - Or batch all screenshots in one session, then explicitly unload
+   - Document the RAM requirement in README so users know the trade-off
+
+4. **Future option — MLX with 4-bit quantization:** The same Gemma 4 E2B model
+   via MLX (`mlx-community/gemma-4-e2b-it-4bit`) may use only ~2-3 GB RAM.
+   This would be the ideal path if MLX's Python API matures. The `LLMProvider`
+   abstraction makes this a drop-in replacement.
+
+5. **Fallback strategy:** If the model is unavailable (Ollama not running, model
+   not pulled), the app should degrade gracefully — show a "Suggest Names" button
+   that's disabled with a tooltip explaining the requirement.
+
+### Decision
+
+**Use `gemma4:e2b` via Ollama for Phase 2.** Revisit MLX path when it offers
+a clear memory advantage without adding fragility.
