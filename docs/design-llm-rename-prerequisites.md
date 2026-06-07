@@ -778,3 +778,126 @@ deployment, not production-quality vision.
 
 **Use `gemma4:e2b` via Ollama for Phase 2.** Revisit MLX path when it offers
 a clear memory advantage without adding fragility.
+
+---
+
+## 12. Alternative Approach: OCR + Text-Only LLM (Hybrid Pipeline)
+
+*Added: 2026-06-03*
+
+### The Idea
+
+Instead of feeding the full image to a vision LLM (which requires a large model
+like gemma4:e2b at 7.7 GB), split the work:
+
+1. **OCR via pytesseract** — extract text from the screenshot image
+2. **Tiny text-only LLM** — given the extracted text, generate a short filename
+
+This avoids vision models entirely. The OCR handles the "seeing," the LLM handles
+the "understanding." Text-only LLMs are dramatically smaller than vision models.
+
+### Why This Works for Screenshots
+
+Most screenshots contain prominent text — code, chat messages, error dialogs,
+settings panels, web pages, etc. OCR captures the essence of the content, which
+is exactly what you'd use to name the file.
+
+### OCR Component: pytesseract
+
+| Aspect | Detail |
+|--------|--------|
+| System dep | `tesseract` via Homebrew (`brew install tesseract`) |
+| Python dep | `pytesseract` (tiny wrapper, zero models) |
+| RAM | 0 MB (no GPU needed) |
+| Speed | ~50-200ms per screenshot |
+| Quality | Excellent for screenshots (text on clean backgrounds) |
+| macOS status | Already installed on this machine (Tesseract 5.5.2) |
+
+**Usage:**
+
+```python
+from PIL import Image
+import pytesseract
+
+text = pytesseract.image_to_string(Image.open("screenshot.png"))
+# → "Select a domain\nAutomotive and Machinery\nSkilled Trades..."
+```
+
+### Text-Only LLM Candidates
+
+Since we only process text (not images), models can be much smaller:
+
+| Model | Params | Ollama Size | RAM (loaded) |
+|-------|--------|-------------|--------------|
+| **SmolLM 360M** | 360M | ~700 MB | ~700 MB |
+| **SmolLM 1.7B** | 1.7B | ~3 GB | ~3 GB |
+| **Llama 3.2 1B** | 1B | ~1 GB | ~1 GB |
+| **Qwen 2.5 1.5B** | 1.5B | ~1.5 GB | ~1.5 GB |
+| **Gemma 2 2B** | 2B | ~1.5 GB | ~1.5 GB |
+| **Phi-3 Mini 3.8B** | 3.8B | ~2.5 GB | ~2.5 GB |
+
+All of these are trivial compared to gemma4:e2b at 7.7 GB.
+
+### Proposed Pipeline
+
+```
+┌──────────────┐    ┌──────────────────┐    ┌─────────────────────┐
+│  Screenshot   │───→│  pytesseract OCR  │───→│  Raw extracted text │
+│  (image file) │    │  (0 GPU, 50ms)   │    │  e.g. "Select a     │
+└──────────────┘    └──────────────────┘    │  domain\nAutomotive  │
+                                             │  and Machinery..."  │
+                                             └──────────┬──────────┘
+                                                        │
+                                                        ▼
+                                             ┌─────────────────────┐
+                                             │  Text-only LLM      │
+                                             │  (SmolLM / Qwen /   │
+                                             │   Gemma 2)          │
+                                             │                     │
+                                             │  Prompt:            │
+                                             │  "Given this text   │
+                                             │  from a screenshot, │
+                                             │  suggest a short    │
+                                             │  filename (3-5      │
+                                             │  words): ..."       │
+                                             └──────────┬──────────┘
+                                                        │
+                                                        ▼
+                                             ┌─────────────────────┐
+                                             │  "domain-selection" │
+                                             │  "facetime-contacts"│
+                                             │  "salary-delay-msg" │
+                                             └─────────────────────┘
+```
+
+### Advantages Over Vision LLM
+
+1. **RAM:** ~1-3 GB instead of 7.7 GB — leaves room for the app, browser, IDE
+2. **Speed:** OCR (50ms) + tiny LLM (100ms) ≈ 150ms vs vision LLM ~1-2s
+3. **Availability:** Text models are abundant; vision models are fewer and larger
+4. **No GPU needed:** Tesseract runs on CPU, tiny LLMs can too
+5. **Offline:** Everything runs locally, no network calls
+
+### Drawbacks
+
+1. **Fails on purely visual content:** A screenshot with diagrams, charts, or
+   images-without-text won't produce useful OCR output
+2. **OCR noise:** Tesseract can misread text, producing garbage LLM input
+3. **Two moving parts:** OCR + LLM = two things that can fail independently
+4. **Context loss:** The LLM only sees text, not layout, colors, or visual hierarchy
+
+### Recommendation
+
+Use the hybrid pipeline as the **primary approach** for Phase 2, with the
+vision LLM as a **fallback** for screenshots where OCR yields too little text.
+The `LLMProvider` abstraction supports both paths.
+
+---
+
+### Decision (Revised, 2026-06-03)
+
+**Primary: OCR (pytesseract) + text-only LLM (SmolLM/Qwen/Gemma 2).**
+
+**Fallback: Vision LLM (gemma4:e2b) when OCR produces insufficient text.**
+
+The LLMProvider abstraction in Phase 2 should support both paths transparently.
