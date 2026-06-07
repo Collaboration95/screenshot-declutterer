@@ -901,3 +901,116 @@ The `LLMProvider` abstraction supports both paths.
 **Fallback: Vision LLM (gemma4:e2b) when OCR produces insufficient text.**
 
 The LLMProvider abstraction in Phase 2 should support both paths transparently.
+
+---
+
+## 13. Evaluation Framework
+
+*Added: 2026-06-03*
+
+Before committing to a model, we evaluate candidates against a standardised
+benchmark using `tools/eval-screenshot-names.py`.
+
+### Test Data
+
+Random sample of 10-15 screenshots from `~/Desktop`, covering diverse content:
+- Source code (editor screenshots)
+- Web pages (browser screenshots)
+- Chat / messaging (FaceTime, iMessage, Slack)
+- Settings / configuration panels
+- Terminal output
+- Documents / PDFs
+
+### Evaluation Script
+
+**Location:** `tools/eval-screenshot-names.py`
+
+```bash
+uv run python tools/eval-screenshot-names.py               # 10 random screenshots, default models
+uv run python tools/eval-screenshot-names.py -n 15         # 15 screenshots
+uv run python tools/eval-screenshot-names.py --list-models # show available models
+uv run python tools/eval-screenshot-names.py -m smollm     # evaluate specific model only
+```
+
+### Report Schema
+
+```json
+{
+  "generated_at": "2026-06-03T12:00:00+00:00",
+  "eval_config": {
+    "screenshot_count": 10,
+    "model_count": 4
+  },
+  "model_results": [
+    {
+      "model_name": "qwen2.5:1.5b",
+      "model_size_gb": 1.5,
+      "approach": "ocr+text",
+      "prompt_used": "...",
+      "avg_time_ms": 350.0,
+      "avg_word_count": 3.2,
+      "success_count": 10,
+      "fail_count": 0,
+      "results": [
+        {
+          "original_name": "Screenshot 2026-04-11 at 6.25.28 PM.png",
+          "size_kb": 52.0,
+          "ocr_text": "V5 feature fix #190 7 code ...",
+          "ocr_text_length": 1845,
+          "suggested_name": "v5-feature-fix-190",
+          "word_count": 4,
+          "filename_safe": true,
+          "time_ms": 312.0,
+          "error": null
+        }
+      ]
+    }
+  ]
+}
+```
+
+### Scoring Rubric (Manual)
+
+For each generated name, rate on a 1-5 scale:
+
+| Score | Filename Quality | Example |
+|-------|-----------------|---------|
+| 5 | **Perfect** — accurately describes the screenshot, concise, human-readable | `domain-selection-screen` |
+| 4 | **Good** — describes the content but slightly too long/vague | `automotive-machinery-services-list` |
+| 3 | **Adequate** — partially correct, or right idea but awkward phrasing | `some-code-editor` |
+| 2 | **Poor** — mostly wrong or overly generic | `screenshot-1` |
+| 1 | **Useless** — empty, incoherent, or completely wrong | `urn-image` |
+
+### Automated Metrics
+
+Captured automatically by the evaluation script:
+
+| Metric | What it measures |
+|--------|-----------------|
+| `filename_safe` | Can the output be used as a filesystem name? (no `/`, `\`, `:`, control chars) |
+| `word_count` | How many words in the output (target: 3-5) |
+| `time_ms` | Inference time per screenshot |
+| `success_count` | How many screenshots produced non-empty output |
+| `ocr_text_length` | How much text was extracted (proxy for OCR usefulness) |
+
+### Model Comparison Matrix
+
+After evaluation, fill in:
+
+| Model | Approach | Size (GB) | Avg Time | Success % | Avg Score | Notes |
+|-------|---------|-----------|----------|-----------|-----------|-------|
+| smollm:360m | ocr+text | 0.7 | — | — | — | |
+| llama3.2:1b | ocr+text | 1.0 | — | — | — | |
+| qwen2.5:1.5b | ocr+text | 1.5 | — | — | — | |
+| gemma2:2b | ocr+text | 1.5 | — | — | — | |
+| gemma4:e2b | vision | 7.7 | — | — | — | baseline |
+
+### Decision Criteria
+
+The chosen model must:
+
+1. **Fit in RAM** — total Ollama RSS ≤ 3 GB (leaves 13 GB for OS + browser + IDE on 16 GB machine)
+2. **Success rate ≥ 90%** — no more than 1 empty output per 10 screenshots
+3. **Avg word count 3-5** — matches the 3-5 word target
+4. **Avg score ≥ 3.5** — output is usable without manual editing most of the time
+5. **`filename_safe = true` always** — no path separators or illegal chars in output
