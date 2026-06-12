@@ -73,6 +73,15 @@ Your browser opens automatically at `http://localhost:<port>` (default 5002, aut
 
 See [DEVELOPMENT.md](DEVELOPMENT.md) for setup instructions, tech stack details, and available make targets.
 
+## Roadmap
+
+Manual rename is shipped (v0.2.0). The next planned step is **LLM-powered auto-rename**: a local model (Gemma via Ollama or MLX) will suggest names based on screenshot content, running entirely on-device.
+
+- Design + prerequisites: [docs/design-llm-rename-prerequisites.md](docs/design-llm-rename-prerequisites.md)
+- Public methodology write-up: [gist.github.com/Collaboration95/d89fedec12083990c454807590dd4f9a](https://gist.github.com/Collaboration95/d89fedec12083990c454807590dd4f9a)
+
+This feature is **planned / in progress**, not yet available.
+
 ## License
 
 MIT — see [LICENSE](LICENSE).
