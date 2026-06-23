@@ -22,7 +22,7 @@ from flask import (
 )
 from PIL import Image
 from send2trash import send2trash
-from src.ss_dcl.memory import atomic_write
+from src.ss_dcl.memory import MemoryStore, atomic_write, compute_fingerprint
 
 logger = logging.getLogger(__name__)
 
@@ -47,6 +47,7 @@ def set_security_headers(response: Response) -> Response:
 DESKTOP = Path(os.environ.get("SS_DCL_DESKTOP", str(Path.home() / "Desktop")))
 THUMB_DIR = Path.home() / ".cache" / "ss-dcl" / "thumbs"
 STATE_FILE = Path.home() / ".ss-dcl" / "state.json"
+MEMORY_FILE = Path.home() / ".ss-dcl" / "memory.json"
 # TODO Need to check if rendering changes for .tiff or .bmp needs to be handled seperately
 SUPPORTED_IMAGE_EXTENSION = (".png", ".jpg", ".jpeg", ".tiff", ".bmp")
 
@@ -71,6 +72,23 @@ SORT_OPTIONS = {
 }
 
 
+_memory_store: Optional[MemoryStore] = None
+
+
+def _get_memory() -> MemoryStore:
+    global _memory_store
+    if _memory_store is None:
+        MEMORY_FILE.parent.mkdir(parents=True, exist_ok=True)
+        _memory_store = MemoryStore(MEMORY_FILE)
+        _memory_store.load()
+    return _memory_store
+
+
+def _reset_memory() -> None:
+    global _memory_store
+    _memory_store = None
+
+
 _dirs_initialized = False
 
 
@@ -84,18 +102,33 @@ def _init_dirs():
 
 
 def get_screenshots(sort: str = "name") -> list[dict[str, Any]]:
-    files = []
+    memory = _get_memory()
+    files: list[dict[str, Any]] = []
+    any_new = False
     for p in DESKTOP.glob("Screenshot*.*"):
-        # only continue if it's a file and has a supported image extension (case-insensitive)
         if not p.is_file() or (p.suffix.lower() not in SUPPORTED_IMAGE_EXTENSION):
             continue
+        name = p.name
+        size = p.stat().st_size
+        fp = compute_fingerprint(name, size)
+        existing = memory.lookup(fp)
+        if existing is not None:
+            memory_status = existing.status
+        else:
+            memory.record_file(name, size)
+            memory_status = "new"
+            any_new = True
         files.append(
             {
-                "name": p.name,
-                "size": p.stat().st_size,
+                "name": name,
+                "size": size,
                 "mtime": p.stat().st_mtime,
+                "fingerprint": fp,
+                "memory_status": memory_status,
             }
         )
+    if any_new:
+        memory.save()
     key, reverse = SORT_OPTIONS.get(sort, ("name", False))
     return sorted(files, key=lambda f: f[key], reverse=reverse)
 
@@ -229,6 +262,20 @@ def api_done():
         except (json.JSONDecodeError, KeyError):
             logger.warning("State file corruption detected during cleanup")
 
+    # Best-effort memory update: mark successfully trashed files
+    try:
+        memory = _get_memory()
+        for filename in filenames:
+            rec = memory.lookup_by_name(filename)
+            if rec is not None:
+                try:
+                    memory.mark_trashed(rec.fingerprint)
+                except KeyError:
+                    logger.debug("Cannot mark %s as trashed: not in memory", filename)
+        memory.save()
+    except Exception as exc:
+        logger.warning("Memory update failed during trash batch: %s", exc)
+
     if errors:
         logger.error("Trash operation had errors: %s", errors)
         return jsonify({"ok": False, "errors": errors}), 207
@@ -280,8 +327,44 @@ def api_rename():
         except (json.JSONDecodeError, KeyError):
             logger.warning("State file corruption detected during rename")
 
+    # Update memory: record rename (best-effort)
+    try:
+        memory = _get_memory()
+        rec = memory.lookup_by_name(old_name)
+        if rec is not None:
+            memory.record_rename(rec.fingerprint, new_name)
+            memory.save()
+    except Exception as exc:
+        logger.warning("Memory update failed during rename for %s: %s", old_name, exc)
+
     logger.info("Renamed %s -> %s", old_name, new_name)
     return jsonify({"ok": True, "new_name": new_name})
+
+
+@app.route("/api/memory")
+def api_memory():
+    """Return memory status for all recorded files."""
+    memory = _get_memory()
+    result: dict[str, dict[str, Any]] = {}
+    for rec in memory.all_records():
+        result[rec.fingerprint] = {
+            "status": rec.status,
+            "suggested_name": rec.suggested_name,
+            "last_updated": rec.last_updated,
+        }
+    return jsonify({"files": result})
+
+
+@app.route("/api/suggest-names", methods=["POST"])
+def api_suggest_names():
+    """Stub: returns empty suggestions. Will be wired to LLM in Phase 2."""
+    if not request.is_json:
+        abort(400)
+    data = request.get_json(silent=True) or {}
+    fingerprints = data.get("fingerprints", [])
+    if not isinstance(fingerprints, list):
+        abort(400)
+    return jsonify({"suggestions": {}})
 
 
 def _find_free_port(start: int, max_tries: int = 100) -> int:
