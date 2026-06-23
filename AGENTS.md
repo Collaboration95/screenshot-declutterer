@@ -17,7 +17,7 @@ static/app.js            Frontend JS (Kanban, drag-and-drop, undo, lightbox, ren
 static/style.css         All CSS (Kanban layout, cards, lightbox, rename modal, confirm modal)
 templates/index.html     SPA shell — three-column layout + lightbox + rename modal + confirm modal
 tests/conftest.py        Shared pytest fixtures and helpers
-tests/test_routes_*.py   Route-specific test files (index, screenshots, image, thumb, state, done, rename)
+tests/test_routes_*.py   Route-specific test files (index, screenshots, image, thumb, state, done, rename, memory)
 tests/test_memory.py     Memory store unit tests (fingerprint, CRUD, persistence, status transitions, edge cases)
 tests/test_port_flexibility.py  Port auto-detection tests
 tests/test_edge_cases.py Edge case tests
@@ -41,13 +41,15 @@ tests/test_frontend.py   Frontend integration tests
 | Method | Path | Purpose |
 |--------|------|---------|
 | GET | `/` | Serve SPA |
-| GET | `/api/screenshots?sort=<mode>` | List screenshots (sort: name, name_desc, date, date_desc, size, size_desc) |
+| GET | `/api/screenshots?sort=<mode>` | List screenshots with fingerprint + memory_status enrichment (sort: name, name_desc, date, date_desc, size, size_desc) |
 | GET | `/api/image/<filename>` | Serve full-size image (cache: 1h) |
 | GET | `/api/thumb/<filename>` | Serve thumbnail 400x300 max (cache: 24h), falls back to full image |
 | GET | `/api/state` | Get persisted decisions `{decisions: {filename: "keep"|"trash"}}` |
 | PUT | `/api/state` | Save decisions state |
-| POST | `/api/done` | Trash files — body `{filenames: [...]}`. Returns 207 on partial failure with per-file errors |
-| POST | `/api/rename` | Rename a file — body `{old_name, new_name}`. Updates state and thumbnail. Returns 409 on conflict |
+| POST | `/api/done` | Trash files — body `{filenames: [...]}`. Updates memory with `trashed` status. Returns 207 on partial failure with per-file errors |
+| POST | `/api/rename` | Rename a file — body `{old_name, new_name}`. Updates state, thumbnail, and memory. Returns 409 on conflict |
+| GET | `/api/memory` | Get all persisted memory records `{files: {fingerprint: {status, suggested_name, last_updated}}}` |
+| POST | `/api/suggest-names` | Stub — returns `{"suggestions": {}}`. Will be wired to LLM in Phase 2 |
 
 All filename-accepting routes validate against path traversal: bare name check (`filename == Path(filename).name`) + resolved path must be within `~/Desktop`.
 
