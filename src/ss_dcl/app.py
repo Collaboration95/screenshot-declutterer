@@ -109,9 +109,14 @@ def get_screenshots(sort: str = "name") -> list[dict[str, Any]]:
         if not p.is_file() or (p.suffix.lower() not in SUPPORTED_IMAGE_EXTENSION):
             continue
         name = p.name
-        size = p.stat().st_size
+        st = p.stat()
+        size = st.st_size
         fp = compute_fingerprint(name, size)
         existing = memory.lookup(fp)
+        # Fallback: after a rename the fingerprint changes (new name + same size),
+        # so try lookup_by_name which scans last_known_name / original_name.
+        if existing is None:
+            existing = memory.lookup_by_name(name)
         if existing is not None:
             memory_status = existing.status
         else:
@@ -122,7 +127,7 @@ def get_screenshots(sort: str = "name") -> list[dict[str, Any]]:
             {
                 "name": name,
                 "size": size,
-                "mtime": p.stat().st_mtime,
+                "mtime": st.st_mtime,
                 "fingerprint": fp,
                 "memory_status": memory_status,
             }
@@ -228,6 +233,7 @@ def api_done():
     filenames = data.get("filenames", [])
 
     errors = []
+    trashed_ok: list[str] = []
     logger.info("Starting trash batch: %d files", len(filenames))
     for filename in filenames:
         file_path = _validate_desktop_path(filename)
@@ -247,6 +253,7 @@ def api_done():
             logger.error("Failed to trash %s: %s", filename, exc)
             errors.append(f"{filename}: trash failed ({exc})")
             continue
+        trashed_ok.append(filename)
         thumb = THUMB_DIR / filename
         with contextlib.suppress(Exception):
             if thumb.exists():
@@ -262,10 +269,10 @@ def api_done():
         except (json.JSONDecodeError, KeyError):
             logger.warning("State file corruption detected during cleanup")
 
-    # Best-effort memory update: mark successfully trashed files
+    # Best-effort memory update: only mark files that were actually trashed
     try:
         memory = _get_memory()
-        for filename in filenames:
+        for filename in trashed_ok:
             rec = memory.lookup_by_name(filename)
             if rec is not None:
                 try:
@@ -343,7 +350,11 @@ def api_rename():
 
 @app.route("/api/memory")
 def api_memory():
-    """Return memory status for all recorded files."""
+    """Return memory status for all recorded files.
+
+    TODO(phase-1b): periodically call memory.prune_stale(active_fingerprints)
+    to prevent unbounded growth of orphaned entries from long-trashed files.
+    """
     memory = _get_memory()
     result: dict[str, dict[str, Any]] = {}
     for rec in memory.all_records():

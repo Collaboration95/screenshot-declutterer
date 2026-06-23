@@ -11,6 +11,7 @@ Tests that:
 """
 
 import json
+from unittest.mock import patch
 
 import src.ss_dcl.app as flask_app
 
@@ -49,8 +50,8 @@ def test_screenshots_previously_seen_file_retains_status(client):
     assert f1["memory_status"] == "new"
 
     # Simulate LLM suggestion: update memory status directly
+    fp = f1["fingerprint"]
     memory = flask_app._get_memory()
-    fp = "Screenshot 2024-01-01 at 12.00.00 PM.png|5"
     memory.update_suggestion(fp, "customer-onboarding.png")
     memory.save()
 
@@ -71,8 +72,9 @@ def test_screenshots_idempotent_scan_does_not_reset_suggested(client):
     c.get("/api/screenshots")
 
     # Manually set to "suggested" and persist
+    r = c.get("/api/screenshots")
+    fp = json.loads(r.data)[0]["fingerprint"]
     memory = flask_app._get_memory()
-    fp = "Screenshot 2024-01-01 at 12.00.00 PM.png|4"
     memory.update_suggestion(fp, "suggested-name.png")
     memory.save()
     flask_app._reset_memory()
@@ -146,11 +148,11 @@ def test_api_memory_reflects_status_changes(client):
     c, desktop = client
 
     (desktop / "Screenshot 2024-01-01 at 12.00.00 PM.png").write_bytes(b"data")
-    c.get("/api/screenshots")
+    r = c.get("/api/screenshots")
+    fp = json.loads(r.data)[0]["fingerprint"]
 
     # Directly set to suggested
     memory = flask_app._get_memory()
-    fp = "Screenshot 2024-01-01 at 12.00.00 PM.png|4"
     memory.update_suggestion(fp, "my-suggestion.png")
     memory.save()
 
@@ -169,10 +171,10 @@ def test_rename_updates_memory_status(client):
     c, desktop = client
     old = desktop / "Screenshot 2024-01-01 at 12.00.00 PM.png"
     old.write_bytes(_make_png(10, 10))
-    old_size = old.stat().st_size
 
     # First scan to record the file in memory
-    c.get("/api/screenshots")
+    r = c.get("/api/screenshots")
+    fp = json.loads(r.data)[0]["fingerprint"]
 
     # Rename it
     c.post(
@@ -183,14 +185,13 @@ def test_rename_updates_memory_status(client):
 
     # Check memory updated
     memory = flask_app._get_memory()
-    fp = f"{old.name}|{old_size}"
     rec = memory.lookup(fp)
     assert rec is not None, f"Fingerprint {fp} should exist in memory"
     assert rec.status == "renamed"
     assert rec.last_known_name == "Screenshot renamed.png"
 
 
-def test_rename_to_ignored_file_is_robust(client):
+def test_rename_file_not_in_memory_is_robust(client):
     """If a file isn't in memory (e.g., old screenshot before Phase 1), rename shouldn't crash."""
     c, desktop = client
     f = desktop / "Screenshot 2024-01-01 at 12.00.00 PM.png"
@@ -215,13 +216,10 @@ def test_done_updates_memory_to_trashed(client):
     f.write_bytes(_make_png(10, 10))
 
     # First scan to record the file in memory
-    c.get("/api/screenshots")
-
-    fp = f"Screenshot 2024-01-01 at 12.00.00 PM.png|{f.stat().st_size}"
+    r = c.get("/api/screenshots")
+    fp = json.loads(r.data)[0]["fingerprint"]
 
     # Trash it
-    from unittest.mock import patch
-
     with patch("src.ss_dcl.app.send2trash"):
         r = c.post(
             "/api/done",
@@ -242,8 +240,6 @@ def test_done_handles_files_not_in_memory(client):
     c, desktop = client
     f = desktop / "Screenshot 2024-01-01 at 12.00.00 PM.png"
     f.write_bytes(_make_png(10, 10))
-
-    from unittest.mock import patch
 
     with patch("src.ss_dcl.app.send2trash"):
         r = c.post(
@@ -305,11 +301,8 @@ def test_memory_survives_across_scan_cycles(client):
 
     # Session 1: scan + trash a file
     (desktop / "Screenshot A.png").write_bytes(b"hello")
-    c.get("/api/screenshots")
-
-    fp = "Screenshot A.png|5"
-
-    from unittest.mock import patch
+    r = c.get("/api/screenshots")
+    fp = json.loads(r.data)[0]["fingerprint"]
 
     with patch("src.ss_dcl.app.send2trash"):
         c.post(
@@ -337,11 +330,11 @@ def test_memory_persists_to_disk(client):
     c, desktop = client
 
     (desktop / "Screenshot A.png").write_bytes(b"hello")
-    c.get("/api/screenshots")
+    r = c.get("/api/screenshots")
+    fp = json.loads(r.data)[0]["fingerprint"]
 
     # Manually update to "suggested" and save
     memory = flask_app._get_memory()
-    fp = "Screenshot A.png|5"
     memory.update_suggestion(fp, "test-suggestion.png")
     memory.save()
 
@@ -384,3 +377,76 @@ def test_screenshots_supports_non_png_extensions(client):
     assert len(files) == 1
     assert "fingerprint" in files[0]
     assert files[0]["memory_status"] == "new"
+
+
+# ── Review fixes — regression tests for bugs caught in review ───────────
+
+
+def test_renamed_file_retains_memory_via_lookup_by_name_fallback(client):
+    """After a rename, the fingerprint changes (name + size), but
+    get_screenshots() should find the old record via lookup_by_name fallback."""
+    c, desktop = client
+    old = desktop / "Screenshot 2024-01-01 at 12.00.00 PM.png"
+    old.write_bytes(_make_png(10, 10))
+
+    # First scan establishes the original fingerprint
+    r = c.get("/api/screenshots")
+    old_fp = json.loads(r.data)[0]["fingerprint"]
+
+    # Manually mark as suggested
+    memory = flask_app._get_memory()
+    memory.update_suggestion(old_fp, "suggested-name.png")
+    memory.save()
+    flask_app._reset_memory()
+
+    # Rename the file (via our API — updates memory last_known_name)
+    c.post(
+        "/api/rename",
+        data=json.dumps({"old_name": old.name, "new_name": "Screenshot renamed.png"}),
+        content_type="application/json",
+    )
+
+    # Simulate a fresh scan: the new filename produces a different fingerprint
+    flask_app._reset_memory()
+    r2 = c.get("/api/screenshots")
+    files = json.loads(r2.data)
+    assert len(files) == 1
+
+    # The file should NOT appear as "new" — it should be "renamed"
+    # because lookup_by_name fallback found the record via last_known_name
+    assert files[0]["memory_status"] == "renamed"
+    assert files[0]["name"] == "Screenshot renamed.png"
+
+
+def test_done_does_not_mark_ghost_file_as_trashed_in_memory(client):
+    """api_done should not mark a file as 'trashed' in memory if the trash
+    operation itself failed (e.g., file not found on disk)."""
+    c, desktop = client
+
+    # First, put a real file in both memory and disk
+    f = desktop / "Screenshot real.png"
+    f.write_bytes(_make_png(10, 10))
+    c.get("/api/screenshots")
+
+    # Create a ghost entry in memory (for a file that no longer exists)
+    memory = flask_app._get_memory()
+    ghost_rec = memory.record_file("Screenshot ghost.png", 9999)
+    ghost_fp = ghost_rec.fingerprint
+    memory.save()
+
+    # Trash both — ghost.png will fail (not on disk), real.png will succeed
+    with patch("src.ss_dcl.app.send2trash"):
+        r = c.post(
+            "/api/done",
+            data=json.dumps({"filenames": ["Screenshot ghost.png", "Screenshot real.png"]}),
+            content_type="application/json",
+        )
+
+    # 207 because ghost.png fails
+    assert r.status_code == 207
+
+    # Ghost file should NOT be marked as trashed (it was never successfully trashed)
+    memory = flask_app._get_memory()
+    ghost = memory.lookup(ghost_fp)
+    assert ghost is not None
+    assert ghost.status == "new", f"Ghost file should still be 'new', got {ghost.status!r}"
