@@ -426,7 +426,11 @@ def _call_ollama_suggest(image_path: Path, model: str, extension: str = ".png") 
     # Sanitize: lowercase, replace spaces with hyphens, strip punctuation
     sanitized = raw.lower().replace(" ", "-")
     sanitized = "".join(c for c in sanitized if c.isalnum() or c in "-_")
-    sanitized = sanitized.strip("-_")[:120]
+    # Collapse repeated hyphens (from multi-space / punctuation gaps)
+    while "--" in sanitized:
+        sanitized = sanitized.replace("--", "-")
+    # Truncate then strip so trailing hyphen after slice is removed
+    sanitized = sanitized[:120].strip("-_").strip()
     if not sanitized:
         return None
     return sanitized + extension

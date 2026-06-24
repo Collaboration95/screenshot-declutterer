@@ -897,17 +897,13 @@ def test_call_ollama_suggest_sanitizes_filename(tmp_path, monkeypatch):
     """Verify the sanitization logic produces safe filenames."""
     import json as _json
 
-    # Create a fake image file
     img = tmp_path / "test.png"
     img.write_bytes(b"fake-png-data")
 
-    # Mock urllib to return a raw LLM response
     class FakeResponse:
         def read(self):
             return _json.dumps(
-                {
-                    "message": {"content": "  Hello World! This is GREAT  "},
-                }
+                {"message": {"content": "  Hello World! This is GREAT  "}},
             ).encode()
 
         def __enter__(self):
@@ -923,6 +919,66 @@ def test_call_ollama_suggest_sanitizes_filename(tmp_path, monkeypatch):
 
     result = flask_app._call_ollama_suggest(img, "test-model")
     assert result == "hello-world-this-is-great.png"
+
+
+def test_call_ollama_suggest_collapses_repeated_hyphens(tmp_path, monkeypatch):
+    """Multi-space / punctuation gaps should not produce '--'."""
+    import json as _json
+
+    img = tmp_path / "test.png"
+    img.write_bytes(b"fake-data")
+
+    class FakeResponse:
+        def read(self):
+            return _json.dumps(
+                {"message": {"content": "foo   bar!!!baz"}},
+            ).encode()
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            pass
+
+    monkeypatch.setattr(
+        flask_app.urllib.request, "urlopen", lambda req, timeout=None: FakeResponse()
+    )
+
+    result = flask_app._call_ollama_suggest(img, "test-model")
+    # "foo   bar!!!baz" → "foo---barbaz" → collapsed to "foo-barbaz"
+    assert result == "foo-barbaz.png"
+    assert "--" not in result
+
+
+def test_call_ollama_suggest_strips_trailing_hyphen_after_truncation(tmp_path, monkeypatch):
+    """Truncation must not leave a trailing hyphen."""
+    import json as _json
+
+    img = tmp_path / "test.png"
+    img.write_bytes(b"fake-data")
+
+    # A long string where the 120-char slice cuts right after a hyphen
+    long_text = "a" * 119 + "-b"
+
+    class FakeResponse:
+        def read(self):
+            return _json.dumps(
+                {"message": {"content": long_text}},
+            ).encode()
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            pass
+
+    monkeypatch.setattr(
+        flask_app.urllib.request, "urlopen", lambda req, timeout=None: FakeResponse()
+    )
+
+    result = flask_app._call_ollama_suggest(img, "test-model")
+    assert not result.startswith("-")
+    assert not result.rstrip(".png").endswith("-")
 
 
 def test_call_ollama_suggest_preserves_extension(tmp_path, monkeypatch):
