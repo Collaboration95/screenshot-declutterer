@@ -496,8 +496,8 @@ def test_suggest_names_with_real_file_and_mock_llm(client, monkeypatch):
     assert json.loads(r.data)[0]["memory_status"] == "new"
 
     # Mock the Ollama call
-    def mock_suggest(image_path, model):
-        return "customer-onboarding.png"
+    def mock_suggest(image_path, model, extension=".png"):
+        return "customer-onboarding" + extension
 
     monkeypatch.setattr(flask_app, "_call_ollama_suggest", mock_suggest)
 
@@ -535,10 +535,10 @@ def test_suggest_names_skips_already_processed(client, monkeypatch):
 
     call_count = 0
 
-    def mock_suggest(image_path, model):
+    def mock_suggest(image_path, model, extension=".png"):
         nonlocal call_count
         call_count += 1
-        return "should-not-be-called.png"
+        return "should-not-be-called" + extension
 
     monkeypatch.setattr(flask_app, "_call_ollama_suggest", mock_suggest)
 
@@ -561,7 +561,7 @@ def test_suggest_names_handles_llm_returning_none(client, monkeypatch):
     r = c.get("/api/screenshots")
     fp = json.loads(r.data)[0]["fingerprint"]
 
-    def mock_suggest(image_path, model):
+    def mock_suggest(image_path, model, extension=".png"):
         return None
 
     monkeypatch.setattr(flask_app, "_call_ollama_suggest", mock_suggest)
@@ -833,3 +833,53 @@ def test_call_ollama_suggest_sanitizes_filename(tmp_path, monkeypatch):
 
     result = flask_app._call_ollama_suggest(img, "test-model")
     assert result == "hello-world-this-is-great.png"
+
+
+def test_call_ollama_suggest_preserves_extension(tmp_path, monkeypatch):
+    """The extension parameter is used, not hardcoded .png."""
+    import json as _json
+
+    img = tmp_path / "test.jpg"
+    img.write_bytes(b"fake-jpg-data")
+
+    class FakeResponse:
+        def read(self):
+            return _json.dumps({"message": {"content": "sunny beach"}}).encode()
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            pass
+
+    monkeypatch.setattr(
+        flask_app.urllib.request, "urlopen", lambda req, timeout=None: FakeResponse()
+    )
+
+    result = flask_app._call_ollama_suggest(img, "test-model", extension=".jpg")
+    assert result == "sunny-beach.jpg"
+
+
+def test_suggest_names_preserves_non_png_extension(client, monkeypatch):
+    """When a .jpg file gets a suggestion, the suggested name keeps .jpg."""
+    c, desktop = client
+    f = desktop / "Screenshot 2024-01-01 at 12.00.00 PM.jpg"
+    f.write_bytes(b"jpg-data")
+
+    r = c.get("/api/screenshots")
+    fp = json.loads(r.data)[0]["fingerprint"]
+
+    def mock_suggest(image_path, model, extension=".png"):
+        # Verify extension was passed correctly
+        assert extension == ".jpg"
+        return "beach-photo" + extension
+
+    monkeypatch.setattr(flask_app, "_call_ollama_suggest", mock_suggest)
+
+    r = c.post(
+        "/api/suggest-names",
+        data=json.dumps({"fingerprints": [fp]}),
+        content_type="application/json",
+    )
+    assert r.status_code == 200
+    assert json.loads(r.data)["suggestions"][fp] == "beach-photo.jpg"

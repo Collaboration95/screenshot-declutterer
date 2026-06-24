@@ -374,11 +374,15 @@ def api_memory():
     return jsonify({"files": result})
 
 
-def _call_ollama_suggest(image_path: Path, model: str) -> Optional[str]:
+def _call_ollama_suggest(image_path: Path, model: str, extension: str = ".png") -> Optional[str]:
     """Call Ollama API with an image and return a suggested filename.
 
     Extracted as a module-level function so tests can monkeypatch it
     without needing Ollama running.
+
+    *extension* is appended to the sanitized name and should include
+    the leading dot (e.g. ``".jpg"``).  Defaults to ``".png"`` for
+    backward compatibility.
     """
     with open(image_path, "rb") as fh:
         image_b64 = base64.b64encode(fh.read()).decode("ascii")
@@ -425,7 +429,7 @@ def _call_ollama_suggest(image_path: Path, model: str) -> Optional[str]:
     sanitized = sanitized.strip("-_")[:120]
     if not sanitized:
         return None
-    return sanitized + ".png"
+    return sanitized + extension
 
 
 def _load_settings() -> dict[str, Any]:
@@ -478,7 +482,7 @@ def api_suggest_names():
         if file_path is None:
             continue
 
-        suggested = _call_ollama_suggest(file_path, model)
+        suggested = _call_ollama_suggest(file_path, model, rec.extension)
         if suggested:
             memory.update_suggestion(fp, suggested)
             suggestions[fp] = suggested
