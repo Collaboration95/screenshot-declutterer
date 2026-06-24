@@ -690,6 +690,78 @@ def test_accept_suggestion_missing_fingerprint_field(client):
     assert r.status_code == 400
 
 
+def test_accept_suggestion_empty_old_name_rejected(client):
+    """A corrupt memory record with empty last_known_name must not rename Desktop."""
+    c, desktop = client
+    f = desktop / "Screenshot 2024-01-01 at 12.00.00 PM.png"
+    f.write_bytes(_make_png(10, 10))
+
+    r = c.get("/api/screenshots")
+    fp = json.loads(r.data)[0]["fingerprint"]
+
+    memory = flask_app._get_memory()
+    # Corrupt the record: set last_known_name to empty string
+    rec = memory.lookup(fp)
+    rec.last_known_name = ""
+    rec.original_name = ""
+    rec.suggested_name = "evil.png"
+    memory.save()
+
+    r = c.post(
+        "/api/accept-suggestion",
+        data=json.dumps({"fingerprint": fp}),
+        content_type="application/json",
+    )
+    assert r.status_code == 400
+    assert "invalid filename" in json.loads(r.data)["error"]
+
+
+def test_accept_suggestion_path_traversal_rejected(client):
+    """Accept-suggestion must validate old_name against path traversal."""
+    c, desktop = client
+    f = desktop / "Screenshot 2024-01-01 at 12.00.00 PM.png"
+    f.write_bytes(_make_png(10, 10))
+
+    r = c.get("/api/screenshots")
+    fp = json.loads(r.data)[0]["fingerprint"]
+
+    memory = flask_app._get_memory()
+    rec = memory.lookup(fp)
+    rec.last_known_name = "../../../etc/passwd"
+    rec.suggested_name = "safe-name.png"
+    memory.save()
+
+    r = c.post(
+        "/api/accept-suggestion",
+        data=json.dumps({"fingerprint": fp}),
+        content_type="application/json",
+    )
+    assert r.status_code == 400
+    assert "invalid old_name" in json.loads(r.data)["error"]
+
+
+def test_accept_suggestion_directory_not_file_rejected(client):
+    """If old_path is a directory (not a file), reject with 404."""
+    c, desktop = client
+    subdir = desktop / "Screenshot subdir"
+    subdir.mkdir()
+
+    # Create a memory record pointing to a directory
+    memory = flask_app._get_memory()
+    rec = memory.record_file("Screenshot subdir", 0)
+    rec.suggested_name = "safe-name.png"
+    rec.last_known_name = "Screenshot subdir"
+    rec.original_name = "Screenshot subdir"
+    memory.save()
+
+    r = c.post(
+        "/api/accept-suggestion",
+        data=json.dumps({"fingerprint": rec.fingerprint}),
+        content_type="application/json",
+    )
+    assert r.status_code == 404
+
+
 # ── /api/reject-suggestion ─────────────────────────────────────────────────
 
 

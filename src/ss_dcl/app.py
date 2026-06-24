@@ -512,11 +512,19 @@ def api_accept_suggestion():
 
     old_name = rec.last_known_name or rec.original_name
     new_name = rec.suggested_name
-    old_path = DESKTOP / old_name
-    new_path = DESKTOP / new_name
 
-    if not old_path.exists():
+    # Defensive: guard against empty/corrupt names from memory.json
+    if not old_name or not new_name:
+        return jsonify({"ok": False, "error": "invalid filename in memory record"}), 400
+
+    # Validate old_name via the same path-traversal guard used by /api/rename
+    old_path = _validate_desktop_path(old_name)
+    if old_path is None:
+        return jsonify({"ok": False, "error": "invalid old_name"}), 400
+    if not old_path.is_file():
         return jsonify({"ok": False, "error": "source file not found on disk"}), 404
+
+    new_path = DESKTOP / new_name
     if new_path.exists():
         # Append a counter to avoid overwriting
         stem = Path(new_name).stem
