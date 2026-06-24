@@ -49,7 +49,11 @@ tests/test_frontend.py   Frontend integration tests
 | POST | `/api/done` | Trash files — body `{filenames: [...]}`. Updates memory with `trashed` status. Returns 207 on partial failure with per-file errors |
 | POST | `/api/rename` | Rename a file — body `{old_name, new_name}`. Updates state, thumbnail, and memory. Returns 409 on conflict |
 | GET | `/api/memory` | Get all persisted memory records `{files: {fingerprint: {status, suggested_name, last_updated}}}` |
-| POST | `/api/suggest-names` | Stub — returns `{"suggestions": {}}`. Will be wired to LLM in Phase 2 |
+| POST | `/api/suggest-names` | Generate AI filename suggestions via Ollama — body `{fingerprints: [...]}`. Uses `gemma4:e2b` by default |
+| POST | `/api/accept-suggestion` | Accept suggestion & rename file — body `{fingerprint}`. Handles name conflicts (appends `-2`) |
+| POST | `/api/reject-suggestion` | Dismiss suggestion — body `{fingerprint}`. Marks memory status as `"ignored"` |
+| GET | `/api/settings` | Get LLM config `{llm_provider, llm_model, auto_suggest}` |
+| PUT | `/api/settings` | Save LLM config — body `{llm_provider?, llm_model?, auto_suggest?}` |
 
 All filename-accepting routes validate against path traversal: bare name check (`filename == Path(filename).name`) + resolved path must be within `~/Desktop`.
 
@@ -76,6 +80,7 @@ All in `static/app.js`:
 | THUMB_DIR | `~/.cache/ss-dcl/thumbs/` |
 | STATE_FILE | `~/.ss-dcl/state.json` |
 | MEMORY_FILE | `~/.ss-dcl/memory.json` |
+| SETTINGS_FILE | `~/.ss-dcl/settings.json` |
 | THUMB_SIZE | `(400, 300)` |
 
 ## Dependencies
@@ -89,7 +94,7 @@ All in `static/app.js`:
 - Fixture: `client(tmp_path, monkeypatch)` — temp dir as fake Desktop, patches `DESKTOP`, `THUMB_DIR`, `STATE_FILE`
 - `send2trash` always mocked to avoid actually trashing files
 - Helper `_make_png()` creates valid minimal PNGs in-memory
-- ~76 tests across focused test files covering all routes, sorting, path traversal, state round-trip, partial failures, rename, port flexibility, edge cases
+- ~210 tests across focused test files covering all routes, sorting, path traversal, state round-trip, partial failures, rename, port flexibility, edge cases, LLM suggest/accept/reject flows
 
 ## Tooling Config
 
