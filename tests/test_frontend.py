@@ -128,3 +128,100 @@ def test_app_js_updates_memory_status_on_rename(client):
     r = c.get("/static/app.js")
     assert r.status_code == 200
     assert b'memoryStatus = "renamed"' in r.data
+
+
+# ── Phase 3 UI elements ─────────────────────────────────────────────────
+
+
+def test_index_has_suggest_all_button(client):
+    c, _ = client
+    html = c.get("/").data.decode()
+    assert 'id="suggest-all-btn"' in html
+    assert "Suggest All" in html
+
+
+def test_index_has_settings_button(client):
+    c, _ = client
+    html = c.get("/").data.decode()
+    assert 'id="settings-btn"' in html
+
+
+def test_index_has_suggest_progress_bar(client):
+    c, _ = client
+    html = c.get("/").data.decode()
+    assert 'id="suggest-progress"' in html
+    assert 'id="suggest-progress-fill"' in html
+    assert 'id="suggest-progress-text"' in html
+
+
+def test_index_has_settings_modal(client):
+    c, _ = client
+    html = c.get("/").data.decode()
+    assert 'id="settings-modal"' in html
+    assert 'id="settings-provider"' in html
+    assert 'id="settings-model"' in html
+    assert 'id="settings-auto"' in html
+
+
+def test_app_js_defines_suggest_batch(client):
+    """JS must define suggestBatch function for batch LLM suggestions."""
+    c, _ = client
+    r = c.get("/static/app.js")
+    assert r.status_code == 200
+    assert b"function suggestBatch(" in r.data
+
+
+def test_app_js_defines_accept_suggestion(client):
+    """JS must define acceptSuggestion for accepting LLM suggestions."""
+    c, _ = client
+    r = c.get("/static/app.js")
+    assert r.status_code == 200
+    assert b"function acceptSuggestion(" in r.data
+
+
+def test_app_js_defines_reject_suggestion(client):
+    """JS must define rejectSuggestion for dismissing LLM suggestions."""
+    c, _ = client
+    r = c.get("/static/app.js")
+    assert r.status_code == 200
+    assert b"function rejectSuggestion(" in r.data
+
+
+def test_app_js_defines_settings_modal(client):
+    """JS must handle settings modal."""
+    c, _ = client
+    r = c.get("/static/app.js")
+    assert r.status_code == 200
+    assert b"settingsModal" in r.data
+
+
+def test_app_js_has_suggestion_badge_maker(client):
+    """JS must have _makeSuggestionBadge for rendering suggested name with accept/reject."""
+    c, _ = client
+    r = c.get("/static/app.js")
+    assert r.status_code == 200
+    assert b"_makeSuggestionBadge" in r.data
+
+
+def test_css_has_suggestion_badge_styles(client):
+    """CSS must define styles for suggestion badge."""
+    c, _ = client
+    r = c.get("/static/style.css")
+    assert r.status_code == 200
+    assert b"suggestion-badge" in r.data
+
+
+def test_css_has_suggest_progress_styles(client):
+    """CSS must define styles for progress bar."""
+    c, _ = client
+    r = c.get("/static/style.css")
+    assert r.status_code == 200
+    assert b"suggest-progress" in r.data
+
+
+def test_css_has_settings_form_styles(client):
+    """CSS must define styles for settings form."""
+    c, _ = client
+    r = c.get("/static/style.css")
+    assert r.status_code == 200
+    assert b"settings-form" in r.data

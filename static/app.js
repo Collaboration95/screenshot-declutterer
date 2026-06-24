@@ -20,12 +20,17 @@ const countUnsorted = document.getElementById("count-unsorted");
 const countTrash    = document.getElementById("count-trash");
 const countKeep     = document.getElementById("count-keep");
 
-const undoBtn   = document.getElementById("undo-btn");
-const doneBtn   = document.getElementById("done-btn");
-const statusMsg = document.getElementById("status-msg");
-const emptyMsg  = document.getElementById("empty-msg");
-const loadingMsg = document.getElementById("loading-msg");
-const sortSelect = document.getElementById("sort-select");
+const undoBtn        = document.getElementById("undo-btn");
+const doneBtn        = document.getElementById("done-btn");
+const suggestAllBtn  = document.getElementById("suggest-all-btn");
+const settingsBtn    = document.getElementById("settings-btn");
+const statusMsg      = document.getElementById("status-msg");
+const emptyMsg       = document.getElementById("empty-msg");
+const loadingMsg     = document.getElementById("loading-msg");
+const sortSelect     = document.getElementById("sort-select");
+const suggestProgress   = document.getElementById("suggest-progress");
+const suggestProgressFill = document.getElementById("suggest-progress-fill");
+const suggestProgressText = document.getElementById("suggest-progress-text");
 
 const lightbox    = document.getElementById("lightbox");
 const lightboxImg = document.getElementById("lightbox-img");
@@ -39,6 +44,13 @@ const confirmModal = document.getElementById("confirm-modal");
 const modalTitle   = document.getElementById("modal-title");
 const modalCancel  = document.getElementById("modal-cancel");
 const modalConfirm = document.getElementById("modal-confirm");
+
+const settingsModal   = document.getElementById("settings-modal");
+const settingsProvider = document.getElementById("settings-provider");
+const settingsModel   = document.getElementById("settings-model");
+const settingsAuto    = document.getElementById("settings-auto");
+const settingsCancel  = document.getElementById("settings-cancel");
+const settingsSave    = document.getElementById("settings-save");
 
 const renameModal   = document.getElementById("rename-modal");
 const renameInput   = document.getElementById("rename-input");
@@ -59,12 +71,24 @@ function sanitise(str) {
     .replace(/'/g, "&#39;");
 }
 
+// ── Settings state (loaded on init) ────────────────────────────────────────────
+let llmSettings = { llm_provider: "ollama", llm_model: "gemma4:e2b", auto_suggest: false };
+
+function loadSettings() {
+  return fetch("/api/settings")
+    .then(r => r.json())
+    .then(s => { llmSettings = s; })
+    .catch(() => {});
+}
+
 // ── Bootstrap ────────────────────────────────────────────────────────────────
 function init() {
-  fetch("/api/state")
-    .then(r => r.json())
-    .then(state => loadScreenshots(state.decisions || {}))
-    .catch(() => loadScreenshots({}));
+  loadSettings().then(() => {
+    fetch("/api/state")
+      .then(r => r.json())
+      .then(state => loadScreenshots(state.decisions || {}))
+      .catch(() => loadScreenshots({}));
+  });
 }
 
 function loadScreenshots(savedDecisions) {
@@ -93,10 +117,18 @@ function loadScreenshots(savedDecisions) {
         const target = col === "trash" ? cardsTrash
                      : col === "keep"  ? cardsKeep
                      : cardsUnsorted;
-        target.appendChild(makeCard(f.name, col, f.fingerprint, f.memory_status));
+        target.appendChild(makeCard(f.name, col, f.fingerprint, f.memory_status, f.suggested_name));
       });
       updateCounts();
       saveState();
+
+      // Auto-suggest if enabled
+      if (llmSettings.auto_suggest) {
+        const newFps = files
+          .filter(f => f.memory_status === "new")
+          .map(f => f.fingerprint);
+        if (newFps.length > 0) suggestBatch(newFps);
+      }
     })
     .catch(() => {
       loadingMsg.hidden = true;
@@ -133,7 +165,7 @@ function saveState() {
 }
 
 // ── Card factory ─────────────────────────────────────────────────────────────
-function makeCard(filename, column, fingerprint, memoryStatus) {
+function makeCard(filename, column, fingerprint, memoryStatus, suggestedName) {
   const card = document.createElement("article");
   card.className = "card";
   card.setAttribute("role", "listitem");
@@ -141,6 +173,7 @@ function makeCard(filename, column, fingerprint, memoryStatus) {
   card.dataset.filename = filename;
   card.dataset.fingerprint = fingerprint || "";
   card.dataset.memoryStatus = memoryStatus || "";
+  card.dataset.suggestedName = suggestedName || "";
   card.draggable = true;
   card.tabIndex = 0;
 
@@ -154,6 +187,12 @@ function makeCard(filename, column, fingerprint, memoryStatus) {
   actions.className = "card-actions";
 
   card.appendChild(img);
+
+  // Suggestion badge (always visible when status is "suggested")
+  if (memoryStatus === "suggested" && suggestedName) {
+    card.appendChild(_makeSuggestionBadge(card));
+  }
+
   card.appendChild(actions);
 
   setCardActions(card, column);
@@ -163,6 +202,45 @@ function makeCard(filename, column, fingerprint, memoryStatus) {
   attachTooltip(card);
 
   return card;
+}
+
+function _makeSuggestionBadge(card) {
+  const badge = document.createElement("div");
+  badge.className = "suggestion-badge";
+
+  const nameSpan = document.createElement("span");
+  nameSpan.className = "suggestion-badge-name";
+  nameSpan.textContent = card.dataset.suggestedName;
+  nameSpan.title = card.dataset.suggestedName;
+
+  const actionsDiv = document.createElement("div");
+  actionsDiv.className = "suggestion-badge-actions";
+
+  const acceptBtn = document.createElement("button");
+  acceptBtn.className = "suggestion-badge-btn accept";
+  acceptBtn.textContent = "✓";
+  acceptBtn.title = "Accept & rename";
+  acceptBtn.addEventListener("click", e => { e.stopPropagation(); acceptSuggestion(card); });
+
+  const rejectBtn = document.createElement("button");
+  rejectBtn.className = "suggestion-badge-btn reject";
+  rejectBtn.textContent = "✕";
+  rejectBtn.title = "Dismiss suggestion";
+  rejectBtn.addEventListener("click", e => { e.stopPropagation(); rejectSuggestion(card); });
+
+  const editBtn = document.createElement("button");
+  editBtn.className = "suggestion-badge-btn edit";
+  editBtn.textContent = "✎";
+  editBtn.title = "Edit & rename";
+  editBtn.addEventListener("click", e => { e.stopPropagation(); editSuggestion(card); });
+
+  actionsDiv.appendChild(acceptBtn);
+  actionsDiv.appendChild(rejectBtn);
+  actionsDiv.appendChild(editBtn);
+  badge.appendChild(nameSpan);
+  badge.appendChild(actionsDiv);
+
+  return badge;
 }
 
 // ── Card action buttons ──────────────────────────────────────────────────────
@@ -180,6 +258,14 @@ function setCardActions(card, column) {
     actions.appendChild(previewBtn);
     actions.appendChild(renameBtn);
     actions.appendChild(trashBtn);
+
+    // Show "✨ AI Suggest" for unprocessed files
+    if (card.dataset.memoryStatus === "new") {
+      const suggestBtn = makeActionBtn("✨ Suggest", "btn-suggest", () => suggestSingle(card));
+      // Insert after rename, before trash
+      const trashRef = actions.querySelector(".btn-trash");
+      if (trashRef) actions.insertBefore(suggestBtn, trashRef);
+    }
   } else {
     const undoBtn = makeActionBtn("\u21A9 Undo", "btn-undo", () => moveCard(card, "unsorted"));
     actions.appendChild(previewBtn);
@@ -498,12 +584,215 @@ document.addEventListener("keydown", e => {
     if (!lightbox.hidden) { closeLightbox(); return; }
     if (!confirmModal.hidden) { closeModal(); return; }
     if (!renameModal.hidden) { closeRenameModal(); return; }
+    if (!settingsModal.hidden) { closeSettingsModal(); return; }
   }
 
   if ((e.metaKey || e.ctrlKey) && e.key === "z") {
     e.preventDefault();
     performUndo();
   }
+});
+
+// ── AI Suggest (single card) ──────────────────────────────────────────────────
+function suggestSingle(card) {
+  const fp = card.dataset.fingerprint;
+  if (!fp) return;
+  suggestBatch([fp]);
+}
+
+// ── AI Suggest (batch) ──────────────────────────────────────────────────────
+function suggestBatch(fingerprints) {
+  if (fingerprints.length === 0) return;
+
+  suggestAllBtn.disabled = true;
+  suggestProgress.hidden = false;
+  suggestProgressFill.style.width = "0%";
+  suggestProgressText.textContent = `0 / ${fingerprints.length}`;
+
+  // Process in chunks of 3 to show progress
+  const chunkSize = 1;  // Ollama processes sequentially anyway
+  let completed = 0;
+
+  function processChunk(startIdx) {
+    if (startIdx >= fingerprints.length) {
+      // All done
+      suggestProgressFill.style.width = "100%";
+      suggestProgressText.textContent = `Done! ${completed} processed`;
+      setTimeout(() => { suggestProgress.hidden = true; suggestAllBtn.disabled = false; }, 1500);
+      return;
+    }
+
+    const chunk = fingerprints.slice(startIdx, startIdx + chunkSize);
+
+    fetch("/api/suggest-names", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ fingerprints: chunk }),
+    })
+      .then(r => r.json())
+      .then(data => {
+        const suggestions = data.suggestions || {};
+        for (const [fp, suggestedName] of Object.entries(suggestions)) {
+          const card = document.querySelector(`[data-fingerprint="${CSS.escape(fp)}"]`);
+          if (card) {
+            card.dataset.memoryStatus = "suggested";
+            card.dataset.suggestedName = suggestedName;
+            // Remove existing badge if any
+            const oldBadge = card.querySelector(".suggestion-badge");
+            if (oldBadge) oldBadge.remove();
+            // Insert badge after img, before card-actions
+            const badge = _makeSuggestionBadge(card);
+            const actions = card.querySelector(".card-actions");
+            card.insertBefore(badge, actions);
+            // Rebuild action buttons (remove "Suggest" btn)
+            setCardActions(card, getCardColumn(card));
+          }
+          completed++;
+        }
+        // Update progress
+        const nextIdx = startIdx + chunkSize;
+        const pct = Math.round((Math.min(nextIdx, fingerprints.length) / fingerprints.length) * 100);
+        suggestProgressFill.style.width = pct + "%";
+        suggestProgressText.textContent = `${Math.min(nextIdx, fingerprints.length)} / ${fingerprints.length}`;
+        processChunk(nextIdx);
+      })
+      .catch(() => {
+        // On error, skip ahead
+        const nextIdx = startIdx + chunkSize;
+        processChunk(nextIdx);
+      });
+  }
+
+  processChunk(0);
+}
+
+// ── Accept suggestion (rename file to suggested name) ───────────────────────
+function acceptSuggestion(card) {
+  const fp = card.dataset.fingerprint;
+  if (!fp) return;
+
+  fetch("/api/accept-suggestion", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ fingerprint: fp }),
+  })
+    .then(r => r.json())
+    .then(data => {
+      if (!data.ok) {
+        alert(data.error || "Failed to accept suggestion");
+        return;
+      }
+      const oldName = card.dataset.filename;
+      const newName = data.new_name;
+      const col = getCardColumn(card);
+      if (col === "unsorted") {
+        decisions.delete(oldName);
+      } else {
+        decisions.delete(oldName);
+        decisions.set(newName, col);
+      }
+      card.dataset.filename = newName;
+      card.dataset.memoryStatus = "renamed";
+      card.dataset.suggestedName = "";
+      const cardImg = card.querySelector("img");
+      cardImg.alt = newName;
+      cardImg.src = `/api/thumb/${encodeURIComponent(newName)}?t=${Date.now()}`;
+      // Remove badge
+      const badge = card.querySelector(".suggestion-badge");
+      if (badge) badge.remove();
+      setCardActions(card, col);
+      updateCounts();
+      saveState();
+    })
+    .catch(() => alert("Network error — please try again."));
+}
+
+// ── Reject suggestion (dismiss, mark as ignored) ─────────────────────────────
+function rejectSuggestion(card) {
+  const fp = card.dataset.fingerprint;
+  if (!fp) return;
+
+  fetch("/api/reject-suggestion", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ fingerprint: fp }),
+  })
+    .then(r => r.json())
+    .then(data => {
+      if (!data.ok) return;
+      card.dataset.memoryStatus = "ignored";
+      card.dataset.suggestedName = "";
+      const badge = card.querySelector(".suggestion-badge");
+      if (badge) badge.remove();
+      setCardActions(card, getCardColumn(card));
+    })
+    .catch(() => {});
+}
+
+// ── Edit suggestion (open rename modal pre-filled with suggested name) ────────
+function editSuggestion(card) {
+  renameTarget = card;
+  renameInput.value = card.dataset.suggestedName || card.dataset.filename;
+  renameError.textContent = "";
+  renameModal.hidden = false;
+  const dotIdx = renameInput.value.lastIndexOf(".");
+  renameInput.focus();
+  if (dotIdx > 0) {
+    renameInput.setSelectionRange(0, dotIdx);
+  }
+}
+
+// ── Suggest All button ───────────────────────────────────────────────────────
+suggestAllBtn.addEventListener("click", () => {
+  const newFps = [...document.querySelectorAll(".card")]
+    .filter(c => c.dataset.memoryStatus === "new")
+    .map(c => c.dataset.fingerprint)
+    .filter(Boolean);
+  if (newFps.length === 0) {
+    statusMsg.textContent = "No new screenshots to suggest names for.";
+    return;
+  }
+  suggestBatch(newFps);
+});
+
+// ── Settings modal ────────────────────────────────────────────────────────────
+settingsBtn.addEventListener("click", () => {
+  // Load current settings into form
+  settingsProvider.value = llmSettings.llm_provider || "ollama";
+  settingsModel.value = llmSettings.llm_model || "gemma4:e2b";
+  settingsAuto.checked = llmSettings.auto_suggest || false;
+  settingsModal.hidden = false;
+});
+
+function closeSettingsModal() {
+  settingsModal.hidden = true;
+}
+
+settingsCancel.addEventListener("click", closeSettingsModal);
+settingsModal.addEventListener("click", e => {
+  if (e.target === settingsModal) closeSettingsModal();
+});
+
+settingsSave.addEventListener("click", () => {
+  const newSettings = {
+    llm_provider: settingsProvider.value,
+    llm_model: settingsModel.value.trim() || "gemma4:e2b",
+    auto_suggest: settingsAuto.checked,
+  };
+
+  fetch("/api/settings", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(newSettings),
+  })
+    .then(r => r.json())
+    .then(data => {
+      if (data.ok) {
+        llmSettings = newSettings;
+        closeSettingsModal();
+      }
+    })
+    .catch(() => {});
 });
 
 // ── Undo ─────────────────────────────────────────────────────────────────────

@@ -1,3 +1,4 @@
+import base64
 import contextlib
 import json
 import logging
@@ -5,6 +6,8 @@ import os
 import socket
 import threading
 import time
+import urllib.error
+import urllib.request
 import webbrowser
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -48,6 +51,9 @@ DESKTOP = Path(os.environ.get("SS_DCL_DESKTOP", str(Path.home() / "Desktop")))
 THUMB_DIR = Path.home() / ".cache" / "ss-dcl" / "thumbs"
 STATE_FILE = Path.home() / ".ss-dcl" / "state.json"
 MEMORY_FILE = Path.home() / ".ss-dcl" / "memory.json"
+SETTINGS_FILE = Path.home() / ".ss-dcl" / "settings.json"
+DEFAULT_LLM_MODEL = "gemma4:e2b"
+OLLAMA_BASE_URL = os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434")
 # TODO Need to check if rendering changes for .tiff or .bmp needs to be handled seperately
 SUPPORTED_IMAGE_EXTENSION = (".png", ".jpg", ".jpeg", ".tiff", ".bmp")
 
@@ -123,6 +129,7 @@ def get_screenshots(sort: str = "name") -> list[dict[str, Any]]:
             memory.record_file(name, size)
             memory_status = "new"
             any_new = True
+        suggested_name = existing.suggested_name if existing else None
         files.append(
             {
                 "name": name,
@@ -130,6 +137,7 @@ def get_screenshots(sort: str = "name") -> list[dict[str, Any]]:
                 "mtime": st.st_mtime,
                 "fingerprint": fp,
                 "memory_status": memory_status,
+                "suggested_name": suggested_name,
             }
         )
     if any_new:
@@ -366,16 +374,235 @@ def api_memory():
     return jsonify({"files": result})
 
 
+def _call_ollama_suggest(image_path: Path, model: str) -> Optional[str]:
+    """Call Ollama API with an image and return a suggested filename.
+
+    Extracted as a module-level function so tests can monkeypatch it
+    without needing Ollama running.
+    """
+    with open(image_path, "rb") as fh:
+        image_b64 = base64.b64encode(fh.read()).decode("ascii")
+
+    prompt = (
+        "Describe this screenshot in 3-5 words as a filename. "
+        "Return only the filename, no explanation, no quotes."
+    )
+
+    payload = json.dumps(
+        {
+            "model": model,
+            "messages": [
+                {
+                    "role": "user",
+                    "content": prompt,
+                    "images": [image_b64],
+                }
+            ],
+            "stream": False,
+        }
+    ).encode("utf-8")
+
+    req = urllib.request.Request(
+        f"{OLLAMA_BASE_URL}/api/chat",
+        data=payload,
+        headers={"Content-Type": "application/json"},
+    )
+
+    try:
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            result = json.loads(resp.read())
+            raw = result.get("message", {}).get("content", "").strip()
+    except (urllib.error.URLError, OSError, json.JSONDecodeError) as exc:
+        logger.warning("Ollama suggest failed for %s: %s", image_path.name, exc)
+        return None
+
+    if not raw:
+        return None
+
+    # Sanitize: lowercase, replace spaces with hyphens, strip punctuation
+    sanitized = raw.lower().replace(" ", "-")
+    sanitized = "".join(c for c in sanitized if c.isalnum() or c in "-_")
+    sanitized = sanitized.strip("-_")[:120]
+    if not sanitized:
+        return None
+    return sanitized + ".png"
+
+
+def _load_settings() -> dict[str, Any]:
+    if SETTINGS_FILE.exists():
+        try:
+            return json.loads(SETTINGS_FILE.read_text())
+        except (json.JSONDecodeError, OSError):
+            return {}
+    return {}
+
+
+def _save_settings(settings: dict[str, Any]) -> None:
+    SETTINGS_FILE.parent.mkdir(parents=True, exist_ok=True)
+    atomic_write(SETTINGS_FILE, json.dumps(settings, indent=2))
+
+
 @app.route("/api/suggest-names", methods=["POST"])
 def api_suggest_names():
-    """Stub: returns empty suggestions. Will be wired to LLM in Phase 2."""
+    """Generate AI filename suggestions for unprocessed screenshots."""
     if not request.is_json:
         abort(400)
     data = request.get_json(silent=True) or {}
     fingerprints = data.get("fingerprints", [])
     if not isinstance(fingerprints, list):
         abort(400)
-    return jsonify({"suggestions": {}})
+
+    settings = _load_settings()
+    model = settings.get("llm_model", DEFAULT_LLM_MODEL)
+
+    memory = _get_memory()
+    suggestions: dict[str, str] = {}
+
+    for fp in fingerprints:
+        rec = memory.lookup(fp)
+        if rec is None:
+            continue
+        if rec.status != "new":
+            continue
+
+        # Locate file on disk via last_known_name or original_name
+        file_path: Optional[Path] = None
+        for candidate_name in (rec.last_known_name, rec.original_name):
+            if not candidate_name:
+                continue
+            p = DESKTOP / candidate_name
+            if p.exists() and p.is_file():
+                file_path = p
+                break
+
+        if file_path is None:
+            continue
+
+        suggested = _call_ollama_suggest(file_path, model)
+        if suggested:
+            memory.update_suggestion(fp, suggested)
+            suggestions[fp] = suggested
+
+    if suggestions:
+        memory.save()
+
+    return jsonify({"suggestions": suggestions})
+
+
+@app.route("/api/accept-suggestion", methods=["POST"])
+def api_accept_suggestion():
+    """Accept an AI suggested name: rename the file on disk."""
+    if not request.is_json:
+        abort(400)
+    data = request.get_json(silent=True) or {}
+    fingerprint = data.get("fingerprint", "")
+    if not fingerprint or not isinstance(fingerprint, str):
+        return jsonify({"ok": False, "error": "fingerprint is required"}), 400
+
+    memory = _get_memory()
+    rec = memory.lookup(fingerprint)
+    if rec is None:
+        return jsonify({"ok": False, "error": "fingerprint not found in memory"}), 404
+    if not rec.suggested_name:
+        return jsonify({"ok": False, "error": "no suggestion to accept"}), 400
+
+    old_name = rec.last_known_name or rec.original_name
+    new_name = rec.suggested_name
+    old_path = DESKTOP / old_name
+    new_path = DESKTOP / new_name
+
+    if not old_path.exists():
+        return jsonify({"ok": False, "error": "source file not found on disk"}), 404
+    if new_path.exists():
+        # Append a counter to avoid overwriting
+        stem = Path(new_name).stem
+        suffix = Path(new_name).suffix
+        counter = 2
+        while (DESKTOP / f"{stem}-{counter}{suffix}").exists():
+            counter += 1
+        new_name = f"{stem}-{counter}{suffix}"
+        new_path = DESKTOP / new_name
+
+    try:
+        old_path.rename(new_path)
+    except OSError as exc:
+        logger.error("Failed to rename %s to %s: %s", old_name, new_name, exc)
+        return jsonify({"ok": False, "error": str(exc)}), 500
+
+    # Move thumbnail
+    old_thumb = THUMB_DIR / old_name
+    new_thumb = THUMB_DIR / new_name
+    with contextlib.suppress(Exception):
+        if old_thumb.exists():
+            old_thumb.rename(new_thumb)
+
+    # Update state.json
+    if STATE_FILE.exists():
+        try:
+            state = json.loads(STATE_FILE.read_text())
+            decisions = state.get("decisions", {})
+            if old_name in decisions:
+                decisions[new_name] = decisions.pop(old_name)
+                atomic_write(STATE_FILE, json.dumps(state))
+        except (json.JSONDecodeError, KeyError):
+            logger.warning("State file corruption during accept-suggestion")
+
+    # Update memory
+    memory.accept_suggestion(fingerprint, new_name)
+    memory.save()
+
+    logger.info("Accepted suggestion: %s → %s", old_name, new_name)
+    return jsonify({"ok": True, "old_name": old_name, "new_name": new_name})
+
+
+@app.route("/api/reject-suggestion", methods=["POST"])
+def api_reject_suggestion():
+    """Reject/dismiss an AI suggested name."""
+    if not request.is_json:
+        abort(400)
+    data = request.get_json(silent=True) or {}
+    fingerprint = data.get("fingerprint", "")
+    if not fingerprint or not isinstance(fingerprint, str):
+        return jsonify({"ok": False, "error": "fingerprint is required"}), 400
+
+    memory = _get_memory()
+    rec = memory.lookup(fingerprint)
+    if rec is None:
+        return jsonify({"ok": False, "error": "fingerprint not found in memory"}), 404
+
+    memory.reject_suggestion(fingerprint)
+    memory.save()
+    return jsonify({"ok": True})
+
+
+@app.route("/api/settings", methods=["GET"])
+def api_get_settings():
+    """Return current LLM/settings configuration."""
+    s = _load_settings()
+    return jsonify(
+        {
+            "llm_provider": s.get("llm_provider", "ollama"),
+            "llm_model": s.get("llm_model", DEFAULT_LLM_MODEL),
+            "auto_suggest": s.get("auto_suggest", False),
+        }
+    )
+
+
+@app.route("/api/settings", methods=["PUT"])
+def api_save_settings():
+    """Save LLM/settings configuration."""
+    if not request.is_json:
+        abort(400)
+    data = request.get_json(silent=True) or {}
+    if not isinstance(data, dict):
+        abort(400)
+
+    current = _load_settings()
+    for key in ("llm_provider", "llm_model", "auto_suggest"):
+        if key in data:
+            current[key] = data[key]
+    _save_settings(current)
+    return jsonify({"ok": True})
 
 
 def _find_free_port(start: int, max_tries: int = 100) -> int:
