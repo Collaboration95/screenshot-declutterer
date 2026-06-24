@@ -93,7 +93,7 @@ function loadScreenshots(savedDecisions) {
         const target = col === "trash" ? cardsTrash
                      : col === "keep"  ? cardsKeep
                      : cardsUnsorted;
-        target.appendChild(makeCard(f.name, col));
+        target.appendChild(makeCard(f.name, col, f.fingerprint, f.memory_status));
       });
       updateCounts();
       saveState();
@@ -133,12 +133,14 @@ function saveState() {
 }
 
 // ── Card factory ─────────────────────────────────────────────────────────────
-function makeCard(filename, column) {
+function makeCard(filename, column, fingerprint, memoryStatus) {
   const card = document.createElement("article");
   card.className = "card";
   card.setAttribute("role", "listitem");
   card.setAttribute("aria-label", filename);
   card.dataset.filename = filename;
+  card.dataset.fingerprint = fingerprint || "";
+  card.dataset.memoryStatus = memoryStatus || "";
   card.draggable = true;
   card.tabIndex = 0;
 
@@ -440,6 +442,10 @@ function _confirmLightboxRename() {
           decisions.set(newName, col);
         }
         card.dataset.filename = newName;
+        // A rename always transitions status to "renamed".
+        // fingerprint stays unchanged — it's the stable identity key
+        // (original macOS name + size), not a derived filename attribute.
+        card.dataset.memoryStatus = "renamed";
         const cardImg = card.querySelector("img");
         cardImg.alt = newName;
         cardImg.src = `/api/thumb/${encodeURIComponent(newName)}?t=${Date.now()}`;
@@ -618,6 +624,10 @@ renameConfirm.addEventListener("click", () => {
         decisions.set(newName, col);
       }
       renameTarget.dataset.filename = newName;
+      // A rename always transitions status to "renamed".
+      // fingerprint stays unchanged — it's the stable identity key
+      // (original macOS name + size), not a derived filename attribute.
+      renameTarget.dataset.memoryStatus = "renamed";
       const cardImg = renameTarget.querySelector("img");
       cardImg.alt = newName;
       cardImg.src = `/api/thumb/${encodeURIComponent(newName)}?t=${Date.now()}`;
