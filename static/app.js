@@ -532,6 +532,9 @@ function _confirmLightboxRename() {
         // fingerprint stays unchanged — it's the stable identity key
         // (original macOS name + size), not a derived filename attribute.
         card.dataset.memoryStatus = "renamed";
+        card.dataset.suggestedName = "";
+        const badge = card.querySelector(".suggestion-badge");
+        if (badge) badge.remove();
         const cardImg = card.querySelector("img");
         cardImg.alt = newName;
         cardImg.src = `/api/thumb/${encodeURIComponent(newName)}?t=${Date.now()}`;
@@ -917,6 +920,9 @@ renameConfirm.addEventListener("click", () => {
       // fingerprint stays unchanged — it's the stable identity key
       // (original macOS name + size), not a derived filename attribute.
       renameTarget.dataset.memoryStatus = "renamed";
+      renameTarget.dataset.suggestedName = "";
+      const badge = renameTarget.querySelector(".suggestion-badge");
+      if (badge) badge.remove();
       const cardImg = renameTarget.querySelector("img");
       cardImg.alt = newName;
       cardImg.src = `/api/thumb/${encodeURIComponent(newName)}?t=${Date.now()}`;

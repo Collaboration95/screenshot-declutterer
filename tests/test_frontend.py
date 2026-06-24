@@ -225,3 +225,14 @@ def test_css_has_settings_form_styles(client):
     r = c.get("/static/style.css")
     assert r.status_code == 200
     assert b"settings-form" in r.data
+
+
+def test_rename_handlers_remove_suggestion_badge(client):
+    """Both rename paths (modal + lightbox) must remove .suggestion-badge after rename."""
+    c, _ = client
+    r = c.get("/static/app.js")
+    assert r.status_code == 200
+    # Lightbox rename
+    assert b"if (badge) badge.remove()" in r.data
+    # Modal rename sets suggestedName to empty
+    assert b'suggestedName = ""' in r.data
