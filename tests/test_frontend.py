@@ -252,3 +252,61 @@ def test_rename_handlers_remove_suggestion_badge(client):
     assert b"if (badge) badge.remove()" in r.data
     # Modal rename sets suggestedName to empty
     assert b'suggestedName = ""' in r.data
+
+
+# ── Phase 4B: Dark mode ─────────────────────────────────────────────────────
+
+
+def test_index_has_theme_toggle(client):
+    """#theme-toggle button exists in HTML."""
+    c, _ = client
+    html = c.get("/").data.decode()
+    assert 'id="theme-toggle"' in html
+
+
+def test_app_js_has_theme_cycle(client):
+    """JS must define cycleTheme or THEME_KEY for theme management."""
+    c, _ = client
+    r = c.get("/static/app.js")
+    assert r.status_code == 200
+    assert b"THEME_KEY" in r.data
+    assert b"function cycleTheme(" in r.data
+
+
+def test_css_has_dark_variables(client):
+    """CSS must have [data-theme="dark"] block with --bg-body."""
+    c, _ = client
+    r = c.get("/static/style.css")
+    assert r.status_code == 200
+    assert b'[data-theme="dark"]' in r.data
+    assert b"--bg-body" in r.data
+
+
+def test_css_has_light_variables(client):
+    """CSS must have :root block with CSS custom properties."""
+    c, _ = client
+    r = c.get("/static/style.css")
+    assert r.status_code == 200
+    assert b":root {" in r.data
+    assert b"--bg-body" in r.data
+
+
+# ── Phase 4C/4D: Frontend hints + failure count ──────────────────────────────
+
+
+def test_css_has_category_hint_styles(client):
+    """CSS must define .category-hint-keep/-trash rules."""
+    c, _ = client
+    r = c.get("/static/style.css")
+    assert r.status_code == 200
+    assert b"category-hint-keep" in r.data
+    assert b"category-hint-trash" in r.data
+
+
+def test_app_js_shows_failure_count(client):
+    """JS must reference failures.length for showing failure count."""
+    c, _ = client
+    r = c.get("/static/app.js")
+    assert r.status_code == 200
+    assert b"failedCount" in r.data
+    assert b"failures" in r.data

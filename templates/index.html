@@ -21,6 +21,10 @@
         <option value="size_desc">Largest first</option>
       </select>
       <button id="suggest-all-btn" class="header-suggest-btn" aria-label="Suggest names for all new screenshots">✨ Suggest All</button>
+      <button id="theme-toggle" class="header-theme-btn" aria-label="Toggle dark mode">
+        <span class="theme-icon-light">☀</span>
+        <span class="theme-icon-dark">☾</span>
+      </button>
       <button id="undo-btn" disabled aria-label="Undo last move">Undo</button>
       <button id="done-btn" disabled aria-label="Move screenshots to trash">Done</button>
       <button id="settings-btn" class="header-settings-btn" aria-label="Open settings">⚙</button>
@@ -129,6 +133,10 @@
         <div class="settings-field settings-field-toggle">
           <label for="settings-auto">Auto-suggest on scan</label>
           <input id="settings-auto" type="checkbox" />
+        </div>
+        <div class="settings-field">
+          <label for="settings-prune-age">Prune memory after (days)</label>
+          <input id="settings-prune-age" type="number" min="1" max="730" class="rename-input" />
         </div>
       </div>
       <div class="modal-actions">

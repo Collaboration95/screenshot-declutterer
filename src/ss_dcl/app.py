@@ -94,8 +94,23 @@ def _get_memory() -> MemoryStore:
 
 def _reset_memory() -> None:
     global _memory_store
+    global _prune_max_age_cache
     with _memory_lock:
         _memory_store = None
+    _prune_max_age_cache = None
+
+
+# ── Settings cache (prune age) ──────────────────────────────────────────────
+_prune_max_age_cache: Optional[int] = None
+
+
+def _prune_max_age() -> int:
+    global _prune_max_age_cache
+    if _prune_max_age_cache is None:
+        _prune_max_age_cache = _load_settings().get("prune_max_age_days", 90)
+    # Global could be None in theory, but we just ensured it's set above
+    age: int = _prune_max_age_cache  # type: ignore[assignment]
+    return age
 
 
 _dirs_initialized = False
@@ -114,6 +129,7 @@ def get_screenshots(sort: str = "name") -> list[dict[str, Any]]:
     memory = _get_memory()
     files: list[dict[str, Any]] = []
     any_new = False
+    active_fps: set[str] = set()
     for p in DESKTOP.glob("Screenshot*.*"):
         if not p.is_file() or (p.suffix.lower() not in SUPPORTED_IMAGE_EXTENSION):
             continue
@@ -128,11 +144,14 @@ def get_screenshots(sort: str = "name") -> list[dict[str, Any]]:
             existing = memory.lookup_by_name(name)
         if existing is not None:
             memory_status = existing.status
+            active_fps.add(existing.fingerprint)
         else:
-            memory.record_file(name, size)
+            rec = memory.record_file(name, size)
             memory_status = "new"
+            active_fps.add(rec.fingerprint)
             any_new = True
         suggested_name = existing.suggested_name if existing else None
+        suggested_category = existing.meta.get("suggested_category") if existing else None
         files.append(
             {
                 "name": name,
@@ -141,10 +160,18 @@ def get_screenshots(sort: str = "name") -> list[dict[str, Any]]:
                 "fingerprint": fp,
                 "memory_status": memory_status,
                 "suggested_name": suggested_name,
+                "suggested_category": suggested_category,
             }
         )
     if any_new:
         memory.save()
+
+    # ── Memory pruning (4A) ──────────────────────────────────────────
+    pruned = memory.prune_stale(active_fps, max_age_days=_prune_max_age())
+    if pruned > 0:
+        logger.info("Pruned %d stale memory entries (max age: %d days)", pruned, _prune_max_age())
+        memory.save()
+
     key, reverse = SORT_OPTIONS.get(sort, ("name", False))
     return sorted(files, key=lambda f: f[key], reverse=reverse)
 
@@ -361,11 +388,7 @@ def api_rename():
 
 @app.route("/api/memory")
 def api_memory():
-    """Return memory status for all recorded files.
-
-    TODO(phase-1b): periodically call memory.prune_stale(active_fingerprints)
-    to prevent unbounded growth of orphaned entries from long-trashed files.
-    """
+    """Return memory status for all recorded files."""
     memory = _get_memory()
     result: dict[str, dict[str, Any]] = {}
     for rec in memory.all_records():
@@ -386,7 +409,11 @@ def _call_ollama_suggest(image_path: Path, model: str, extension: str = ".png") 
     *extension* is appended to the sanitized name and should include
     the leading dot (e.g. ``".jpg"``).  Defaults to ``".png"`` for
     backward compatibility.
+
+    Retries up to 2 times on connection/timeout errors with 1s/2s backoff.
+    JSON decode errors are not retried (malformed response won't fix itself).
     """
+    max_retries = 2
     with open(image_path, "rb") as fh:
         image_b64 = base64.b64encode(fh.read()).decode("ascii")
 
@@ -415,13 +442,35 @@ def _call_ollama_suggest(image_path: Path, model: str, extension: str = ".png") 
         headers={"Content-Type": "application/json"},
     )
 
-    try:
-        with urllib.request.urlopen(req, timeout=30) as resp:
-            result = json.loads(resp.read())
-            raw = result.get("message", {}).get("content", "").strip()
-    except (urllib.error.URLError, OSError, json.JSONDecodeError) as exc:
-        logger.warning("Ollama suggest failed for %s: %s", image_path.name, exc)
-        return None
+    for attempt in range(max_retries + 1):
+        try:
+            with urllib.request.urlopen(req, timeout=30) as resp:
+                result = json.loads(resp.read())
+                raw = result.get("message", {}).get("content", "").strip()
+                break
+        except json.JSONDecodeError as exc:
+            logger.warning("Ollama returned malformed JSON for %s: %s", image_path.name, exc)
+            return None
+        except (urllib.error.URLError, OSError) as exc:
+            if attempt < max_retries:
+                wait = 2**attempt
+                logger.warning(
+                    "Ollama attempt %d/%d failed for %s, retrying in %ds: %s",
+                    attempt + 1,
+                    max_retries + 1,
+                    image_path.name,
+                    wait,
+                    exc,
+                )
+                time.sleep(wait)
+            else:
+                logger.warning(
+                    "Ollama suggest failed after %d attempts for %s: %s",
+                    max_retries + 1,
+                    image_path.name,
+                    exc,
+                )
+                return None
 
     if not raw:
         return None
@@ -453,6 +502,59 @@ def _save_settings(settings: dict[str, Any]) -> None:
     atomic_write(SETTINGS_FILE, json.dumps(settings, indent=2))
 
 
+# ── Auto-categorization helpers (4C) ──────────────────────────────────────────
+
+
+def extract_keywords(suggested_name: str) -> list[str]:
+    """Extract keywords from a kebab-case filename stem.
+
+    >>> extract_keywords("customer-onboarding-discussion.png")
+    ['customer', 'onboarding', 'discussion']
+    """
+    stem = Path(suggested_name).stem
+    return [w.lower() for w in stem.split("-") if len(w) > 2]
+
+
+def _read_decisions() -> dict[str, str]:
+    """Read state.json decisions, returning {} on miss/corruption."""
+    if STATE_FILE.exists():
+        try:
+            state = json.loads(STATE_FILE.read_text())
+            return state.get("decisions", {})
+        except (json.JSONDecodeError, OSError):
+            return {}
+    return {}
+
+
+def suggest_category(
+    keywords: list[str],
+    memory: MemoryStore,
+    decisions: dict[str, str],
+) -> Optional[str]:
+    """Return 'keep', 'trash', or None based on the user's past decisions."""
+    kw = set(keywords)
+    keep_score = 0
+    trash_score = 0
+
+    for filename, decision in decisions.items():
+        if decision not in ("keep", "trash"):
+            continue
+        rec = memory.lookup_by_name(filename)
+        if rec is None:
+            continue
+        overlap = len(kw & set(rec.meta.get("keywords", [])))
+        if decision == "keep":
+            keep_score += overlap
+        else:
+            trash_score += overlap
+
+    if keep_score > trash_score:
+        return "keep"
+    if trash_score > keep_score:
+        return "trash"
+    return None
+
+
 @app.route("/api/suggest-names", methods=["POST"])
 def api_suggest_names():
     """Generate AI filename suggestions for unprocessed screenshots."""
@@ -472,6 +574,8 @@ def api_suggest_names():
 
     memory = _get_memory()
     suggestions: dict[str, str] = {}
+    failures: list[str] = []
+    decisions = _read_decisions()
 
     for fp in fingerprints:
         rec = memory.lookup(fp)
@@ -495,13 +599,20 @@ def api_suggest_names():
 
         suggested = _call_ollama_suggest(file_path, model, rec.extension)
         if suggested:
+            keywords = extract_keywords(suggested)
+            rec.meta["keywords"] = keywords
             memory.update_suggestion(fp, suggested)
+            category = suggest_category(keywords, memory, decisions)
+            if category:
+                rec.meta["suggested_category"] = category
             suggestions[fp] = suggested
+        else:
+            failures.append(fp)
 
     if suggestions:
         memory.save()
 
-    return jsonify({"suggestions": suggestions})
+    return jsonify({"suggestions": suggestions, "failures": failures})
 
 
 @app.route("/api/accept-suggestion", methods=["POST"])
@@ -607,6 +718,7 @@ def api_get_settings():
             "llm_provider": s.get("llm_provider", "ollama"),
             "llm_model": s.get("llm_model", DEFAULT_LLM_MODEL),
             "auto_suggest": s.get("auto_suggest", False),
+            "prune_max_age_days": s.get("prune_max_age_days", 90),
         }
     )
 
@@ -614,6 +726,7 @@ def api_get_settings():
 @app.route("/api/settings", methods=["PUT"])
 def api_save_settings():
     """Save LLM/settings configuration."""
+    global _prune_max_age_cache
     if not request.is_json:
         abort(400)
     data = request.get_json(silent=True) or {}
@@ -625,8 +738,9 @@ def api_save_settings():
         "llm_provider": str,
         "llm_model": str,
         "auto_suggest": bool,
+        "prune_max_age_days": int,
     }
-    for key in ("llm_provider", "llm_model", "auto_suggest"):
+    for key in ("llm_provider", "llm_model", "auto_suggest", "prune_max_age_days"):
         if key in data:
             if not isinstance(data[key], type_checks[key]):
                 return (
@@ -640,6 +754,7 @@ def api_save_settings():
                 )
             current[key] = data[key]
     _save_settings(current)
+    _prune_max_age_cache = None
     return jsonify({"ok": True})
 
 

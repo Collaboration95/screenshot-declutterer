@@ -11,6 +11,7 @@ Tests that:
 """
 
 import json
+import urllib.error
 from unittest.mock import patch
 
 import src.ss_dcl.app as flask_app
@@ -263,7 +264,7 @@ def test_suggest_names_unknown_fingerprints_return_empty(client):
         content_type="application/json",
     )
     assert r.status_code == 200
-    assert json.loads(r.data) == {"suggestions": {}}
+    assert json.loads(r.data) == {"suggestions": {}, "failures": []}
 
 
 def test_suggest_names_rejects_non_json(client):
@@ -281,7 +282,7 @@ def test_suggest_names_rejects_missing_fingerprints(client):
     )
     # fingerprints defaults to [] and is a list, so it passes validation
     assert r.status_code == 200
-    assert json.loads(r.data) == {"suggestions": {}}
+    assert json.loads(r.data) == {"suggestions": {}, "failures": []}
 
 
 def test_suggest_names_rejects_non_list_fingerprints(client):
@@ -549,7 +550,7 @@ def test_suggest_names_skips_already_processed(client, monkeypatch):
         content_type="application/json",
     )
     assert r.status_code == 200
-    assert json.loads(r.data) == {"suggestions": {}}
+    assert json.loads(r.data) == {"suggestions": {}, "failures": []}
     assert call_count == 0  # LLM never called for ignored files
 
 
@@ -573,7 +574,7 @@ def test_suggest_names_handles_llm_returning_none(client, monkeypatch):
         content_type="application/json",
     )
     assert r.status_code == 200
-    assert json.loads(r.data) == {"suggestions": {}}
+    assert json.loads(r.data) == {"suggestions": {}, "failures": [fp]}
 
     # Status should remain "new" (unchanged)
     memory = flask_app._get_memory()
@@ -588,7 +589,7 @@ def test_suggest_names_unknown_fingerprint_skipped(client, monkeypatch):
         content_type="application/json",
     )
     assert r.status_code == 200
-    assert json.loads(r.data) == {"suggestions": {}}
+    assert json.loads(r.data) == {"suggestions": {}, "failures": []}
 
 
 # ── /api/accept-suggestion ─────────────────────────────────────────────────
@@ -1048,3 +1049,449 @@ def test_suggest_names_preserves_non_png_extension(client, monkeypatch):
     )
     assert r.status_code == 200
     assert json.loads(r.data)["suggestions"][fp] == "beach-photo.jpg"
+
+
+# ── Phase 4A: Memory pruning / GC ──────────────────────────────────────────
+
+
+def test_scan_triggers_prune_stale(client):
+    """After scanning, orphaned entries beyond max age are removed from memory."""
+    c, desktop = client
+
+    # Create a file and scan it to populate memory
+    f = desktop / "Screenshot fresh.png"
+    f.write_bytes(b"fresh")
+    c.get("/api/screenshots")
+
+    # Create a stale orphan entry directly in memory (pretend it was trashed long ago)
+    memory = flask_app._get_memory()
+    orphan = memory.record_file("Screenshot old-orphan.png", 9999)
+    orphan.status = "trashed"
+    # Backdate last_updated to 100 days ago
+    from datetime import datetime, timedelta, timezone
+
+    orphan.last_updated = (datetime.now(tz=timezone.utc) - timedelta(days=100)).isoformat()
+    memory.save()
+
+    assert memory.lookup(orphan.fingerprint) is not None
+
+    # Force prune max age to 90 days (default) — orphan is 100 days old → pruned
+    flask_app._reset_memory()
+    c.get("/api/screenshots")
+
+    memory = flask_app._get_memory()
+    assert memory.lookup(orphan.fingerprint) is None, "100-day-old orphan should be pruned"
+
+
+def test_prune_respects_settings_age(client):
+    """Changing prune_max_age_days in settings affects what gets pruned."""
+    c, desktop = client
+
+    # Set a short max age (1 day)
+    c.put(
+        "/api/settings",
+        data=json.dumps({"prune_max_age_days": 1}),
+        content_type="application/json",
+    )
+
+    f = desktop / "Screenshot active.png"
+    f.write_bytes(b"active")
+    c.get("/api/screenshots")
+
+    # Create an orphan trashed 5 days ago
+    memory = flask_app._get_memory()
+    orphan = memory.record_file("Screenshot old.png", 8888)
+    orphan.status = "trashed"
+    from datetime import datetime, timedelta, timezone
+
+    orphan.last_updated = (datetime.now(tz=timezone.utc) - timedelta(days=5)).isoformat()
+    memory.save()
+
+    flask_app._reset_memory()
+    c.get("/api/screenshots")
+
+    memory = flask_app._get_memory()
+    assert memory.lookup(orphan.fingerprint) is None, (
+        "5-day-old orphan should be pruned with max_age=1"
+    )
+
+
+def test_prune_keeps_active_entries(client):
+    """Files still on disk are never pruned regardless of age."""
+    c, desktop = client
+
+    f = desktop / "Screenshot ancient.png"
+    f.write_bytes(b"old but alive")
+    c.get("/api/screenshots")
+
+    # Backdate the record to 200 days ago
+    memory = flask_app._get_memory()
+    r = c.get("/api/screenshots")
+    fp = json.loads(r.data)[0]["fingerprint"]
+    rec = memory.lookup(fp)
+    from datetime import datetime, timedelta, timezone
+
+    rec.last_updated = (datetime.now(tz=timezone.utc) - timedelta(days=200)).isoformat()
+    memory.save()
+
+    flask_app._reset_memory()
+    c.get("/api/screenshots")
+
+    memory = flask_app._get_memory()
+    assert memory.lookup(fp) is not None, "Active file should never be pruned"
+
+
+def test_prune_keeps_renamed_on_disk(client):
+    """A renamed file still on disk is treated as active and never pruned."""
+    c, desktop = client
+    old = desktop / "Screenshot original.png"
+    old.write_bytes(_make_png(10, 10))
+
+    # Scan → record
+    c.get("/api/screenshots")
+
+    # Rename
+    c.post(
+        "/api/rename",
+        data=json.dumps({"old_name": old.name, "new_name": "Screenshot renamed-on-disk.png"}),
+        content_type="application/json",
+    )
+
+    # The renamed file should still be considered active
+    flask_app._reset_memory()
+    r = c.get("/api/screenshots")
+    files = json.loads(r.data)
+    assert len(files) == 1
+    assert files[0]["name"] == "Screenshot renamed-on-disk.png"
+    # The record must still exist (not pruned)
+    memory = flask_app._get_memory()
+    rec = memory.lookup_by_name("Screenshot renamed-on-disk.png")
+    assert rec is not None, "Renamed file on disk should not be pruned"
+
+
+def test_prune_keeps_recent_inactive(client):
+    """Files trashed 5 days ago are kept when max_age=90."""
+    c, desktop = client
+
+    f = desktop / "Screenshot recent-trash.png"
+    f.write_bytes(b"data")
+    c.get("/api/screenshots")
+
+    memory = flask_app._get_memory()
+    r = c.get("/api/screenshots")
+    fp = json.loads(r.data)[0]["fingerprint"]
+    rec = memory.lookup(fp)
+    from datetime import datetime, timedelta, timezone
+
+    rec.status = "trashed"
+    rec.last_updated = (datetime.now(tz=timezone.utc) - timedelta(days=5)).isoformat()
+    memory.save()
+
+    # Remove file from disk (simulating trash)
+    f.unlink()
+
+    flask_app._reset_memory()
+    c.get("/api/screenshots")
+
+    memory = flask_app._get_memory()
+    assert memory.lookup(fp) is not None, (
+        "Recently trashed file should be kept within 90-day window"
+    )
+
+
+def test_save_settings_invalidates_prune_cache(client):
+    """After saving prune_max_age_days, the cached value is refreshed."""
+    c, _ = client
+
+    # Set a non-default value
+    c.put(
+        "/api/settings",
+        data=json.dumps({"prune_max_age_days": 7}),
+        content_type="application/json",
+    )
+
+    # The cache should be invalidated; next call reads fresh
+    # Verify the settings round-trip
+    r = c.get("/api/settings")
+    assert json.loads(r.data)["prune_max_age_days"] == 7
+
+
+def test_settings_prune_age_roundtrip(client):
+    """Save → load preserves prune_max_age_days."""
+    c, _ = client
+    c.put(
+        "/api/settings",
+        data=json.dumps({"prune_max_age_days": 30}),
+        content_type="application/json",
+    )
+    r = c.get("/api/settings")
+    assert json.loads(r.data)["prune_max_age_days"] == 30
+
+
+def test_settings_prune_age_type_validation(client):
+    """Non-integer prune_max_age_days values are rejected."""
+    c, _ = client
+    r = c.put(
+        "/api/settings",
+        data=json.dumps({"prune_max_age_days": "not-a-number"}),
+        content_type="application/json",
+    )
+    assert r.status_code == 400
+
+
+# ── Phase 4C: Auto-categorization ──────────────────────────────────────────
+
+
+def test_extract_keywords_from_suggested_name():
+    """extract_keywords parses kebab-case filename stems."""
+    assert flask_app.extract_keywords("foo-bar-baz.png") == ["foo", "bar", "baz"]
+
+
+def test_extract_keywords_filters_short_words():
+    """Words with length <= 2 are filtered out."""
+    assert flask_app.extract_keywords("a-b-cat.png") == ["cat"]
+
+
+def test_suggest_category_no_decisions_returns_none(client):
+    """Empty decisions → no categorization."""
+    _, _t = client
+    memory = flask_app._get_memory()
+    result = flask_app.suggest_category(["foo", "bar"], memory, {})
+    assert result is None
+
+
+def test_suggest_category_keep_when_keywords_match_kept(client):
+    """Files marked 'keep' in decisions with matching keywords → 'keep'."""
+    _, _t = client
+    memory = flask_app._get_memory()
+
+    # Create a memory record for a file that was kept
+    rec = memory.record_file("kept-file.png", 100)
+    rec.meta["keywords"] = ["customer", "onboarding"]
+
+    decisions = {"kept-file.png": "keep"}
+    result = flask_app.suggest_category(["customer", "discussion"], memory, decisions)
+    assert result == "keep"
+
+
+def test_suggest_category_trash_when_keywords_match_trashed(client):
+    """Files marked 'trash' in decisions with matching keywords → 'trash'."""
+    _, _t = client
+    memory = flask_app._get_memory()
+
+    rec = memory.record_file("trashed-file.png", 200)
+    rec.meta["keywords"] = ["meme", "funny"]
+
+    decisions = {"trashed-file.png": "trash"}
+    result = flask_app.suggest_category(["funny", "joke"], memory, decisions)
+    assert result == "trash"
+
+
+def test_suggest_category_ignores_renamed_but_undecided(client):
+    """A renamed (but undecided) file does not count as a keep signal."""
+    _, _t = client
+    memory = flask_app._get_memory()
+
+    # Create a file that was renamed (not in decisions)
+    rec = memory.record_file("renamed-file.png", 300)
+    rec.meta["keywords"] = ["work", "report"]
+    rec.status = "renamed"
+
+    decisions = {}  # Not decided → should not contribute
+    result = flask_app.suggest_category(["work"], memory, decisions)
+    assert result is None
+
+
+def test_suggest_category_tie_returns_none(client):
+    """Equal keep/trash scores → None."""
+    _, _t = client
+    memory = flask_app._get_memory()
+
+    rec1 = memory.record_file("kept.png", 100)
+    rec1.meta["keywords"] = ["shared"]
+    rec2 = memory.record_file("trashed.png", 200)
+    rec2.meta["keywords"] = ["shared"]
+
+    decisions = {"kept.png": "keep", "trashed.png": "trash"}
+    result = flask_app.suggest_category(["shared"], memory, decisions)
+    assert result is None
+
+
+def test_suggest_names_stores_keywords_in_meta(client, monkeypatch):
+    """After LLM suggest, rec.meta.keywords is populated."""
+    c, desktop = client
+    f = desktop / "Screenshot 2024-01-01 at 12.00.00 PM.png"
+    f.write_bytes(_make_png(10, 10))
+
+    r = c.get("/api/screenshots")
+    fp = json.loads(r.data)[0]["fingerprint"]
+
+    def mock_suggest(image_path, model, extension=".png"):
+        return "customer-onboarding-discussion" + extension
+
+    monkeypatch.setattr(flask_app, "_call_ollama_suggest", mock_suggest)
+
+    c.post(
+        "/api/suggest-names",
+        data=json.dumps({"fingerprints": [fp]}),
+        content_type="application/json",
+    )
+
+    memory = flask_app._get_memory()
+    rec = memory.lookup(fp)
+    assert rec.meta.get("keywords") == ["customer", "onboarding", "discussion"]
+
+
+def test_screenshots_includes_suggested_category(client, monkeypatch):
+    """Response includes suggested_category field."""
+    c, desktop = client
+    f = desktop / "Screenshot 2024-01-01 at 12.00.00 PM.png"
+    f.write_bytes(_make_png(10, 10))
+
+    c.get("/api/screenshots")
+    r = c.get("/api/screenshots")
+    file_data = json.loads(r.data)[0]
+    # Without any suggestion, field should be None
+    assert "suggested_category" in file_data
+    assert file_data["suggested_category"] is None
+
+
+# ── Phase 4D: LLM retry / error recovery ────────────────────────────────────
+
+
+def test_suggest_names_returns_failures_list(client, monkeypatch):
+    """Failures appear in response when LLM returns None."""
+    c, desktop = client
+    f = desktop / "Screenshot 2024-01-01 at 12.00.00 PM.png"
+    f.write_bytes(_make_png(10, 10))
+
+    r = c.get("/api/screenshots")
+    fp = json.loads(r.data)[0]["fingerprint"]
+
+    def mock_suggest(image_path, model, extension=".png"):
+        return None
+
+    monkeypatch.setattr(flask_app, "_call_ollama_suggest", mock_suggest)
+
+    r = c.post(
+        "/api/suggest-names",
+        data=json.dumps({"fingerprints": [fp]}),
+        content_type="application/json",
+    )
+    data = json.loads(r.data)
+    assert data["suggestions"] == {}
+    assert data["failures"] == [fp]
+
+
+def test_suggest_names_empty_failures_on_success(client, monkeypatch):
+    """failures: [] when all succeed."""
+    c, desktop = client
+    f = desktop / "Screenshot 2024-01-01 at 12.00.00 PM.png"
+    f.write_bytes(_make_png(10, 10))
+
+    r = c.get("/api/screenshots")
+    fp = json.loads(r.data)[0]["fingerprint"]
+
+    def mock_suggest(image_path, model, extension=".png"):
+        return "good-suggestion" + extension
+
+    monkeypatch.setattr(flask_app, "_call_ollama_suggest", mock_suggest)
+
+    r = c.post(
+        "/api/suggest-names",
+        data=json.dumps({"fingerprints": [fp]}),
+        content_type="application/json",
+    )
+    data = json.loads(r.data)
+    assert data["failures"] == []
+    assert fp in data["suggestions"]
+
+
+def test_call_ollama_suggest_retries_on_url_error(tmp_path, monkeypatch):
+    """Retries up to max_retries times on URLError before giving up."""
+    img = tmp_path / "test.png"
+    img.write_bytes(b"fake-data")
+
+    call_count = 0
+
+    def mock_urlopen(req, timeout=None):
+        nonlocal call_count
+        call_count += 1
+        raise urllib.error.URLError("connection refused")
+
+    monkeypatch.setattr(flask_app.urllib.request, "urlopen", mock_urlopen)
+    monkeypatch.setattr(flask_app.time, "sleep", lambda s: None)
+
+    result = flask_app._call_ollama_suggest(img, "test-model")
+    assert result is None
+    assert call_count == 3  # initial + 2 retries = 3 attempts
+
+
+def test_call_ollama_suggest_succeeds_on_retry(tmp_path, monkeypatch):
+    """Second attempt succeeds → returns suggestion."""
+    import json as _json
+
+    img = tmp_path / "test.png"
+    img.write_bytes(b"fake-data")
+
+    call_count = 0
+
+    class FakeResponse:
+        def read(self):
+            return _json.dumps({"message": {"content": "retry-success"}}).encode()
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            pass
+
+    def mock_urlopen(req, timeout=None):
+        nonlocal call_count
+        call_count += 1
+        if call_count == 1:
+            raise OSError("temporary failure")
+        return FakeResponse()
+
+    monkeypatch.setattr(flask_app.urllib.request, "urlopen", mock_urlopen)
+    monkeypatch.setattr(flask_app.time, "sleep", lambda s: None)
+
+    result = flask_app._call_ollama_suggest(img, "test-model")
+    assert result == "retry-success.png"
+    assert call_count == 2
+
+
+def test_call_ollama_suggest_no_retry_on_bad_json(tmp_path, monkeypatch):
+    """JSONDecodeError fails fast (no retry, no sleep)."""
+    img = tmp_path / "test.png"
+    img.write_bytes(b"fake-data")
+
+    call_count = 0
+    sleep_called = False
+
+    class BadResponse:
+        def read(self):
+            return b"not json at all"
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            pass
+
+    def mock_urlopen(req, timeout=None):
+        nonlocal call_count
+        call_count += 1
+        return BadResponse()
+
+    def mock_sleep(s):
+        nonlocal sleep_called
+        sleep_called = True
+
+    monkeypatch.setattr(flask_app.urllib.request, "urlopen", mock_urlopen)
+    monkeypatch.setattr(flask_app.time, "sleep", mock_sleep)
+
+    result = flask_app._call_ollama_suggest(img, "test-model")
+    assert result is None
+    assert call_count == 1, "JSONDecodeError should not retry"
+    assert not sleep_called, "No sleep on JSON error"

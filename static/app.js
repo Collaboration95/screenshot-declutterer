@@ -62,6 +62,60 @@ let renameTarget = null;
 
 const columns = [colTrash, colUnsorted, colKeep];
 
+// ── Theme management ─────────────────────────────────────────────────────────
+const THEME_KEY = "ss-dcl-theme";
+
+function applyTheme(mode) {
+  if (mode === "dark") {
+    document.documentElement.setAttribute("data-theme", "dark");
+  } else if (mode === "light") {
+    document.documentElement.removeAttribute("data-theme");
+  } else {
+    const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+    if (prefersDark) {
+      document.documentElement.setAttribute("data-theme", "dark");
+    } else {
+      document.documentElement.removeAttribute("data-theme");
+    }
+  }
+}
+
+function getSavedTheme() {
+  try { return localStorage.getItem(THEME_KEY) || "auto"; } catch (_) { return "auto"; }
+}
+
+function saveTheme(mode) {
+  try { localStorage.setItem(THEME_KEY, mode); } catch (_) {}
+}
+
+function cycleTheme() {
+  const current = getSavedTheme();
+  const next = { auto: "dark", dark: "light", light: "auto" }[current] || "auto";
+  saveTheme(next);
+  applyTheme(next);
+  _updateThemeLabel();
+}
+
+function _updateThemeLabel() {
+  const btn = document.getElementById("theme-toggle");
+  if (!btn) return;
+  const mode = getSavedTheme();
+  const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+  const effective = mode === "auto" ? (prefersDark ? "dark" : "light") : mode;
+  btn.setAttribute("aria-label", "Theme: " + mode + (mode === "auto" ? " (" + effective + ")" : "") + " — click to cycle");
+}
+
+applyTheme(getSavedTheme());
+window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => {
+  if (getSavedTheme() === "auto") applyTheme("auto");
+});
+
+document.getElementById("theme-toggle").addEventListener("click", () => {
+  cycleTheme();
+  _updateThemeLabel();
+});
+_updateThemeLabel();
+
 // ── Sanitise filenames for safe DOM insertion ────────────────────────────────
 function sanitise(str) {
   return str
@@ -73,7 +127,7 @@ function sanitise(str) {
 }
 
 // ── Settings state (loaded on init) ────────────────────────────────────────────
-let llmSettings = { llm_provider: "ollama", llm_model: "gemma4:e2b", auto_suggest: false };
+let llmSettings = { llm_provider: "ollama", llm_model: "gemma4:e2b", auto_suggest: false, prune_max_age_days: 90 };
 
 function loadSettings() {
   return fetch("/api/settings")
@@ -118,7 +172,7 @@ function loadScreenshots(savedDecisions) {
         const target = col === "trash" ? cardsTrash
                      : col === "keep"  ? cardsKeep
                      : cardsUnsorted;
-        target.appendChild(makeCard(f.name, col, f.fingerprint, f.memory_status, f.suggested_name));
+        target.appendChild(makeCard(f.name, col, f.fingerprint, f.memory_status, f.suggested_name, f.suggested_category));
       });
       updateCounts();
       saveState();
@@ -166,7 +220,7 @@ function saveState() {
 }
 
 // ── Card factory ─────────────────────────────────────────────────────────────
-function makeCard(filename, column, fingerprint, memoryStatus, suggestedName) {
+function makeCard(filename, column, fingerprint, memoryStatus, suggestedName, suggestedCategory) {
   const card = document.createElement("article");
   card.className = "card";
   card.setAttribute("role", "listitem");
@@ -175,6 +229,7 @@ function makeCard(filename, column, fingerprint, memoryStatus, suggestedName) {
   card.dataset.fingerprint = fingerprint || "";
   card.dataset.memoryStatus = memoryStatus || "";
   card.dataset.suggestedName = suggestedName || "";
+  card.dataset.suggestedCategory = suggestedCategory || null;
   card.draggable = true;
   card.tabIndex = 0;
 
@@ -188,6 +243,11 @@ function makeCard(filename, column, fingerprint, memoryStatus, suggestedName) {
   actions.className = "card-actions";
 
   card.appendChild(img);
+
+  // Category hint visual (4C)
+  if (suggestedCategory === "keep" || suggestedCategory === "trash") {
+    card.classList.add("category-hint-" + suggestedCategory);
+  }
 
   // Suggestion badge (always visible when status is "suggested")
   if (memoryStatus === "suggested" && suggestedName) {
@@ -617,6 +677,7 @@ function suggestBatch(fingerprints) {
   const chunkSize = 1;
   let completed = 0;
   let firstError = null;
+  let failedCount = 0;
 
   function processChunk(startIdx) {
     if (_suggestCancelled) {
@@ -634,11 +695,15 @@ function suggestBatch(fingerprints) {
         suggestProgressText.textContent = "No suggestions generated. Is Ollama running?";
         setTimeout(() => { suggestProgress.hidden = true; suggestAllBtn.disabled = false; }, 3000);
       } else {
-        suggestProgressText.textContent = `Done! ${completed} processed`;
+        if (failedCount > 0) {
+          suggestProgressText.textContent = `Done! ${completed} processed — ${failedCount} file${failedCount > 1 ? "s" : ""} failed`;
+        } else {
+          suggestProgressText.textContent = `Done! ${completed} processed`;
+        }
         if (firstError) {
           statusMsg.textContent = firstError;
         }
-        setTimeout(() => { suggestProgress.hidden = true; suggestAllBtn.disabled = false; }, 1500);
+        setTimeout(() => { suggestProgress.hidden = true; suggestAllBtn.disabled = false; }, 2500);
       }
       return;
     }
@@ -657,6 +722,7 @@ function suggestBatch(fingerprints) {
           if (!firstError) firstError = data.error;
         }
         const suggestions = data.suggestions || {};
+        failedCount += (data.failures || []).length;
         for (const [fp, suggestedName] of Object.entries(suggestions)) {
           const card = document.querySelector(`[data-fingerprint="${CSS.escape(fp)}"]`);
           if (card) {
@@ -788,6 +854,8 @@ settingsBtn.addEventListener("click", () => {
   settingsProvider.value = llmSettings.llm_provider || "ollama";
   settingsModel.value = llmSettings.llm_model || "gemma4:e2b";
   settingsAuto.checked = llmSettings.auto_suggest || false;
+  const pruneAge = document.getElementById("settings-prune-age");
+  if (pruneAge) pruneAge.value = llmSettings.prune_max_age_days || 90;
   settingsModal.hidden = false;
 });
 
@@ -801,10 +869,12 @@ settingsModal.addEventListener("click", e => {
 });
 
 settingsSave.addEventListener("click", () => {
+  const pruneVal = parseInt(document.getElementById("settings-prune-age")?.value || "90", 10);
   const newSettings = {
     llm_provider: settingsProvider.value,
     llm_model: settingsModel.value.trim() || "gemma4:e2b",
     auto_suggest: settingsAuto.checked,
+    prune_max_age_days: isNaN(pruneVal) || pruneVal < 1 ? 90 : pruneVal,
   };
 
   fetch("/api/settings", {
