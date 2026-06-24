@@ -442,6 +442,10 @@ function _confirmLightboxRename() {
           decisions.set(newName, col);
         }
         card.dataset.filename = newName;
+        // A rename always transitions status to "renamed".
+        // fingerprint stays unchanged — it's the stable identity key
+        // (original macOS name + size), not a derived filename attribute.
+        card.dataset.memoryStatus = "renamed";
         const cardImg = card.querySelector("img");
         cardImg.alt = newName;
         cardImg.src = `/api/thumb/${encodeURIComponent(newName)}?t=${Date.now()}`;
@@ -620,6 +624,10 @@ renameConfirm.addEventListener("click", () => {
         decisions.set(newName, col);
       }
       renameTarget.dataset.filename = newName;
+      // A rename always transitions status to "renamed".
+      // fingerprint stays unchanged — it's the stable identity key
+      // (original macOS name + size), not a derived filename attribute.
+      renameTarget.dataset.memoryStatus = "renamed";
       const cardImg = renameTarget.querySelector("img");
       cardImg.alt = newName;
       cardImg.src = `/api/thumb/${encodeURIComponent(newName)}?t=${Date.now()}`;

@@ -120,3 +120,11 @@ def test_app_js_sets_memory_status_dataset(client):
     r = c.get("/static/app.js")
     assert r.status_code == 200
     assert b"dataset.memoryStatus" in r.data
+
+
+def test_app_js_updates_memory_status_on_rename(client):
+    """Rename handlers must set memoryStatus to 'renamed' after successful rename."""
+    c, _ = client
+    r = c.get("/static/app.js")
+    assert r.status_code == 200
+    assert b'memoryStatus = "renamed"' in r.data
