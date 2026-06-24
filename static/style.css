@@ -607,6 +607,14 @@ header h1 {
   accent-color: #007aff;
 }
 
+.settings-save-btn {
+  background: #007aff;
+}
+
+.settings-save-btn:hover {
+  background: #0062cc;
+}
+
 /* ── Empty state ─────────────────────────────────────────── */
 #empty-msg {
   text-align: center;
