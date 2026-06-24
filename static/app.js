@@ -612,16 +612,27 @@ function suggestBatch(fingerprints) {
   suggestProgressFill.style.width = "0%";
   suggestProgressText.textContent = `0 / ${fingerprints.length}`;
 
-  // Process in chunks of 3 to show progress
-  const chunkSize = 1;  // Ollama processes sequentially anyway
+  const chunkSize = 1;
   let completed = 0;
+  let firstError = null;
 
   function processChunk(startIdx) {
     if (startIdx >= fingerprints.length) {
-      // All done
       suggestProgressFill.style.width = "100%";
-      suggestProgressText.textContent = `Done! ${completed} processed`;
-      setTimeout(() => { suggestProgress.hidden = true; suggestAllBtn.disabled = false; }, 1500);
+      if (completed === 0 && firstError) {
+        suggestProgressText.textContent = firstError;
+        statusMsg.textContent = firstError;
+        setTimeout(() => { suggestProgress.hidden = true; suggestAllBtn.disabled = false; }, 4000);
+      } else if (completed === 0) {
+        suggestProgressText.textContent = "No suggestions generated. Is Ollama running?";
+        setTimeout(() => { suggestProgress.hidden = true; suggestAllBtn.disabled = false; }, 3000);
+      } else {
+        suggestProgressText.textContent = `Done! ${completed} processed`;
+        if (firstError) {
+          statusMsg.textContent = firstError;
+        }
+        setTimeout(() => { suggestProgress.hidden = true; suggestAllBtn.disabled = false; }, 1500);
+      }
       return;
     }
 
@@ -634,25 +645,25 @@ function suggestBatch(fingerprints) {
     })
       .then(r => r.json())
       .then(data => {
+        // Check for backend-level error (e.g. unsupported provider)
+        if (data.error) {
+          if (!firstError) firstError = data.error;
+        }
         const suggestions = data.suggestions || {};
         for (const [fp, suggestedName] of Object.entries(suggestions)) {
           const card = document.querySelector(`[data-fingerprint="${CSS.escape(fp)}"]`);
           if (card) {
             card.dataset.memoryStatus = "suggested";
             card.dataset.suggestedName = suggestedName;
-            // Remove existing badge if any
             const oldBadge = card.querySelector(".suggestion-badge");
             if (oldBadge) oldBadge.remove();
-            // Insert badge after img, before card-actions
             const badge = _makeSuggestionBadge(card);
             const actions = card.querySelector(".card-actions");
             card.insertBefore(badge, actions);
-            // Rebuild action buttons (remove "Suggest" btn)
             setCardActions(card, getCardColumn(card));
           }
           completed++;
         }
-        // Update progress
         const nextIdx = startIdx + chunkSize;
         const pct = Math.round((Math.min(nextIdx, fingerprints.length) / fingerprints.length) * 100);
         suggestProgressFill.style.width = pct + "%";
@@ -660,7 +671,7 @@ function suggestBatch(fingerprints) {
         processChunk(nextIdx);
       })
       .catch(() => {
-        // On error, skip ahead
+        if (!firstError) firstError = "Couldn't reach Ollama — is it running?";
         const nextIdx = startIdx + chunkSize;
         processChunk(nextIdx);
       });
