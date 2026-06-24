@@ -872,6 +872,24 @@ def test_settings_put_ignores_unknown_keys(client):
     assert data["llm_model"] == "test"
 
 
+def test_suggest_names_rejects_non_ollama_provider(client):
+    """When provider is set to 'mlx', the endpoint should reject with a clear message."""
+    c, _ = client
+    c.put(
+        "/api/settings",
+        data=json.dumps({"llm_provider": "mlx"}),
+        content_type="application/json",
+    )
+    r = c.post(
+        "/api/suggest-names",
+        data=json.dumps({"fingerprints": ["fp1"]}),
+        content_type="application/json",
+    )
+    assert r.status_code == 400
+    data = json.loads(r.data)
+    assert "not yet supported" in data["error"]
+
+
 # ── _call_ollama_suggest sanitization ────────────────────────────────────
 
 

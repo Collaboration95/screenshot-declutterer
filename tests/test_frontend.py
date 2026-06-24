@@ -161,6 +161,7 @@ def test_index_has_settings_modal(client):
     assert 'id="settings-provider"' in html
     assert 'id="settings-model"' in html
     assert 'id="settings-auto"' in html
+    assert "coming soon" in html.lower()  # MLX option marked as disabled
 
 
 def test_app_js_defines_suggest_batch(client):

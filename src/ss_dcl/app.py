@@ -457,6 +457,10 @@ def api_suggest_names():
         abort(400)
 
     settings = _load_settings()
+    provider = settings.get("llm_provider", "ollama")
+    if provider != "ollama":
+        msg = f"Provider {provider!r} is not yet supported. Only 'ollama' is available."
+        return jsonify({"error": msg}), 400
     model = settings.get("llm_model", DEFAULT_LLM_MODEL)
 
     memory = _get_memory()
