@@ -31,6 +31,7 @@ const sortSelect     = document.getElementById("sort-select");
 const suggestProgress   = document.getElementById("suggest-progress");
 const suggestProgressFill = document.getElementById("suggest-progress-fill");
 const suggestProgressText = document.getElementById("suggest-progress-text");
+const suggestCancelBtn  = document.getElementById("suggest-cancel-btn");
 
 const lightbox    = document.getElementById("lightbox");
 const lightboxImg = document.getElementById("lightbox-img");
@@ -607,6 +608,7 @@ function suggestSingle(card) {
 function suggestBatch(fingerprints) {
   if (fingerprints.length === 0) return;
 
+  _suggestCancelled = false;
   suggestAllBtn.disabled = true;
   suggestProgress.hidden = false;
   suggestProgressFill.style.width = "0%";
@@ -617,6 +619,11 @@ function suggestBatch(fingerprints) {
   let firstError = null;
 
   function processChunk(startIdx) {
+    if (_suggestCancelled) {
+      suggestProgressText.textContent = `Cancelled (${completed} processed)`;
+      setTimeout(() => { suggestProgress.hidden = true; suggestAllBtn.disabled = false; }, 1500);
+      return;
+    }
     if (startIdx >= fingerprints.length) {
       suggestProgressFill.style.width = "100%";
       if (completed === 0 && firstError) {
@@ -755,6 +762,12 @@ function editSuggestion(card) {
     renameInput.setSelectionRange(0, dotIdx);
   }
 }
+
+// ── Cancel suggest button ────────────────────────────────────────────────────
+let _suggestCancelled = false;
+suggestCancelBtn.addEventListener("click", () => {
+  _suggestCancelled = true;
+});
 
 // ── Suggest All button ───────────────────────────────────────────────────────
 suggestAllBtn.addEventListener("click", () => {

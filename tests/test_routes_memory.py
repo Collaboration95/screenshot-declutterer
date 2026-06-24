@@ -254,7 +254,8 @@ def test_done_handles_files_not_in_memory(client):
 # ── /api/suggest-names (stub) ──────────────────────────────────────────────
 
 
-def test_suggest_names_stub_returns_empty(client):
+def test_suggest_names_unknown_fingerprints_return_empty(client):
+    """Fingerprints not in memory produce no suggestions (no crash)."""
     c, _ = client
     r = c.post(
         "/api/suggest-names",
@@ -870,6 +871,24 @@ def test_settings_put_ignores_unknown_keys(client):
     data = json.loads(r.data)
     assert "evil_key" not in data
     assert data["llm_model"] == "test"
+
+
+def test_settings_put_rejects_wrong_types(client):
+    """auto_suggest must be a bool, llm_model must be a string."""
+    c, _ = client
+    r = c.put(
+        "/api/settings",
+        data=json.dumps({"auto_suggest": "yes"}),
+        content_type="application/json",
+    )
+    assert r.status_code == 400
+
+    r = c.put(
+        "/api/settings",
+        data=json.dumps({"llm_model": 123}),
+        content_type="application/json",
+    )
+    assert r.status_code == 400
 
 
 def test_suggest_names_rejects_non_ollama_provider(client):

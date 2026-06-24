@@ -228,6 +228,21 @@ def test_css_has_settings_form_styles(client):
     assert b"settings-form" in r.data
 
 
+def test_index_has_suggest_cancel_button(client):
+    """Progress bar must have a cancel button."""
+    c, _ = client
+    html = c.get("/").data.decode()
+    assert 'id="suggest-cancel-btn"' in html
+
+
+def test_app_js_has_cancel_logic(client):
+    """JS must define _suggestCancelled flag for cancel support."""
+    c, _ = client
+    r = c.get("/static/app.js")
+    assert r.status_code == 200
+    assert b"_suggestCancelled" in r.data
+
+
 def test_rename_handlers_remove_suggestion_badge(client):
     """Both rename paths (modal + lightbox) must remove .suggestion-badge after rename."""
     c, _ = client

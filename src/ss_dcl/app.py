@@ -79,20 +79,23 @@ SORT_OPTIONS = {
 
 
 _memory_store: Optional[MemoryStore] = None
+_memory_lock = threading.Lock()
 
 
 def _get_memory() -> MemoryStore:
     global _memory_store
-    if _memory_store is None:
-        MEMORY_FILE.parent.mkdir(parents=True, exist_ok=True)
-        _memory_store = MemoryStore(MEMORY_FILE)
-        _memory_store.load()
+    with _memory_lock:
+        if _memory_store is None:
+            MEMORY_FILE.parent.mkdir(parents=True, exist_ok=True)
+            _memory_store = MemoryStore(MEMORY_FILE)
+            _memory_store.load()
     return _memory_store
 
 
 def _reset_memory() -> None:
     global _memory_store
-    _memory_store = None
+    with _memory_lock:
+        _memory_store = None
 
 
 _dirs_initialized = False
@@ -618,8 +621,23 @@ def api_save_settings():
         abort(400)
 
     current = _load_settings()
+    type_checks = {
+        "llm_provider": str,
+        "llm_model": str,
+        "auto_suggest": bool,
+    }
     for key in ("llm_provider", "llm_model", "auto_suggest"):
         if key in data:
+            if not isinstance(data[key], type_checks[key]):
+                return (
+                    jsonify(
+                        {
+                            "ok": False,
+                            "error": f"{key!r} must be {type_checks[key].__name__}",
+                        }
+                    ),
+                    400,
+                )
             current[key] = data[key]
     _save_settings(current)
     return jsonify({"ok": True})
