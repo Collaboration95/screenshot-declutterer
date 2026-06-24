@@ -104,3 +104,19 @@ def test_static_css_served(client):
     r = c.get("/static/style.css")
     assert r.status_code == 200
     assert b"kanban" in r.data
+
+
+def test_app_js_sets_fingerprint_dataset(client):
+    """Cards must carry data-fingerprint from /api/screenshots response."""
+    c, _ = client
+    r = c.get("/static/app.js")
+    assert r.status_code == 200
+    assert b"dataset.fingerprint" in r.data
+
+
+def test_app_js_sets_memory_status_dataset(client):
+    """Cards must carry data-memory-status from /api/screenshots response."""
+    c, _ = client
+    r = c.get("/static/app.js")
+    assert r.status_code == 200
+    assert b"dataset.memoryStatus" in r.data

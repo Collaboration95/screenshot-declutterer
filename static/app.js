@@ -93,7 +93,7 @@ function loadScreenshots(savedDecisions) {
         const target = col === "trash" ? cardsTrash
                      : col === "keep"  ? cardsKeep
                      : cardsUnsorted;
-        target.appendChild(makeCard(f.name, col));
+        target.appendChild(makeCard(f.name, col, f.fingerprint, f.memory_status));
       });
       updateCounts();
       saveState();
@@ -133,12 +133,14 @@ function saveState() {
 }
 
 // ── Card factory ─────────────────────────────────────────────────────────────
-function makeCard(filename, column) {
+function makeCard(filename, column, fingerprint, memoryStatus) {
   const card = document.createElement("article");
   card.className = "card";
   card.setAttribute("role", "listitem");
   card.setAttribute("aria-label", filename);
   card.dataset.filename = filename;
+  card.dataset.fingerprint = fingerprint || "";
+  card.dataset.memoryStatus = memoryStatus || "";
   card.draggable = true;
   card.tabIndex = 0;
 
