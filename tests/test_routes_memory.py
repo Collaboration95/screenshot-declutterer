@@ -1495,3 +1495,123 @@ def test_call_ollama_suggest_no_retry_on_bad_json(tmp_path, monkeypatch):
     assert result is None
     assert call_count == 1, "JSONDecodeError should not retry"
     assert not sleep_called, "No sleep on JSON error"
+
+
+# ── Bug fix: category hint clearing ─────────────────────────────────────────
+
+
+def test_accept_clears_suggested_category_in_meta(client):
+    """Accepting a suggestion clears meta.suggested_category."""
+    c, desktop = client
+    f = desktop / "Screenshot 2024-01-01 at 12.00.00 PM.png"
+    f.write_bytes(_make_png(10, 10))
+
+    r = c.get("/api/screenshots")
+    fp = json.loads(r.data)[0]["fingerprint"]
+
+    # Manually set suggested_category on the record
+    memory = flask_app._get_memory()
+    rec = memory.lookup(fp)
+    rec.suggested_name = "customer-onboarding.png"
+    rec.meta["suggested_category"] = "keep"
+
+    assert rec.meta.get("suggested_category") == "keep"
+
+    c.post(
+        "/api/accept-suggestion",
+        data=json.dumps({"fingerprint": fp}),
+        content_type="application/json",
+    )
+
+    rec = memory.lookup(fp)
+    assert rec.meta.get("suggested_category") is None
+
+
+def test_reject_clears_suggested_category_in_meta(client):
+    """Rejecting a suggestion clears meta.suggested_category."""
+    c, desktop = client
+    f = desktop / "Screenshot 2024-01-01 at 12.00.00 PM.png"
+    f.write_bytes(_make_png(10, 10))
+
+    r = c.get("/api/screenshots")
+    fp = json.loads(r.data)[0]["fingerprint"]
+
+    memory = flask_app._get_memory()
+    rec = memory.lookup(fp)
+    rec.meta["suggested_category"] = "keep"
+
+    assert rec.meta.get("suggested_category") == "keep"
+
+    c.post(
+        "/api/reject-suggestion",
+        data=json.dumps({"fingerprint": fp}),
+        content_type="application/json",
+    )
+
+    rec = memory.lookup(fp)
+    assert rec.meta.get("suggested_category") is None
+
+
+def test_rename_clears_suggested_category_in_meta(client):
+    """Renaming a file clears meta.suggested_category."""
+    c, desktop = client
+    f = desktop / "Screenshot 2024-01-01 at 12.00.00 PM.png"
+    f.write_bytes(_make_png(10, 10))
+
+    r = c.get("/api/screenshots")
+    fp = json.loads(r.data)[0]["fingerprint"]
+
+    memory = flask_app._get_memory()
+    rec = memory.lookup(fp)
+    rec.meta["suggested_category"] = "trash"
+
+    assert rec.meta.get("suggested_category") == "trash"
+
+    c.post(
+        "/api/rename",
+        data=json.dumps(
+            {
+                "old_name": f.name,
+                "new_name": "renamed-screenshot.png",
+            }
+        ),
+        content_type="application/json",
+    )
+
+    rec = memory.lookup(fp)
+    assert rec.meta.get("suggested_category") is None
+
+
+def test_accept_clears_category_hint_in_frontend(client, monkeypatch):
+    """acceptSuggestion() must remove .category-hint-* class and dataset."""
+    c, _ = client
+    r = c.get("/static/app.js")
+    assert r.status_code == 200
+    # acceptSuggestion path
+    assert b"category-hint-keep" in r.data
+    assert b"category-hint-trash" in r.data
+    # Must appear in the accept path (after the badge removal comment)
+    assert b"delete card.dataset.suggestedCategory" in r.data
+
+
+def test_reject_clears_category_hint_in_frontend(client):
+    """rejectSuggestion() must remove .category-hint-* class and dataset."""
+    c, _ = client
+    r = c.get("/static/app.js")
+    assert r.status_code == 200
+    # rejectSuggestion references remove + delete after the badge removal
+    # Count: delete card.dataset.suggestedCategory must appear at least twice
+    # (once in accept, once in reject)
+    assert r.data.count(b"delete card.dataset.suggestedCategory") >= 2
+
+
+def test_rename_clears_category_hint_in_frontend(client):
+    """Both rename paths must clear category hint class and dataset."""
+    c, _ = client
+    r = c.get("/static/app.js")
+    assert r.status_code == 200
+    # 3 occurrences: accept + reject + lightbox rename
+    # (modal rename uses renameTarget.dataset)
+    assert r.data.count(b"delete card.dataset.suggestedCategory") >= 3
+    # Modal rename path also clears
+    assert b"delete renameTarget.dataset.suggestedCategory" in r.data

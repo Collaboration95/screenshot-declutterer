@@ -264,6 +264,7 @@ class MemoryStore:
         rec.last_known_name = user_name
         rec.status = "renamed"
         rec.last_updated = _now_iso()
+        rec.meta.pop("suggested_category", None)
 
     def reject_suggestion(self, fingerprint: str) -> None:
         """Reject / dismiss the LLM suggestion (status → ``ignored``)."""
@@ -272,6 +273,7 @@ class MemoryStore:
             raise KeyError(f"Unknown fingerprint: {fingerprint}")
         rec.status = "ignored"
         rec.last_updated = _now_iso()
+        rec.meta.pop("suggested_category", None)
 
     def record_rename(self, fingerprint: str, new_name: str) -> None:
         """Record a user-initiated rename (status → ``renamed``).
@@ -287,6 +289,7 @@ class MemoryStore:
         rec.user_name = new_name
         rec.status = "renamed"
         rec.last_updated = _now_iso()
+        rec.meta.pop("suggested_category", None)
 
     def mark_trashed(self, fingerprint: str) -> None:
         """Mark a file as trashed (status → ``trashed``)."""

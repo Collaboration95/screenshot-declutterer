@@ -229,7 +229,9 @@ function makeCard(filename, column, fingerprint, memoryStatus, suggestedName, su
   card.dataset.fingerprint = fingerprint || "";
   card.dataset.memoryStatus = memoryStatus || "";
   card.dataset.suggestedName = suggestedName || "";
-  card.dataset.suggestedCategory = suggestedCategory || null;
+  if (suggestedCategory) {
+    card.dataset.suggestedCategory = suggestedCategory;
+  }
   card.draggable = true;
   card.tabIndex = 0;
 
@@ -596,6 +598,9 @@ function _confirmLightboxRename() {
         card.dataset.suggestedName = "";
         const badge = card.querySelector(".suggestion-badge");
         if (badge) badge.remove();
+        // Clear category hint
+        card.classList.remove("category-hint-keep", "category-hint-trash");
+        delete card.dataset.suggestedCategory;
         const cardImg = card.querySelector("img");
         cardImg.alt = newName;
         cardImg.src = `/api/thumb/${encodeURIComponent(newName)}?t=${Date.now()}`;
@@ -787,6 +792,9 @@ function acceptSuggestion(card) {
       // Remove badge
       const badge = card.querySelector(".suggestion-badge");
       if (badge) badge.remove();
+      // Clear category hint
+      card.classList.remove("category-hint-keep", "category-hint-trash");
+      delete card.dataset.suggestedCategory;
       setCardActions(card, col);
       updateCounts();
       saveState();
@@ -811,6 +819,9 @@ function rejectSuggestion(card) {
       card.dataset.suggestedName = "";
       const badge = card.querySelector(".suggestion-badge");
       if (badge) badge.remove();
+      // Clear category hint
+      card.classList.remove("category-hint-keep", "category-hint-trash");
+      delete card.dataset.suggestedCategory;
       setCardActions(card, getCardColumn(card));
     })
     .catch(() => {});
@@ -1017,6 +1028,9 @@ renameConfirm.addEventListener("click", () => {
       renameTarget.dataset.suggestedName = "";
       const badge = renameTarget.querySelector(".suggestion-badge");
       if (badge) badge.remove();
+      // Clear category hint
+      renameTarget.classList.remove("category-hint-keep", "category-hint-trash");
+      delete renameTarget.dataset.suggestedCategory;
       const cardImg = renameTarget.querySelector("img");
       cardImg.alt = newName;
       cardImg.src = `/api/thumb/${encodeURIComponent(newName)}?t=${Date.now()}`;

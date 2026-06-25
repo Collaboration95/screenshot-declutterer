@@ -151,7 +151,16 @@ def get_screenshots(sort: str = "name") -> list[dict[str, Any]]:
             active_fps.add(rec.fingerprint)
             any_new = True
         suggested_name = existing.suggested_name if existing else None
-        suggested_category = existing.meta.get("suggested_category") if existing else None
+        # Recompute suggested_category from keywords + current decisions
+        # (refreshes hints as user history accumulates)
+        if existing and existing.meta.get("keywords"):
+            suggested_category = suggest_category(
+                existing.meta["keywords"], memory, _read_decisions()
+            )
+            if suggested_category != existing.meta.get("suggested_category"):
+                existing.meta["suggested_category"] = suggested_category
+        else:
+            suggested_category = existing.meta.get("suggested_category") if existing else None
         files.append(
             {
                 "name": name,

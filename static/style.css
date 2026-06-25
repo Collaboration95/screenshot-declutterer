@@ -978,10 +978,10 @@ header h1 {
 }
 
 /* ── Theme toggle icon visibility ───────────────────────── */
-[data-theme="dark"] .theme-icon-light { display: none; }
-[data-theme="dark"] .theme-icon-dark  { display: inline; }
 :root .theme-icon-dark  { display: none; }
 :root .theme-icon-light { display: inline; }
+[data-theme="dark"] .theme-icon-light { display: none; }
+[data-theme="dark"] .theme-icon-dark  { display: inline; }
 
 .sr-only {
   position: absolute;
