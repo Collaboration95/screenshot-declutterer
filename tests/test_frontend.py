@@ -104,3 +104,209 @@ def test_static_css_served(client):
     r = c.get("/static/style.css")
     assert r.status_code == 200
     assert b"kanban" in r.data
+
+
+def test_app_js_sets_fingerprint_dataset(client):
+    """Cards must carry data-fingerprint from /api/screenshots response."""
+    c, _ = client
+    r = c.get("/static/app.js")
+    assert r.status_code == 200
+    assert b"dataset.fingerprint" in r.data
+
+
+def test_app_js_sets_memory_status_dataset(client):
+    """Cards must carry data-memory-status from /api/screenshots response."""
+    c, _ = client
+    r = c.get("/static/app.js")
+    assert r.status_code == 200
+    assert b"dataset.memoryStatus" in r.data
+
+
+def test_app_js_updates_memory_status_on_rename(client):
+    """Rename handlers must set memoryStatus to 'renamed' after successful rename."""
+    c, _ = client
+    r = c.get("/static/app.js")
+    assert r.status_code == 200
+    assert b'memoryStatus = "renamed"' in r.data
+
+
+# ── Phase 3 UI elements ─────────────────────────────────────────────────
+
+
+def test_index_has_suggest_all_button(client):
+    c, _ = client
+    html = c.get("/").data.decode()
+    assert 'id="suggest-all-btn"' in html
+    assert "Suggest All" in html
+
+
+def test_index_has_settings_button(client):
+    c, _ = client
+    html = c.get("/").data.decode()
+    assert 'id="settings-btn"' in html
+
+
+def test_index_has_suggest_progress_bar(client):
+    c, _ = client
+    html = c.get("/").data.decode()
+    assert 'id="suggest-progress"' in html
+    assert 'id="suggest-progress-fill"' in html
+    assert 'id="suggest-progress-text"' in html
+
+
+def test_index_has_settings_modal(client):
+    c, _ = client
+    html = c.get("/").data.decode()
+    assert 'id="settings-modal"' in html
+    assert 'id="settings-provider"' in html
+    assert 'id="settings-model"' in html
+    assert 'id="settings-auto"' in html
+    assert "coming soon" in html.lower()  # MLX option marked as disabled
+
+
+def test_app_js_defines_suggest_batch(client):
+    """JS must define suggestBatch function for batch LLM suggestions."""
+    c, _ = client
+    r = c.get("/static/app.js")
+    assert r.status_code == 200
+    assert b"function suggestBatch(" in r.data
+
+
+def test_app_js_defines_accept_suggestion(client):
+    """JS must define acceptSuggestion for accepting LLM suggestions."""
+    c, _ = client
+    r = c.get("/static/app.js")
+    assert r.status_code == 200
+    assert b"function acceptSuggestion(" in r.data
+
+
+def test_app_js_defines_reject_suggestion(client):
+    """JS must define rejectSuggestion for dismissing LLM suggestions."""
+    c, _ = client
+    r = c.get("/static/app.js")
+    assert r.status_code == 200
+    assert b"function rejectSuggestion(" in r.data
+
+
+def test_app_js_defines_settings_modal(client):
+    """JS must handle settings modal."""
+    c, _ = client
+    r = c.get("/static/app.js")
+    assert r.status_code == 200
+    assert b"settingsModal" in r.data
+
+
+def test_app_js_has_suggestion_badge_maker(client):
+    """JS must have _makeSuggestionBadge for rendering suggested name with accept/reject."""
+    c, _ = client
+    r = c.get("/static/app.js")
+    assert r.status_code == 200
+    assert b"_makeSuggestionBadge" in r.data
+
+
+def test_css_has_suggestion_badge_styles(client):
+    """CSS must define styles for suggestion badge."""
+    c, _ = client
+    r = c.get("/static/style.css")
+    assert r.status_code == 200
+    assert b"suggestion-badge" in r.data
+
+
+def test_css_has_suggest_progress_styles(client):
+    """CSS must define styles for progress bar."""
+    c, _ = client
+    r = c.get("/static/style.css")
+    assert r.status_code == 200
+    assert b"suggest-progress" in r.data
+
+
+def test_css_has_settings_form_styles(client):
+    """CSS must define styles for settings form."""
+    c, _ = client
+    r = c.get("/static/style.css")
+    assert r.status_code == 200
+    assert b"settings-form" in r.data
+
+
+def test_index_has_suggest_cancel_button(client):
+    """Progress bar must have a cancel button."""
+    c, _ = client
+    html = c.get("/").data.decode()
+    assert 'id="suggest-cancel-btn"' in html
+
+
+def test_app_js_has_cancel_logic(client):
+    """JS must define _suggestCancelled flag for cancel support."""
+    c, _ = client
+    r = c.get("/static/app.js")
+    assert r.status_code == 200
+    assert b"_suggestCancelled" in r.data
+
+
+def test_rename_handlers_remove_suggestion_badge(client):
+    """Both rename paths (modal + lightbox) must remove .suggestion-badge after rename."""
+    c, _ = client
+    r = c.get("/static/app.js")
+    assert r.status_code == 200
+    # Lightbox rename
+    assert b"if (badge) badge.remove()" in r.data
+    # Modal rename sets suggestedName to empty
+    assert b'suggestedName = ""' in r.data
+
+
+# ── Phase 4B: Dark mode ─────────────────────────────────────────────────────
+
+
+def test_index_has_theme_toggle(client):
+    """#theme-toggle button exists in HTML."""
+    c, _ = client
+    html = c.get("/").data.decode()
+    assert 'id="theme-toggle"' in html
+
+
+def test_app_js_has_theme_cycle(client):
+    """JS must define cycleTheme or THEME_KEY for theme management."""
+    c, _ = client
+    r = c.get("/static/app.js")
+    assert r.status_code == 200
+    assert b"THEME_KEY" in r.data
+    assert b"function cycleTheme(" in r.data
+
+
+def test_css_has_dark_variables(client):
+    """CSS must have [data-theme="dark"] block with --bg-body."""
+    c, _ = client
+    r = c.get("/static/style.css")
+    assert r.status_code == 200
+    assert b'[data-theme="dark"]' in r.data
+    assert b"--bg-body" in r.data
+
+
+def test_css_has_light_variables(client):
+    """CSS must have :root block with CSS custom properties."""
+    c, _ = client
+    r = c.get("/static/style.css")
+    assert r.status_code == 200
+    assert b":root {" in r.data
+    assert b"--bg-body" in r.data
+
+
+# ── Phase 4C/4D: Frontend hints + failure count ──────────────────────────────
+
+
+def test_css_has_category_hint_styles(client):
+    """CSS must define .category-hint-keep/-trash rules."""
+    c, _ = client
+    r = c.get("/static/style.css")
+    assert r.status_code == 200
+    assert b"category-hint-keep" in r.data
+    assert b"category-hint-trash" in r.data
+
+
+def test_app_js_shows_failure_count(client):
+    """JS must reference failures.length for showing failure count."""
+    c, _ = client
+    r = c.get("/static/app.js")
+    assert r.status_code == 200
+    assert b"failedCount" in r.data
+    assert b"failures" in r.data

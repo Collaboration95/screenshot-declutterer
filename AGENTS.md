@@ -17,7 +17,7 @@ static/app.js            Frontend JS (Kanban, drag-and-drop, undo, lightbox, ren
 static/style.css         All CSS (Kanban layout, cards, lightbox, rename modal, confirm modal)
 templates/index.html     SPA shell — three-column layout + lightbox + rename modal + confirm modal
 tests/conftest.py        Shared pytest fixtures and helpers
-tests/test_routes_*.py   Route-specific test files (index, screenshots, image, thumb, state, done, rename)
+tests/test_routes_*.py   Route-specific test files (index, screenshots, image, thumb, state, done, rename, memory)
 tests/test_memory.py     Memory store unit tests (fingerprint, CRUD, persistence, status transitions, edge cases)
 tests/test_port_flexibility.py  Port auto-detection tests
 tests/test_edge_cases.py Edge case tests
@@ -41,13 +41,19 @@ tests/test_frontend.py   Frontend integration tests
 | Method | Path | Purpose |
 |--------|------|---------|
 | GET | `/` | Serve SPA |
-| GET | `/api/screenshots?sort=<mode>` | List screenshots (sort: name, name_desc, date, date_desc, size, size_desc) |
+| GET | `/api/screenshots?sort=<mode>` | List screenshots with fingerprint, memory_status, suggested_name, suggested_category enrichment (sort: name, name_desc, date, date_desc, size, size_desc) |
 | GET | `/api/image/<filename>` | Serve full-size image (cache: 1h) |
 | GET | `/api/thumb/<filename>` | Serve thumbnail 400x300 max (cache: 24h), falls back to full image |
 | GET | `/api/state` | Get persisted decisions `{decisions: {filename: "keep"|"trash"}}` |
 | PUT | `/api/state` | Save decisions state |
-| POST | `/api/done` | Trash files — body `{filenames: [...]}`. Returns 207 on partial failure with per-file errors |
-| POST | `/api/rename` | Rename a file — body `{old_name, new_name}`. Updates state and thumbnail. Returns 409 on conflict |
+| POST | `/api/done` | Trash files — body `{filenames: [...]}`. Updates memory with `trashed` status. Returns 207 on partial failure with per-file errors |
+| POST | `/api/rename` | Rename a file — body `{old_name, new_name}`. Updates state, thumbnail, memory, and clears suggested_category hint. Returns 409 on conflict |
+| GET | `/api/memory` | Get all persisted memory records `{files: {fingerprint: {status, suggested_name, last_updated}}}` |
+| POST | `/api/suggest-names` | Generate AI filename suggestions via Ollama — body `{fingerprints: [...]}`. Returns `{suggestions: {fp: name}, failures: [fp]}`. Uses `gemma4:e2b` by default |
+| POST | `/api/accept-suggestion` | Accept suggestion & rename file — body `{fingerprint}`. Handles name conflicts (appends `-2`) |
+| POST | `/api/reject-suggestion` | Dismiss suggestion — body `{fingerprint}`. Marks memory status as `"ignored"` |
+| GET | `/api/settings` | Get config `{llm_provider, llm_model, auto_suggest, prune_max_age_days}` |
+| PUT | `/api/settings` | Save config — body `{llm_provider?, llm_model?, auto_suggest?, prune_max_age_days?}` |
 
 All filename-accepting routes validate against path traversal: bare name check (`filename == Path(filename).name`) + resolved path must be within `~/Desktop`.
 
@@ -63,7 +69,9 @@ All in `static/app.js`:
 - **Undo**: `performUndo()` pops from stack, reverses the move
 - **Lightbox**: Double-click or Preview button → full-size overlay. Escape or backdrop click closes
 - **Confirm modal**: Done button → modal with trash count → POST `/api/done`
-- **Rename modal**: Rename button → modal with text input → POST `/api/rename`. Updates card dataset filename, state, and thumbnail
+- **Rename modal**: Rename button → modal with text input → POST `/api/rename`. Updates card dataset filename, state, thumbnail, and clears category hint
+- **Theme toggle**: ☀/☾ button cycles auto/dark/light; persisted in localStorage; follows system preference in auto mode
+- **Category hints**: Colored left border (green=keep, red=trash) when auto-categorization has sufficient signal; cleared on accept/reject/rename
 
 ## Runtime Paths
 
@@ -74,6 +82,7 @@ All in `static/app.js`:
 | THUMB_DIR | `~/.cache/ss-dcl/thumbs/` |
 | STATE_FILE | `~/.ss-dcl/state.json` |
 | MEMORY_FILE | `~/.ss-dcl/memory.json` |
+| SETTINGS_FILE | `~/.ss-dcl/settings.json` |
 | THUMB_SIZE | `(400, 300)` |
 
 ## Dependencies
@@ -87,7 +96,7 @@ All in `static/app.js`:
 - Fixture: `client(tmp_path, monkeypatch)` — temp dir as fake Desktop, patches `DESKTOP`, `THUMB_DIR`, `STATE_FILE`
 - `send2trash` always mocked to avoid actually trashing files
 - Helper `_make_png()` creates valid minimal PNGs in-memory
-- ~76 tests across focused test files covering all routes, sorting, path traversal, state round-trip, partial failures, rename, port flexibility, edge cases
+- ~244 tests across focused test files covering all routes, sorting, path traversal, state round-trip, partial failures, rename, port flexibility, edge cases, LLM suggest/accept/reject flows, pruning, dark mode, auto-categorization, LLM retry
 
 ## Tooling Config
 

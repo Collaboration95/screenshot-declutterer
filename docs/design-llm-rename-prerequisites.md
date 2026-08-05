@@ -703,3 +703,314 @@ No phase depends on a later phase.
 - **Corrupted memory.json:** Same recovery pattern as state.json — reset to empty.
 - **Very large Desktop (200+ screenshots):** Fingerprint computation is O(n) string
   operations. Memory JSON is small (~1KB per file). No performance concern.
+
+---
+
+## 11. Empirical Model Evaluation (2026-06-03)
+
+Hands-on testing of candidate vision models via Ollama on Apple Silicon (16 GB unified memory).
+
+### Test Setup
+
+- **Machine:** Apple Silicon Mac, 16 GB RAM
+- **Ollama version:** 0.22.0
+- **Prompt:** *"Describe this screenshot in 3-5 words as a filename."*
+- **Test images:** Real `~/Desktop` screenshots (1-4 MB PNG files)
+- **Method:** Ollama HTTP API (`/api/chat` with base64-encoded images, `stream: false`)
+
+### Results
+
+| Model | Disk Size | GPU RAM | Quality | Verdict |
+|-------|-----------|---------|---------|---------|
+| **gemma4:e2b** (Q4_K_M) | 6.7 GB | 7.7 GB | ✅ Excellent | **Recommended** |
+| **moondream** | 1.7 GB | 1.3 GB | ❌ Broken | Unusable |
+| **smolvlm** | — | — | — | Not available on Ollama |
+| **minicpm-v** | — | — | — | Pull failed (too large/slow) |
+
+### gemma4:e2b — Sample Outputs
+
+| Screenshot | Original Name | Generated Name |
+|------------|--------------|----------------|
+| Chat thread screenshot | `Screenshot 2025-11-27 at 11.02.40 PM.png` | "Customer onboarding discussion thread" |
+| Messages screenshot | `Screenshot 2025-12-24 at 6.43.58 PM.png` | "Salary delay messages" |
+| Video call screenshot | `Screenshot 2025-05-15 at 10.34.00 PM.png` | "Two men video call" |
+
+Output quality is consistently 3-4 words, descriptive, and filename-appropriate.
+
+### moondream — Sample Outputs
+
+| Screenshot | Output |
+|------------|--------|
+| Chat thread screenshot | *(empty)* |
+| Messages screenshot | *(empty)* |
+| Messages screenshot | "!!!IMPORTANT!!!" |
+
+Produces either empty responses or incoherent output. Not suitable for this task
+despite its small footprint. The model appears to be a proof-of-concept for edge
+deployment, not production-quality vision.
+
+### Key Findings
+
+1. **gemma4:e2b at 7.7 GB GPU RAM is the only viable option** on Ollama right now.
+   Smaller vision models (moondream) are too weak; mid-range models (smolvlm) aren't
+   available via Ollama yet.
+
+2. **7.7 GB on a 16 GB machine is tight but workable** — leaves ~8 GB for OS,
+   browser, IDE. Models auto-unload after 5 min of inactivity (configurable via
+   `OLLAMA_KEEP_ALIVE` env var).
+
+3. **Memory management strategy for Phase 2:**
+   - Set `OLLAMA_KEEP_ALIVE=0` in our integration so the model unloads immediately
+     after each inference batch, freeing GPU RAM
+   - Or batch all screenshots in one session, then explicitly unload
+   - Document the RAM requirement in README so users know the trade-off
+
+4. **Future option — MLX with 4-bit quantization:** The same Gemma 4 E2B model
+   via MLX (`mlx-community/gemma-4-e2b-it-4bit`) may use only ~2-3 GB RAM.
+   This would be the ideal path if MLX's Python API matures. The `LLMProvider`
+   abstraction makes this a drop-in replacement.
+
+5. **Fallback strategy:** If the model is unavailable (Ollama not running, model
+   not pulled), the app should degrade gracefully — show a "Suggest Names" button
+   that's disabled with a tooltip explaining the requirement.
+
+### Decision
+
+**Use `gemma4:e2b` via Ollama for Phase 2.** Revisit MLX path when it offers
+a clear memory advantage without adding fragility.
+
+---
+
+## 12. Alternative Approach: OCR + Text-Only LLM (Hybrid Pipeline)
+
+*Added: 2026-06-03*
+
+### The Idea
+
+Instead of feeding the full image to a vision LLM (which requires a large model
+like gemma4:e2b at 7.7 GB), split the work:
+
+1. **OCR via pytesseract** — extract text from the screenshot image
+2. **Tiny text-only LLM** — given the extracted text, generate a short filename
+
+This avoids vision models entirely. The OCR handles the "seeing," the LLM handles
+the "understanding." Text-only LLMs are dramatically smaller than vision models.
+
+### Why This Works for Screenshots
+
+Most screenshots contain prominent text — code, chat messages, error dialogs,
+settings panels, web pages, etc. OCR captures the essence of the content, which
+is exactly what you'd use to name the file.
+
+### OCR Component: pytesseract
+
+| Aspect | Detail |
+|--------|--------|
+| System dep | `tesseract` via Homebrew (`brew install tesseract`) |
+| Python dep | `pytesseract` (tiny wrapper, zero models) |
+| RAM | 0 MB (no GPU needed) |
+| Speed | ~50-200ms per screenshot |
+| Quality | Excellent for screenshots (text on clean backgrounds) |
+| macOS status | Already installed on this machine (Tesseract 5.5.2) |
+
+**Usage:**
+
+```python
+from PIL import Image
+import pytesseract
+
+text = pytesseract.image_to_string(Image.open("screenshot.png"))
+# → "Select a domain\nAutomotive and Machinery\nSkilled Trades..."
+```
+
+### Text-Only LLM Candidates
+
+Since we only process text (not images), models can be much smaller:
+
+| Model | Params | Ollama Size | RAM (loaded) |
+|-------|--------|-------------|--------------|
+| **SmolLM 360M** | 360M | ~700 MB | ~700 MB |
+| **SmolLM 1.7B** | 1.7B | ~3 GB | ~3 GB |
+| **Llama 3.2 1B** | 1B | ~1 GB | ~1 GB |
+| **Qwen 2.5 1.5B** | 1.5B | ~1.5 GB | ~1.5 GB |
+| **Gemma 2 2B** | 2B | ~1.5 GB | ~1.5 GB |
+| **Phi-3 Mini 3.8B** | 3.8B | ~2.5 GB | ~2.5 GB |
+
+All of these are trivial compared to gemma4:e2b at 7.7 GB.
+
+### Proposed Pipeline
+
+```
+┌──────────────┐    ┌──────────────────┐    ┌─────────────────────┐
+│  Screenshot   │───→│  pytesseract OCR  │───→│  Raw extracted text │
+│  (image file) │    │  (0 GPU, 50ms)   │    │  e.g. "Select a     │
+└──────────────┘    └──────────────────┘    │  domain\nAutomotive  │
+                                             │  and Machinery..."  │
+                                             └──────────┬──────────┘
+                                                        │
+                                                        ▼
+                                             ┌─────────────────────┐
+                                             │  Text-only LLM      │
+                                             │  (SmolLM / Qwen /   │
+                                             │   Gemma 2)          │
+                                             │                     │
+                                             │  Prompt:            │
+                                             │  "Given this text   │
+                                             │  from a screenshot, │
+                                             │  suggest a short    │
+                                             │  filename (3-5      │
+                                             │  words): ..."       │
+                                             └──────────┬──────────┘
+                                                        │
+                                                        ▼
+                                             ┌─────────────────────┐
+                                             │  "domain-selection" │
+                                             │  "facetime-contacts"│
+                                             │  "salary-delay-msg" │
+                                             └─────────────────────┘
+```
+
+### Advantages Over Vision LLM
+
+1. **RAM:** ~1-3 GB instead of 7.7 GB — leaves room for the app, browser, IDE
+2. **Speed:** OCR (50ms) + tiny LLM (100ms) ≈ 150ms vs vision LLM ~1-2s
+3. **Availability:** Text models are abundant; vision models are fewer and larger
+4. **No GPU needed:** Tesseract runs on CPU, tiny LLMs can too
+5. **Offline:** Everything runs locally, no network calls
+
+### Drawbacks
+
+1. **Fails on purely visual content:** A screenshot with diagrams, charts, or
+   images-without-text won't produce useful OCR output
+2. **OCR noise:** Tesseract can misread text, producing garbage LLM input
+3. **Two moving parts:** OCR + LLM = two things that can fail independently
+4. **Context loss:** The LLM only sees text, not layout, colors, or visual hierarchy
+
+### Recommendation
+
+Use the hybrid pipeline as the **primary approach** for Phase 2, with the
+vision LLM as a **fallback** for screenshots where OCR yields too little text.
+The `LLMProvider` abstraction supports both paths.
+
+---
+
+### Decision (Revised, 2026-06-03)
+
+**Primary: OCR (pytesseract) + text-only LLM (SmolLM/Qwen/Gemma 2).**
+
+**Fallback: Vision LLM (gemma4:e2b) when OCR produces insufficient text.**
+
+The LLMProvider abstraction in Phase 2 should support both paths transparently.
+
+---
+
+## 13. Evaluation Framework
+
+*Added: 2026-06-03*
+
+Before committing to a model, we evaluate candidates against a standardised
+benchmark using `tools/eval-screenshot-names.py`.
+
+### Test Data
+
+Random sample of 10-15 screenshots from `~/Desktop`, covering diverse content:
+- Source code (editor screenshots)
+- Web pages (browser screenshots)
+- Chat / messaging (FaceTime, iMessage, Slack)
+- Settings / configuration panels
+- Terminal output
+- Documents / PDFs
+
+### Evaluation Script
+
+**Location:** `tools/eval-screenshot-names.py`
+
+```bash
+uv run python tools/eval-screenshot-names.py               # 10 random screenshots, default models
+uv run python tools/eval-screenshot-names.py -n 15         # 15 screenshots
+uv run python tools/eval-screenshot-names.py --list-models # show available models
+uv run python tools/eval-screenshot-names.py -m smollm     # evaluate specific model only
+```
+
+### Report Schema
+
+```json
+{
+  "generated_at": "2026-06-03T12:00:00+00:00",
+  "eval_config": {
+    "screenshot_count": 10,
+    "model_count": 4
+  },
+  "model_results": [
+    {
+      "model_name": "qwen2.5:1.5b",
+      "model_size_gb": 1.5,
+      "approach": "ocr+text",
+      "prompt_used": "...",
+      "avg_time_ms": 350.0,
+      "avg_word_count": 3.2,
+      "success_count": 10,
+      "fail_count": 0,
+      "results": [
+        {
+          "original_name": "Screenshot 2026-04-11 at 6.25.28 PM.png",
+          "size_kb": 52.0,
+          "ocr_text": "V5 feature fix #190 7 code ...",
+          "ocr_text_length": 1845,
+          "suggested_name": "v5-feature-fix-190",
+          "word_count": 4,
+          "filename_safe": true,
+          "time_ms": 312.0,
+          "error": null
+        }
+      ]
+    }
+  ]
+}
+```
+
+### Scoring Rubric (Manual)
+
+For each generated name, rate on a 1-5 scale:
+
+| Score | Filename Quality | Example |
+|-------|-----------------|---------|
+| 5 | **Perfect** — accurately describes the screenshot, concise, human-readable | `domain-selection-screen` |
+| 4 | **Good** — describes the content but slightly too long/vague | `automotive-machinery-services-list` |
+| 3 | **Adequate** — partially correct, or right idea but awkward phrasing | `some-code-editor` |
+| 2 | **Poor** — mostly wrong or overly generic | `screenshot-1` |
+| 1 | **Useless** — empty, incoherent, or completely wrong | `urn-image` |
+
+### Automated Metrics
+
+Captured automatically by the evaluation script:
+
+| Metric | What it measures |
+|--------|-----------------|
+| `filename_safe` | Can the output be used as a filesystem name? (no `/`, `\`, `:`, control chars) |
+| `word_count` | How many words in the output (target: 3-5) |
+| `time_ms` | Inference time per screenshot |
+| `success_count` | How many screenshots produced non-empty output |
+| `ocr_text_length` | How much text was extracted (proxy for OCR usefulness) |
+
+### Model Comparison Matrix
+
+After evaluation, fill in:
+
+| Model | Approach | Size (GB) | Avg Time | Success % | Avg Score | Notes |
+|-------|---------|-----------|----------|-----------|-----------|-------|
+| smollm:360m | ocr+text | 0.7 | — | — | — | |
+| llama3.2:1b | ocr+text | 1.0 | — | — | — | |
+| qwen2.5:1.5b | ocr+text | 1.5 | — | — | — | |
+| gemma2:2b | ocr+text | 1.5 | — | — | — | |
+| gemma4:e2b | vision | 7.7 | — | — | — | baseline |
+
+### Decision Criteria
+
+The chosen model must:
+
+1. **Fit in RAM** — total Ollama RSS ≤ 3 GB (leaves 13 GB for OS + browser + IDE on 16 GB machine)
+2. **Success rate ≥ 90%** — no more than 1 empty output per 10 screenshots
+3. **Avg word count 3-5** — matches the 3-5 word target
+4. **Avg score ≥ 3.5** — output is usable without manual editing most of the time
+5. **`filename_safe = true` always** — no path separators or illegal chars in output

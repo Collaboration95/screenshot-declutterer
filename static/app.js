@@ -20,12 +20,18 @@ const countUnsorted = document.getElementById("count-unsorted");
 const countTrash    = document.getElementById("count-trash");
 const countKeep     = document.getElementById("count-keep");
 
-const undoBtn   = document.getElementById("undo-btn");
-const doneBtn   = document.getElementById("done-btn");
-const statusMsg = document.getElementById("status-msg");
-const emptyMsg  = document.getElementById("empty-msg");
-const loadingMsg = document.getElementById("loading-msg");
-const sortSelect = document.getElementById("sort-select");
+const undoBtn        = document.getElementById("undo-btn");
+const doneBtn        = document.getElementById("done-btn");
+const suggestAllBtn  = document.getElementById("suggest-all-btn");
+const settingsBtn    = document.getElementById("settings-btn");
+const statusMsg      = document.getElementById("status-msg");
+const emptyMsg       = document.getElementById("empty-msg");
+const loadingMsg     = document.getElementById("loading-msg");
+const sortSelect     = document.getElementById("sort-select");
+const suggestProgress   = document.getElementById("suggest-progress");
+const suggestProgressFill = document.getElementById("suggest-progress-fill");
+const suggestProgressText = document.getElementById("suggest-progress-text");
+const suggestCancelBtn  = document.getElementById("suggest-cancel-btn");
 
 const lightbox    = document.getElementById("lightbox");
 const lightboxImg = document.getElementById("lightbox-img");
@@ -40,6 +46,13 @@ const modalTitle   = document.getElementById("modal-title");
 const modalCancel  = document.getElementById("modal-cancel");
 const modalConfirm = document.getElementById("modal-confirm");
 
+const settingsModal   = document.getElementById("settings-modal");
+const settingsProvider = document.getElementById("settings-provider");
+const settingsModel   = document.getElementById("settings-model");
+const settingsAuto    = document.getElementById("settings-auto");
+const settingsCancel  = document.getElementById("settings-cancel");
+const settingsSave    = document.getElementById("settings-save");
+
 const renameModal   = document.getElementById("rename-modal");
 const renameInput   = document.getElementById("rename-input");
 const renameCancel  = document.getElementById("rename-cancel");
@@ -48,6 +61,60 @@ const renameError   = document.getElementById("rename-error");
 let renameTarget = null;
 
 const columns = [colTrash, colUnsorted, colKeep];
+
+// ── Theme management ─────────────────────────────────────────────────────────
+const THEME_KEY = "ss-dcl-theme";
+
+function applyTheme(mode) {
+  if (mode === "dark") {
+    document.documentElement.setAttribute("data-theme", "dark");
+  } else if (mode === "light") {
+    document.documentElement.removeAttribute("data-theme");
+  } else {
+    const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+    if (prefersDark) {
+      document.documentElement.setAttribute("data-theme", "dark");
+    } else {
+      document.documentElement.removeAttribute("data-theme");
+    }
+  }
+}
+
+function getSavedTheme() {
+  try { return localStorage.getItem(THEME_KEY) || "auto"; } catch (_) { return "auto"; }
+}
+
+function saveTheme(mode) {
+  try { localStorage.setItem(THEME_KEY, mode); } catch (_) {}
+}
+
+function cycleTheme() {
+  const current = getSavedTheme();
+  const next = { auto: "dark", dark: "light", light: "auto" }[current] || "auto";
+  saveTheme(next);
+  applyTheme(next);
+  _updateThemeLabel();
+}
+
+function _updateThemeLabel() {
+  const btn = document.getElementById("theme-toggle");
+  if (!btn) return;
+  const mode = getSavedTheme();
+  const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+  const effective = mode === "auto" ? (prefersDark ? "dark" : "light") : mode;
+  btn.setAttribute("aria-label", "Theme: " + mode + (mode === "auto" ? " (" + effective + ")" : "") + " — click to cycle");
+}
+
+applyTheme(getSavedTheme());
+window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => {
+  if (getSavedTheme() === "auto") applyTheme("auto");
+});
+
+document.getElementById("theme-toggle").addEventListener("click", () => {
+  cycleTheme();
+  _updateThemeLabel();
+});
+_updateThemeLabel();
 
 // ── Sanitise filenames for safe DOM insertion ────────────────────────────────
 function sanitise(str) {
@@ -59,12 +126,24 @@ function sanitise(str) {
     .replace(/'/g, "&#39;");
 }
 
+// ── Settings state (loaded on init) ────────────────────────────────────────────
+let llmSettings = { llm_provider: "ollama", llm_model: "gemma4:e2b", auto_suggest: false, prune_max_age_days: 90 };
+
+function loadSettings() {
+  return fetch("/api/settings")
+    .then(r => r.json())
+    .then(s => { llmSettings = s; })
+    .catch(() => {});
+}
+
 // ── Bootstrap ────────────────────────────────────────────────────────────────
 function init() {
-  fetch("/api/state")
-    .then(r => r.json())
-    .then(state => loadScreenshots(state.decisions || {}))
-    .catch(() => loadScreenshots({}));
+  loadSettings().then(() => {
+    fetch("/api/state")
+      .then(r => r.json())
+      .then(state => loadScreenshots(state.decisions || {}))
+      .catch(() => loadScreenshots({}));
+  });
 }
 
 function loadScreenshots(savedDecisions) {
@@ -93,10 +172,18 @@ function loadScreenshots(savedDecisions) {
         const target = col === "trash" ? cardsTrash
                      : col === "keep"  ? cardsKeep
                      : cardsUnsorted;
-        target.appendChild(makeCard(f.name, col));
+        target.appendChild(makeCard(f.name, col, f.fingerprint, f.memory_status, f.suggested_name, f.suggested_category));
       });
       updateCounts();
       saveState();
+
+      // Auto-suggest if enabled
+      if (llmSettings.auto_suggest) {
+        const newFps = files
+          .filter(f => f.memory_status === "new")
+          .map(f => f.fingerprint);
+        if (newFps.length > 0) suggestBatch(newFps);
+      }
     })
     .catch(() => {
       loadingMsg.hidden = true;
@@ -133,12 +220,18 @@ function saveState() {
 }
 
 // ── Card factory ─────────────────────────────────────────────────────────────
-function makeCard(filename, column) {
+function makeCard(filename, column, fingerprint, memoryStatus, suggestedName, suggestedCategory) {
   const card = document.createElement("article");
   card.className = "card";
   card.setAttribute("role", "listitem");
   card.setAttribute("aria-label", filename);
   card.dataset.filename = filename;
+  card.dataset.fingerprint = fingerprint || "";
+  card.dataset.memoryStatus = memoryStatus || "";
+  card.dataset.suggestedName = suggestedName || "";
+  if (suggestedCategory) {
+    card.dataset.suggestedCategory = suggestedCategory;
+  }
   card.draggable = true;
   card.tabIndex = 0;
 
@@ -152,6 +245,17 @@ function makeCard(filename, column) {
   actions.className = "card-actions";
 
   card.appendChild(img);
+
+  // Category hint visual (4C)
+  if (suggestedCategory === "keep" || suggestedCategory === "trash") {
+    card.classList.add("category-hint-" + suggestedCategory);
+  }
+
+  // Suggestion badge (always visible when status is "suggested")
+  if (memoryStatus === "suggested" && suggestedName) {
+    card.appendChild(_makeSuggestionBadge(card));
+  }
+
   card.appendChild(actions);
 
   setCardActions(card, column);
@@ -161,6 +265,45 @@ function makeCard(filename, column) {
   attachTooltip(card);
 
   return card;
+}
+
+function _makeSuggestionBadge(card) {
+  const badge = document.createElement("div");
+  badge.className = "suggestion-badge";
+
+  const nameSpan = document.createElement("span");
+  nameSpan.className = "suggestion-badge-name";
+  nameSpan.textContent = card.dataset.suggestedName;
+  nameSpan.title = card.dataset.suggestedName;
+
+  const actionsDiv = document.createElement("div");
+  actionsDiv.className = "suggestion-badge-actions";
+
+  const acceptBtn = document.createElement("button");
+  acceptBtn.className = "suggestion-badge-btn accept";
+  acceptBtn.textContent = "✓";
+  acceptBtn.title = "Accept & rename";
+  acceptBtn.addEventListener("click", e => { e.stopPropagation(); acceptSuggestion(card); });
+
+  const rejectBtn = document.createElement("button");
+  rejectBtn.className = "suggestion-badge-btn reject";
+  rejectBtn.textContent = "✕";
+  rejectBtn.title = "Dismiss suggestion";
+  rejectBtn.addEventListener("click", e => { e.stopPropagation(); rejectSuggestion(card); });
+
+  const editBtn = document.createElement("button");
+  editBtn.className = "suggestion-badge-btn edit";
+  editBtn.textContent = "✎";
+  editBtn.title = "Edit & rename";
+  editBtn.addEventListener("click", e => { e.stopPropagation(); editSuggestion(card); });
+
+  actionsDiv.appendChild(acceptBtn);
+  actionsDiv.appendChild(rejectBtn);
+  actionsDiv.appendChild(editBtn);
+  badge.appendChild(nameSpan);
+  badge.appendChild(actionsDiv);
+
+  return badge;
 }
 
 // ── Card action buttons ──────────────────────────────────────────────────────
@@ -178,6 +321,14 @@ function setCardActions(card, column) {
     actions.appendChild(previewBtn);
     actions.appendChild(renameBtn);
     actions.appendChild(trashBtn);
+
+    // Show "✨ AI Suggest" for unprocessed files
+    if (card.dataset.memoryStatus === "new") {
+      const suggestBtn = makeActionBtn("✨ Suggest", "btn-suggest", () => suggestSingle(card));
+      // Insert after rename, before trash
+      const trashRef = actions.querySelector(".btn-trash");
+      if (trashRef) actions.insertBefore(suggestBtn, trashRef);
+    }
   } else {
     const undoBtn = makeActionBtn("\u21A9 Undo", "btn-undo", () => moveCard(card, "unsorted"));
     actions.appendChild(previewBtn);
@@ -440,6 +591,16 @@ function _confirmLightboxRename() {
           decisions.set(newName, col);
         }
         card.dataset.filename = newName;
+        // A rename always transitions status to "renamed".
+        // fingerprint stays unchanged — it's the stable identity key
+        // (original macOS name + size), not a derived filename attribute.
+        card.dataset.memoryStatus = "renamed";
+        card.dataset.suggestedName = "";
+        const badge = card.querySelector(".suggestion-badge");
+        if (badge) badge.remove();
+        // Clear category hint
+        card.classList.remove("category-hint-keep", "category-hint-trash");
+        delete card.dataset.suggestedCategory;
         const cardImg = card.querySelector("img");
         cardImg.alt = newName;
         cardImg.src = `/api/thumb/${encodeURIComponent(newName)}?t=${Date.now()}`;
@@ -492,12 +653,282 @@ document.addEventListener("keydown", e => {
     if (!lightbox.hidden) { closeLightbox(); return; }
     if (!confirmModal.hidden) { closeModal(); return; }
     if (!renameModal.hidden) { closeRenameModal(); return; }
+    if (!settingsModal.hidden) { closeSettingsModal(); return; }
   }
 
   if ((e.metaKey || e.ctrlKey) && e.key === "z") {
     e.preventDefault();
     performUndo();
   }
+});
+
+// ── AI Suggest (single card) ──────────────────────────────────────────────────
+function suggestSingle(card) {
+  const fp = card.dataset.fingerprint;
+  if (!fp) return;
+  suggestBatch([fp]);
+}
+
+// ── AI Suggest (batch) ──────────────────────────────────────────────────────
+function suggestBatch(fingerprints) {
+  if (fingerprints.length === 0) return;
+
+  _suggestCancelled = false;
+
+  const chunkSize = 1;
+  let completed = 0;
+  let firstError = null;
+  let failedCount = 0;
+
+  function abortBatch(message) {
+    suggestProgressFill.style.width = "100%";
+    suggestProgressText.textContent = message;
+    statusMsg.textContent = message;
+    setTimeout(() => { suggestProgress.hidden = true; suggestAllBtn.disabled = false; }, 4000);
+  }
+
+  function processChunk(startIdx) {
+    if (_suggestCancelled) {
+      suggestProgressText.textContent = `Cancelled (${completed} processed)`;
+      setTimeout(() => { suggestProgress.hidden = true; suggestAllBtn.disabled = false; }, 1500);
+      return;
+    }
+    if (startIdx >= fingerprints.length) {
+      suggestProgressFill.style.width = "100%";
+      if (completed === 0 && firstError) {
+        suggestProgressText.textContent = firstError;
+        statusMsg.textContent = firstError;
+        setTimeout(() => { suggestProgress.hidden = true; suggestAllBtn.disabled = false; }, 4000);
+      } else if (completed === 0) {
+        suggestProgressText.textContent = "No suggestions generated. Is Ollama running?";
+        setTimeout(() => { suggestProgress.hidden = true; suggestAllBtn.disabled = false; }, 3000);
+      } else {
+        if (failedCount > 0) {
+          suggestProgressText.textContent = `Done! ${completed} processed — ${failedCount} file${failedCount > 1 ? "s" : ""} failed`;
+        } else {
+          suggestProgressText.textContent = `Done! ${completed} processed`;
+        }
+        if (firstError) {
+          statusMsg.textContent = firstError;
+        }
+        setTimeout(() => { suggestProgress.hidden = true; suggestAllBtn.disabled = false; }, 2500);
+      }
+      return;
+    }
+
+    const chunk = fingerprints.slice(startIdx, startIdx + chunkSize);
+
+    fetch("/api/suggest-names", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ fingerprints: chunk }),
+    })
+      .then(r => r.json())
+      .then(data => {
+        // Backend-level error is fatal: abort the rest of the batch.
+        if (data.error) {
+          if (!firstError) firstError = data.error;
+          abortBatch(data.error);
+          return;
+        }
+        const suggestions = data.suggestions || {};
+        failedCount += (data.failures || []).length;
+        for (const [fp, suggestedName] of Object.entries(suggestions)) {
+          const card = document.querySelector(`[data-fingerprint="${CSS.escape(fp)}"]`);
+          if (card) {
+            card.dataset.memoryStatus = "suggested";
+            card.dataset.suggestedName = suggestedName;
+            const oldBadge = card.querySelector(".suggestion-badge");
+            if (oldBadge) oldBadge.remove();
+            const badge = _makeSuggestionBadge(card);
+            const actions = card.querySelector(".card-actions");
+            card.insertBefore(badge, actions);
+            setCardActions(card, getCardColumn(card));
+          }
+          completed++;
+        }
+        const nextIdx = startIdx + chunkSize;
+        const pct = Math.round((Math.min(nextIdx, fingerprints.length) / fingerprints.length) * 100);
+        suggestProgressFill.style.width = pct + "%";
+        suggestProgressText.textContent = `${Math.min(nextIdx, fingerprints.length)} / ${fingerprints.length}`;
+        processChunk(nextIdx);
+      })
+      .catch(() => {
+        if (!firstError) firstError = "Couldn't reach Ollama — is it running?";
+        const nextIdx = startIdx + chunkSize;
+        processChunk(nextIdx);
+      });
+  }
+
+  // Pre-flight circuit breaker: bail out before any per-file calls if
+  // Ollama is down (avoids 3 futile retries per file on connection refused).
+  fetch("/api/ollama/health")
+    .then(r => r.json())
+    .then(h => {
+      if (!h.ok) {
+        statusMsg.textContent = h.error || "Couldn't reach Ollama — is it running?";
+        suggestAllBtn.disabled = false;
+        suggestProgress.hidden = true;
+        suggestProgressFill.style.width = "0%";
+        suggestProgressText.textContent = "0 / " + fingerprints.length;
+        return;
+      }
+      suggestAllBtn.disabled = true;
+      suggestProgress.hidden = false;
+      suggestProgressFill.style.width = "0%";
+      suggestProgressText.textContent = `0 / ${fingerprints.length}`;
+      processChunk(0);
+    })
+    .catch(() => {
+      statusMsg.textContent = "Couldn't reach Ollama — is it running?";
+      suggestAllBtn.disabled = false;
+      suggestProgress.hidden = true;
+    });
+}
+
+// ── Accept suggestion (rename file to suggested name) ───────────────────────
+function acceptSuggestion(card) {
+  const fp = card.dataset.fingerprint;
+  if (!fp) return;
+
+  fetch("/api/accept-suggestion", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ fingerprint: fp }),
+  })
+    .then(r => r.json())
+    .then(data => {
+      if (!data.ok) {
+        alert(data.error || "Failed to accept suggestion");
+        return;
+      }
+      const oldName = card.dataset.filename;
+      const newName = data.new_name;
+      const col = getCardColumn(card);
+      if (col === "unsorted") {
+        decisions.delete(oldName);
+      } else {
+        decisions.delete(oldName);
+        decisions.set(newName, col);
+      }
+      card.dataset.filename = newName;
+      card.dataset.memoryStatus = "renamed";
+      card.dataset.suggestedName = "";
+      const cardImg = card.querySelector("img");
+      cardImg.alt = newName;
+      cardImg.src = `/api/thumb/${encodeURIComponent(newName)}?t=${Date.now()}`;
+      // Remove badge
+      const badge = card.querySelector(".suggestion-badge");
+      if (badge) badge.remove();
+      // Clear category hint
+      card.classList.remove("category-hint-keep", "category-hint-trash");
+      delete card.dataset.suggestedCategory;
+      setCardActions(card, col);
+      updateCounts();
+      saveState();
+    })
+    .catch(() => alert("Network error — please try again."));
+}
+
+// ── Reject suggestion (dismiss, mark as ignored) ─────────────────────────────
+function rejectSuggestion(card) {
+  const fp = card.dataset.fingerprint;
+  if (!fp) return;
+
+  fetch("/api/reject-suggestion", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ fingerprint: fp }),
+  })
+    .then(r => r.json())
+    .then(data => {
+      if (!data.ok) return;
+      card.dataset.memoryStatus = "ignored";
+      card.dataset.suggestedName = "";
+      const badge = card.querySelector(".suggestion-badge");
+      if (badge) badge.remove();
+      // Clear category hint
+      card.classList.remove("category-hint-keep", "category-hint-trash");
+      delete card.dataset.suggestedCategory;
+      setCardActions(card, getCardColumn(card));
+    })
+    .catch(() => {});
+}
+
+// ── Edit suggestion (open rename modal pre-filled with suggested name) ────────
+function editSuggestion(card) {
+  renameTarget = card;
+  renameInput.value = card.dataset.suggestedName || card.dataset.filename;
+  renameError.textContent = "";
+  renameModal.hidden = false;
+  const dotIdx = renameInput.value.lastIndexOf(".");
+  renameInput.focus();
+  if (dotIdx > 0) {
+    renameInput.setSelectionRange(0, dotIdx);
+  }
+}
+
+// ── Cancel suggest button ────────────────────────────────────────────────────
+let _suggestCancelled = false;
+suggestCancelBtn.addEventListener("click", () => {
+  _suggestCancelled = true;
+});
+
+// ── Suggest All button ───────────────────────────────────────────────────────
+suggestAllBtn.addEventListener("click", () => {
+  const newFps = [...document.querySelectorAll(".card")]
+    .filter(c => c.dataset.memoryStatus === "new")
+    .map(c => c.dataset.fingerprint)
+    .filter(Boolean);
+  if (newFps.length === 0) {
+    statusMsg.textContent = "No new screenshots to suggest names for.";
+    return;
+  }
+  suggestBatch(newFps);
+});
+
+// ── Settings modal ────────────────────────────────────────────────────────────
+settingsBtn.addEventListener("click", () => {
+  // Load current settings into form
+  settingsProvider.value = llmSettings.llm_provider || "ollama";
+  settingsModel.value = llmSettings.llm_model || "gemma4:e2b";
+  settingsAuto.checked = llmSettings.auto_suggest || false;
+  const pruneAge = document.getElementById("settings-prune-age");
+  if (pruneAge) pruneAge.value = llmSettings.prune_max_age_days || 90;
+  settingsModal.hidden = false;
+});
+
+function closeSettingsModal() {
+  settingsModal.hidden = true;
+}
+
+settingsCancel.addEventListener("click", closeSettingsModal);
+settingsModal.addEventListener("click", e => {
+  if (e.target === settingsModal) closeSettingsModal();
+});
+
+settingsSave.addEventListener("click", () => {
+  const pruneVal = parseInt(document.getElementById("settings-prune-age")?.value || "90", 10);
+  const newSettings = {
+    llm_provider: settingsProvider.value,
+    llm_model: settingsModel.value.trim() || "gemma4:e2b",
+    auto_suggest: settingsAuto.checked,
+    prune_max_age_days: isNaN(pruneVal) || pruneVal < 1 ? 90 : pruneVal,
+  };
+
+  fetch("/api/settings", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(newSettings),
+  })
+    .then(r => r.json())
+    .then(data => {
+      if (data.ok) {
+        llmSettings = newSettings;
+        closeSettingsModal();
+      }
+    })
+    .catch(() => {});
 });
 
 // ── Undo ─────────────────────────────────────────────────────────────────────
@@ -618,6 +1049,16 @@ renameConfirm.addEventListener("click", () => {
         decisions.set(newName, col);
       }
       renameTarget.dataset.filename = newName;
+      // A rename always transitions status to "renamed".
+      // fingerprint stays unchanged — it's the stable identity key
+      // (original macOS name + size), not a derived filename attribute.
+      renameTarget.dataset.memoryStatus = "renamed";
+      renameTarget.dataset.suggestedName = "";
+      const badge = renameTarget.querySelector(".suggestion-badge");
+      if (badge) badge.remove();
+      // Clear category hint
+      renameTarget.classList.remove("category-hint-keep", "category-hint-trash");
+      delete renameTarget.dataset.suggestedCategory;
       const cardImg = renameTarget.querySelector("img");
       cardImg.alt = newName;
       cardImg.src = `/api/thumb/${encodeURIComponent(newName)}?t=${Date.now()}`;

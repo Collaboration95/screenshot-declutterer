@@ -5,6 +5,30 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.0] - 2026-08-05
+
+### Added
+
+- Memory store wired into the app — screenshots get a fingerprint + `memory_status` tracked across sessions; cards expose fingerprint/memory-status data attributes (#64, #65)
+- LLM-powered smart rename (Phase 3) — per-card `✨ Suggest` and batch `✨ Suggest All` with progress bar + cancel, suggestion badges with accept/reject/edit; `/api/suggest-names`, `/api/accept-suggestion`, `/api/reject-suggestion` (#66)
+- Auto-categorization — keyword-based category hints (green keep / red trash) computed from your past decisions (#67)
+- Dark mode — ☀/☾ toggle cycling auto/dark/light, persisted in localStorage, follows system preference (#67)
+- Settings UI — LLM provider/model, auto-suggest, prune-max-age; persisted to `~/.ss-dcl/settings.json` with type validation (#67)
+- Memory pruning — stale memory records garbage-collected after a configurable age (default 90 days) (#67)
+- `GET /api/ollama/health` — liveness probe used by the Ollama circuit breaker (#68)
+- LLM evaluation tooling — screenshot-rename and OCR-to-filename prompts plus an evaluation framework (`tools/`)
+- Release/UAT process documented in `RELEASING.md`
+
+### Changed
+
+- Ollama suggest retries are now classified — connection-refused, DNS failures, and HTTP 4xx fail fast (no futile retries); only transient errors (timeouts, resets, 429, 5xx) are retried (#68)
+- "Suggest All" performs a pre-flight Ollama health check and aborts before any per-file calls when the server is unreachable, instead of grinding through every file (#68)
+
+### Fixed
+
+- LLM suggestion flow: original file extension preserved (#1), clear error surfaced when Ollama is unreachable (#6), robust name sanitization (#7), accept-suggestion input validated (#4), stale suggestion badges removed after edits (#3)
+- Non-functional MLX provider option removed from settings (#5)
+
 ## [0.3.0] - 2026-06-02
 
 ### Added

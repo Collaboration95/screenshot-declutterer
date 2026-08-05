@@ -76,12 +76,13 @@ SMARTER FEATURES
            file memory (FE-017) to avoid re-processing.
            Design doc: docs/design-llm-rename-prerequisites.md
 
-[ ] FE-017  Persistent file memory store
+[.] FE-017  Persistent file memory store
            Track screenshot identity across sessions using metadata
            fingerprints. Foundation for FE-016 (LLM rename) and
            FE-011 (auto-categorization).
-           Phase 1A (memory module) is done. Remaining phases:
-             1B: integrate into app.py routes
+           Phase 1A (memory module) is done.
+           Phase 1B (app.py integration) is done (PR #64).
+           Remaining phases:
              1C: frontend awareness (data attributes, badges)
            Design doc: docs/design-llm-rename-prerequisites.md
 
