@@ -40,7 +40,7 @@ NEW ACTIONS
 UX IMPROVEMENTS
 ---------------
 
-[ ] FE-010  Inline filename display & lightbox rename
+[x] FE-010  Inline filename display & lightbox rename (done — shipped 0.2.0)
             Show filename on card hover (tooltip) and in the lightbox
             as an iOS-style semi-transparent rename bar at the bottom.
             Click to edit inline — no modal needed. Reuses existing
@@ -62,42 +62,186 @@ UX IMPROVEMENTS
 SMARTER FEATURES
 ----------------
 
-[ ] FE-011  Auto-categorization
-           Use on-device ML to suggest which column (Keep/Trash) a
-           screenshot belongs to based on learned patterns.
+[x] FE-011  Auto-categorization (done — shipped 0.4.0 as keyword-based
+           category hints; on-device ML remains aspirational)
+           Current impl: Keep/Trash hints via keyword overlap with past
+           decisions (suggest_category) + colored card borders.
 
 [ ] FE-012  Screenshot clustering
            Group screenshots by application or window to make bulk
            triage faster.
 
-[ ] FE-016  LLM-powered smart rename
+[x] FE-016  LLM-powered smart rename (done — shipped 0.4.0: per-card
+           ✨ Suggest, Suggest All + progress, accept/reject/edit badges,
+           /api/suggest-names, /api/accept-suggestion, /api/reject-suggestion,
+           Ollama circuit breaker + /api/ollama/health)
            Integrate a local LLM (Gemma via Ollama or MLX) to
            generate plausible screenshot names. Requires persistent
            file memory (FE-017) to avoid re-processing.
            Design doc: docs/design-llm-rename-prerequisites.md
+           NOTE: default vision model (gemma4:e2b) is too heavy for local
+           hardware — OCR-hybrid pipeline (FE-019) is the follow-up.
 
-[.] FE-017  Persistent file memory store
+[x] FE-017  Persistent file memory store (done — all phases shipped in 0.4.0:
+           1A memory module, 1B app.py integration (PR #64), 1C frontend
+           fingerprint + memory_status data attributes)
            Track screenshot identity across sessions using metadata
            fingerprints. Foundation for FE-016 (LLM rename) and
            FE-011 (auto-categorization).
-           Phase 1A (memory module) is done.
-           Phase 1B (app.py integration) is done (PR #64).
-           Remaining phases:
-             1C: frontend awareness (data attributes, badges)
            Design doc: docs/design-llm-rename-prerequisites.md
 
 
 QUALITY OF LIFE
 ---------------
 
-[ ] FE-013  Dark mode toggle
+[x] FE-013  Dark mode toggle (done — shipped 0.4.0)
            Add a dark theme option that respects system preference
            by default.
 
 [ ] FE-014  Progress indicator for large batches
            Show a progress bar or spinner when trashing a large
            number of files.
+           NOTE: Suggest All progress bar shipped in 0.4.0; trash-batch
+           progress bar still pending.
 
 [ ] FE-015  Multi-level undo
            Extend undo beyond a single level so users can step back
            through their full sorting history.
+
+
+FUTURE IDEAS (ideation farm — not yet committed to a release)
+=============================================================
+
+Tagging: [P1/P2/P3] = priority when we pick it up · [S/M/L/XL] = rough effort
+Status: idea | designed | prototyped | parked
+
+
+LLM & AI
+--------
+
+[ ] FE-018  LLM benchmark suite — Ollama vs MLX vs alternatives        [P1][M]
+           Systematic perf + quality testing of candidate models/runtimes
+           for the screenshot-rename task, using tools/eval-screenshot-names.py.
+           Output: a repeatable comparison table — latency, tokens/sec, RAM/VRAM
+           footprint, and rename quality score on the same test set.
+           Runtime candidates: Ollama (CPU/GPU), MLX (Apple Silicon),
+           llama.cpp (llama-cli), CoreML (via coremltools), ONNX Runtime.
+           Model candidates: qwen2.5:1.5b, gemma2:2b, llama3.2:1b, phi3:mini,
+           smollm2, qwen2.5vl (vision), gemma4:e2b (current default — the one
+           too big for our hardware).
+           SEED IDEA — everything else in the LLM section depends on it.
+
+[ ] FE-019  OCR-hybrid pipeline (design done, needs code)              [P1][L]
+           The design + prompts already live in tools/prompt-ocr-to-filename.md
+           (tesseract OCR → tiny text-only model). Wire it into the app:
+           pytesseract extraction, a "pipeline" setting (vision | ocr-hybrid |
+           heuristic), and swap _call_ollama_suggest's payload accordingly.
+           Solves the original roadblock: no vision model needed on-device.
+
+[ ] FE-020  Model keep-alive / warm-start                             [P2][S]
+           Ollama unloads idle models → every batch pays a cold-start. Set
+           keep_alive on the /api/chat call (or pre-warm /api/generate),
+           and surface "model still loading" instead of treating it as failure.
+
+[ ] FE-021  Async suggestion queue                                    [P3][L]
+           Server-side queue so suggest-batch doesn't block request-per-file;
+           progress via SSE or polling. Frontend already has progress UI.
+
+[ ] FE-022  Suggestion cache by content                               [P2][M]
+           Memory store fingerprints by name|size today. Content hashing
+           (sha256) would catch re-imported/renamed copies and reuse names —
+           but costs one file read per screenshot. Measure before building.
+
+[ ] FE-023  Fallback naming chain                                     [P2][M]
+           LLM down → OCR-only name → heuristic (date/size) → "screenshot".
+           The app degrades gracefully instead of failing closed. Complements
+           the circuit breaker from #68.
+
+[ ] FE-024  Auto-select best model per hardware                       [P3][S]
+           Run FE-018's benchmark once, cache the winner in settings, done.
+
+[ ] FE-025  MLX-native path (Apple Silicon GPU)                       [P2][L]
+           If FE-018 shows MLX wins on quality/speed, add mlx-lm as an
+           optional backend. Needs graceful fallback when no Metal GPU.
+
+
+PRODUCT FEATURES (NO AI)
+------------------------
+
+[ ] FE-026  Stats dashboard                                           [P2][M]
+           "You take 40 screenshots/week; 18% are duplicates; biggest week was
+           June." Pure metadata + memory store — no ML. Great marketing story
+           and genuinely useful.
+
+[ ] FE-027  Watch folder (auto-refresh)                               [P2][M]
+           fsmonitor/watchdog: new screenshots appear in the kanban live
+           instead of needing a reload. The #1 "it feels alive" upgrade.
+
+[ ] FE-028  Smart rules engine                                       [P2][M]
+           If/then: "Screenshot from <app> older than 30 days → Trash",
+           "bigger than 5MB → Keep". Rules run at launch; overrides manual
+           sort. Reuses category logic already built in Phase 4.
+
+[ ] FE-029  Screenshot clustering (FE-012's real form)                [P3][M]
+           Group by source app via macOS metadata (kMDItemCreator /
+           kMDItemWhereFroms) — macOS records the app that took the shot.
+
+[ ] FE-030  Bulk rename patterns (FE-005)                             [P3][M]
+           "vacation-YYYY-MM-DD-NNN" style batch renames. UI for pattern
+           templates; preview before applying.
+
+[ ] FE-031  Export decisions (CSV/JSON)                               [P3][S]
+           Audit trail of what was kept/trashed/renamed — export button.
+           Trivial to build on memory.json.
+
+[ ] FE-032  Finder/menubar integration                                [P3][L]
+           Menubar icon with live count + click-to-open; right-click "Sort
+           with Screenshot Declutterer" via a Finder extension (unsigned =
+           painful — park until packaged).
+
+[ ] FE-033  Cross-machine decisions                                   [P3][L]
+           Sync state/memory via iCloud Drive folder instead of ~/.ss-dcl.
+           Low ROI for a single-user tool — parked.
+
+
+ENGINEERING & HARDENING
+-----------------------
+
+[ ] FE-034  CI pipeline (GitHub Actions)                              [P1][M]
+           ruff + pyright + pytest + pip-audit on push/PR. The release audit's
+           #1 gap — merging becomes safe and automatic.
+
+[ ] FE-035  E2E browser tests (Playwright)                            [P2][L]
+           Real drag-and-drop, modal flows, dark mode toggling against a
+           Flask test server. Complements the HTML-only frontend tests.
+
+[ ] FE-036  Card virtualization for 1000+ screenshots                 [P3][M]
+           Current DOM-per-card approach will crawl at scale. Render only
+           visible cards (IntersectionObserver).
+
+[ ] FE-037  Packaging: .app bundle / Homebrew cask                    [P2][L]
+           PyInstaller → signed .app → `brew install --cask`. The step that
+           makes it shareable beyond this machine (also unblocks FE-032).
+
+[ ] FE-038  Duplicate screenshot detection (exact + near)             [P2][M]
+           Hash-based dup highlighting — macOS loves producing "Screenshot
+           (2).png" copies. High user value, cheap to build on thumbnails.
+
+[ ] FE-039  App-split refactor                                        [P3][L]
+           app.py is 800 lines — split routes into blueprints (memory, llm,
+           files) when it hits ~1200. Cosmetic today; do it before FE-021/35.
+
+[ ] FE-040  Opt-in crash/usage telemetry                              [P3][S]
+           Local-first means no telemetry by default. Optional, anonymous,
+           clearly-documented toggle — only if the user base justifies it.
+
+
+PARKED / PROBABLY NOT
+---------------------
+
+- Windows/Linux port: send2trash is cross-platform but the Screenshot
+  naming, macOS metadata, and Trash semantics are all Apple-specific.
+  Not worth it for a personal tool.
+- Vision-model-first LLM rename: the roadblock that started all this —
+  kept only as the FE-018 baseline to beat.
+- Mobile app: categorically no.
