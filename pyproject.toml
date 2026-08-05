@@ -1,6 +1,6 @@
 [project]
 name = "screenshot-declutterer"
-version = "0.1.0"
+version = "0.4.0"
 description = "A simple macOS tool to quickly sort and trash Desktop screenshots"
 readme = "README.md"
 license = "MIT"
