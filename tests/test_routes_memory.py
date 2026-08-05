@@ -11,6 +11,7 @@ Tests that:
 """
 
 import json
+import socket
 import urllib.error
 from unittest.mock import patch
 
@@ -1407,8 +1408,33 @@ def test_suggest_names_empty_failures_on_success(client, monkeypatch):
     assert fp in data["suggestions"]
 
 
-def test_call_ollama_suggest_retries_on_url_error(tmp_path, monkeypatch):
-    """Retries up to max_retries times on URLError before giving up."""
+def test_call_ollama_suggest_fails_fast_on_connection_refused(tmp_path, monkeypatch):
+    """Connection refused (Errno 61) is permanent — no retries, no backoff sleep."""
+    img = tmp_path / "test.png"
+    img.write_bytes(b"fake-data")
+
+    call_count = 0
+    sleeps = []
+
+    def mock_urlopen(req, timeout=None):
+        nonlocal call_count
+        call_count += 1
+        raise urllib.error.URLError(ConnectionRefusedError(61, "Connection refused"))
+
+    def mock_sleep(seconds):
+        sleeps.append(seconds)
+
+    monkeypatch.setattr(flask_app.urllib.request, "urlopen", mock_urlopen)
+    monkeypatch.setattr(flask_app.time, "sleep", mock_sleep)
+
+    result = flask_app._call_ollama_suggest(img, "test-model")
+    assert result is None
+    assert call_count == 1, "connection refused should fail fast (no retries)"
+    assert len(sleeps) == 0, "no backoff sleep for a permanent error"
+
+
+def test_call_ollama_suggest_retries_on_transient_error(tmp_path, monkeypatch):
+    """Unrecognized URLError stays retryable — 3 attempts before giving up."""
     img = tmp_path / "test.png"
     img.write_bytes(b"fake-data")
 
@@ -1417,7 +1443,7 @@ def test_call_ollama_suggest_retries_on_url_error(tmp_path, monkeypatch):
     def mock_urlopen(req, timeout=None):
         nonlocal call_count
         call_count += 1
-        raise urllib.error.URLError("connection refused")
+        raise urllib.error.URLError("temporary failure")
 
     monkeypatch.setattr(flask_app.urllib.request, "urlopen", mock_urlopen)
     monkeypatch.setattr(flask_app.time, "sleep", lambda s: None)
@@ -1425,6 +1451,119 @@ def test_call_ollama_suggest_retries_on_url_error(tmp_path, monkeypatch):
     result = flask_app._call_ollama_suggest(img, "test-model")
     assert result is None
     assert call_count == 3  # initial + 2 retries = 3 attempts
+
+
+def test_is_retryable_ollama_error_classifier():
+    """_is_retryable_ollama_error classifies transient vs permanent errors."""
+    # Not retryable: connection refused, DNS failure, 4xx (except 429)
+    assert not flask_app._is_retryable_ollama_error(
+        ConnectionRefusedError(61, "Connection refused")
+    )
+    assert not flask_app._is_retryable_ollama_error(
+        urllib.error.URLError(ConnectionRefusedError(61, "Connection refused"))
+    )
+    assert not flask_app._is_retryable_ollama_error(socket.gaierror())
+    assert not flask_app._is_retryable_ollama_error(
+        urllib.error.HTTPError("http://x/api/chat", 404, "Not Found", None, None)
+    )
+    assert not flask_app._is_retryable_ollama_error(
+        urllib.error.HTTPError("http://x/api/chat", 400, "Bad Request", None, None)
+    )
+
+    # Retryable: timeouts, resets, broken pipes, 429, 5xx, unknown errors
+    assert flask_app._is_retryable_ollama_error(socket.timeout())
+    assert flask_app._is_retryable_ollama_error(TimeoutError())
+    assert flask_app._is_retryable_ollama_error(
+        ConnectionResetError(54, "Connection reset by peer")
+    )
+    assert flask_app._is_retryable_ollama_error(BrokenPipeError(32, "Broken pipe"))
+    assert flask_app._is_retryable_ollama_error(
+        urllib.error.HTTPError("http://x/api/chat", 429, "Too Many Requests", None, None)
+    )
+    assert flask_app._is_retryable_ollama_error(
+        urllib.error.HTTPError("http://x/api/chat", 500, "Server Error", None, None)
+    )
+    assert flask_app._is_retryable_ollama_error(urllib.error.URLError("temporary failure"))
+    assert flask_app._is_retryable_ollama_error(OSError("temporary failure"))
+
+
+class _FakeHealthResponse:
+    """Minimal stand-in for urllib response with .status and a .read()."""
+
+    def __init__(self, status):
+        self.status = status
+
+    def read(self):
+        return b"{}"
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *a):
+        return None
+
+
+def test_ollama_healthy_true_on_200(monkeypatch):
+    """GET /api/tags returning 200 → healthy."""
+    monkeypatch.setattr(flask_app, "_ollama_health_cache", None)
+    monkeypatch.setattr(
+        flask_app.urllib.request, "urlopen", lambda url, timeout=None: _FakeHealthResponse(200)
+    )
+
+    assert flask_app._ollama_healthy() is True
+
+
+def test_ollama_healthy_false_on_connection_refused(monkeypatch):
+    """Connection refused → unhealthy."""
+
+    def mock_urlopen(url, timeout=None):
+        raise urllib.error.URLError(ConnectionRefusedError(61, "Connection refused"))
+
+    monkeypatch.setattr(flask_app, "_ollama_health_cache", None)
+    monkeypatch.setattr(flask_app.urllib.request, "urlopen", mock_urlopen)
+
+    assert flask_app._ollama_healthy() is False
+
+
+def test_ollama_healthy_caches_negative_verdict(monkeypatch):
+    """A False verdict is cached for the TTL even if the server comes back."""
+    calls = []
+
+    def mock_urlopen(url, timeout=None):
+        calls.append(1)
+        raise urllib.error.URLError(ConnectionRefusedError(61, "Connection refused"))
+
+    monkeypatch.setattr(flask_app, "_ollama_health_cache", None)
+    monkeypatch.setattr(flask_app.urllib.request, "urlopen", mock_urlopen)
+
+    assert flask_app._ollama_healthy() is False
+    assert len(calls) == 1
+
+    # Server "comes back", but the cached False verdict is still fresh.
+    monkeypatch.setattr(
+        flask_app.urllib.request, "urlopen", lambda url, timeout=None: _FakeHealthResponse(200)
+    )
+    assert flask_app._ollama_healthy() is False  # served from cache
+    assert len(calls) == 1
+
+
+def test_ollama_health_route(client, monkeypatch):
+    """GET /api/ollama/health returns 200 when healthy, 503 when not."""
+    c, _ = client
+
+    monkeypatch.setattr(flask_app, "_ollama_healthy", lambda: True)
+    r = c.get("/api/ollama/health")
+    assert r.status_code == 200
+    data = json.loads(r.data)
+    assert data["ok"] is True
+    assert data["error"] == ""
+
+    monkeypatch.setattr(flask_app, "_ollama_healthy", lambda: False)
+    r = c.get("/api/ollama/health")
+    assert r.status_code == 503
+    data = json.loads(r.data)
+    assert data["ok"] is False
+    assert data["error"]  # non-empty error message
 
 
 def test_call_ollama_suggest_succeeds_on_retry(tmp_path, monkeypatch):

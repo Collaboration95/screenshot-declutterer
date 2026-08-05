@@ -1,5 +1,6 @@
 import base64
 import contextlib
+import errno
 import json
 import logging
 import os
@@ -54,6 +55,9 @@ MEMORY_FILE = Path.home() / ".ss-dcl" / "memory.json"
 SETTINGS_FILE = Path.home() / ".ss-dcl" / "settings.json"
 DEFAULT_LLM_MODEL = "gemma4:e2b"
 OLLAMA_BASE_URL = os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434")
+OLLAMA_HEALTH_TIMEOUT = 3  # seconds
+_OLLAMA_HEALTH_TTL = 5.0  # seconds
+_ollama_health_cache: Optional[tuple[float, bool]] = None
 # TODO Need to check if rendering changes for .tiff or .bmp needs to be handled seperately
 SUPPORTED_IMAGE_EXTENSION = (".png", ".jpg", ".jpeg", ".tiff", ".bmp")
 
@@ -409,6 +413,69 @@ def api_memory():
     return jsonify({"files": result})
 
 
+def _is_retryable_ollama_error(exc: BaseException) -> bool:
+    """Return True if *exc* is transient and worth retrying.
+
+    Unwraps ``urllib.error.URLError`` (whose ``.reason`` may itself be an
+    exception) and classifies the underlying cause.  Connection refused and
+    DNS lookup failures mean the server is down — retrying is futile — while
+    timeouts, resets, broken pipes, HTTP 429 and HTTP 5xx are transient.
+    Unrecognized errors default to retryable to stay conservative.
+    """
+    if isinstance(exc, urllib.error.HTTPError):
+        # HTTPError is a URLError subclass carrying an HTTP status code.
+        return exc.code == 429 or exc.code >= 500
+
+    if isinstance(exc, urllib.error.URLError):
+        reason = exc.reason
+        if isinstance(reason, BaseException):
+            return _is_retryable_ollama_error(reason)
+        # Non-exception reason (e.g. plain string) — unknown, stay conservative.
+        return True
+
+    if isinstance(exc, (socket.timeout, TimeoutError)):
+        return True
+    if isinstance(exc, (ConnectionResetError, BrokenPipeError)):
+        return True
+    if isinstance(exc, socket.gaierror):
+        return False
+    if isinstance(exc, ConnectionRefusedError):
+        return False
+    if isinstance(exc, OSError):
+        if exc.errno == errno.ECONNREFUSED:
+            return False
+        if exc.errno in (errno.EPIPE, errno.ECONNRESET):
+            return True
+        # Unknown OSError (possibly no errno) — conservative default.
+        return True
+    return True
+
+
+def _ollama_healthy() -> bool:
+    """Cheap reachability probe (GET /api/tags).
+
+    Negative AND positive verdicts are cached for ``_OLLAMA_HEALTH_TTL``
+    seconds so a down server is probed at most once per batch instead of
+    once per file.
+    """
+    global _ollama_health_cache
+    now = time.monotonic()
+    if _ollama_health_cache is not None and now - _ollama_health_cache[0] < _OLLAMA_HEALTH_TTL:
+        return _ollama_health_cache[1]
+
+    ok = False
+    try:
+        with urllib.request.urlopen(
+            f"{OLLAMA_BASE_URL}/api/tags", timeout=OLLAMA_HEALTH_TIMEOUT
+        ) as resp:
+            ok = resp.status == 200
+    except (urllib.error.URLError, OSError):
+        ok = False
+
+    _ollama_health_cache = (time.monotonic(), ok)
+    return ok
+
+
 def _call_ollama_suggest(image_path: Path, model: str, extension: str = ".png") -> Optional[str]:
     """Call Ollama API with an image and return a suggested filename.
 
@@ -419,8 +486,10 @@ def _call_ollama_suggest(image_path: Path, model: str, extension: str = ".png") 
     the leading dot (e.g. ``".jpg"``).  Defaults to ``".png"`` for
     backward compatibility.
 
-    Retries up to 2 times on connection/timeout errors with 1s/2s backoff.
-    JSON decode errors are not retried (malformed response won't fix itself).
+    Retries up to 2 times on transient connection/timeout errors with
+    1s/2s backoff.  Permanent errors (connection refused, DNS failure,
+    HTTP 4xx) fail fast.  JSON decode errors are not retried (malformed
+    response won't fix itself).
     """
     max_retries = 2
     with open(image_path, "rb") as fh:
@@ -461,6 +530,13 @@ def _call_ollama_suggest(image_path: Path, model: str, extension: str = ".png") 
             logger.warning("Ollama returned malformed JSON for %s: %s", image_path.name, exc)
             return None
         except (urllib.error.URLError, OSError) as exc:
+            if not _is_retryable_ollama_error(exc):
+                logger.warning(
+                    "Ollama unreachable for %s, not retrying: %s",
+                    image_path.name,
+                    exc,
+                )
+                return None
             if attempt < max_retries:
                 wait = 2**attempt
                 logger.warning(
@@ -622,6 +698,14 @@ def api_suggest_names():
         memory.save()
 
     return jsonify({"suggestions": suggestions, "failures": failures})
+
+
+@app.route("/api/ollama/health")
+def api_ollama_health():
+    """Reachability check used by the frontend before running a suggest batch."""
+    ok = _ollama_healthy()
+    message = "" if ok else "Ollama is not reachable — start it with 'ollama serve' and try again."
+    return jsonify({"ok": ok, "error": message}), 200 if ok else 503
 
 
 @app.route("/api/accept-suggestion", methods=["POST"])

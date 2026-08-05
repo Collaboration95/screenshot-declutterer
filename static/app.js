@@ -674,15 +674,18 @@ function suggestBatch(fingerprints) {
   if (fingerprints.length === 0) return;
 
   _suggestCancelled = false;
-  suggestAllBtn.disabled = true;
-  suggestProgress.hidden = false;
-  suggestProgressFill.style.width = "0%";
-  suggestProgressText.textContent = `0 / ${fingerprints.length}`;
 
   const chunkSize = 1;
   let completed = 0;
   let firstError = null;
   let failedCount = 0;
+
+  function abortBatch(message) {
+    suggestProgressFill.style.width = "100%";
+    suggestProgressText.textContent = message;
+    statusMsg.textContent = message;
+    setTimeout(() => { suggestProgress.hidden = true; suggestAllBtn.disabled = false; }, 4000);
+  }
 
   function processChunk(startIdx) {
     if (_suggestCancelled) {
@@ -722,9 +725,11 @@ function suggestBatch(fingerprints) {
     })
       .then(r => r.json())
       .then(data => {
-        // Check for backend-level error (e.g. unsupported provider)
+        // Backend-level error is fatal: abort the rest of the batch.
         if (data.error) {
           if (!firstError) firstError = data.error;
+          abortBatch(data.error);
+          return;
         }
         const suggestions = data.suggestions || {};
         failedCount += (data.failures || []).length;
@@ -755,7 +760,30 @@ function suggestBatch(fingerprints) {
       });
   }
 
-  processChunk(0);
+  // Pre-flight circuit breaker: bail out before any per-file calls if
+  // Ollama is down (avoids 3 futile retries per file on connection refused).
+  fetch("/api/ollama/health")
+    .then(r => r.json())
+    .then(h => {
+      if (!h.ok) {
+        statusMsg.textContent = h.error || "Couldn't reach Ollama — is it running?";
+        suggestAllBtn.disabled = false;
+        suggestProgress.hidden = true;
+        suggestProgressFill.style.width = "0%";
+        suggestProgressText.textContent = "0 / " + fingerprints.length;
+        return;
+      }
+      suggestAllBtn.disabled = true;
+      suggestProgress.hidden = false;
+      suggestProgressFill.style.width = "0%";
+      suggestProgressText.textContent = `0 / ${fingerprints.length}`;
+      processChunk(0);
+    })
+    .catch(() => {
+      statusMsg.textContent = "Couldn't reach Ollama — is it running?";
+      suggestAllBtn.disabled = false;
+      suggestProgress.hidden = true;
+    });
 }
 
 // ── Accept suggestion (rename file to suggested name) ───────────────────────
