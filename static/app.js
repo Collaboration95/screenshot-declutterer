@@ -493,7 +493,11 @@ function updateBatchBar() {
 function batchMove(toColumn) {
   const cards = [...selectedCards].filter(card => document.contains(card));
   cards.forEach(card => moveCard(card, toColumn));
-  clearSelection();
+  // Keep the selection after the move: dropping (or clicking Keep/Trash)
+  // should NOT deselect the batch — the user can keep re-dragging/re-
+  // triaging the same set. Deselection is explicit: Escape, the ✕ Clear
+  // button, re-sort, or Done (#76). moveCard() moves the same DOM node,
+  // so selectedCards stays valid.
 }
 
 batchKeepBtn.addEventListener("click", () => batchMove("keep"));

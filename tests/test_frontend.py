@@ -338,6 +338,23 @@ def test_app_js_defines_batch_selection(client):
     assert b"function updateBatchBar(" in r.data
 
 
+def test_batch_move_preserves_selection():
+    """batchMove must NOT clear the selection — dropping a multi-drag (or
+    clicking batch Keep/Trash) keeps the set selected; deselection is only
+    explicit (Escape / ✕ Clear / re-sort / Done), per issue #76."""
+    import re
+
+    with open("static/app.js", encoding="utf-8") as f:
+        src = f.read()
+    m = re.search(r"function batchMove\(toColumn\) \{.*?\n\}", src, re.S)
+    assert m is not None, "batchMove not found in app.js"
+    body = m.group(0)
+    assert "clearSelection" not in body
+    # still moves every selected card, filtering out stale nodes
+    assert "cards.forEach(card => moveCard(card, toColumn))" in body
+    assert "document.contains(card)" in body
+
+
 def test_app_js_defines_batch_drag_ghost(client):
     """Photos-style composite drag ghost must exist and attach via setDragImage."""
     c, _ = client

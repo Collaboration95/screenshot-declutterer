@@ -18,6 +18,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Keyboard-driven triage (FE-007) removed from the backlog indefinitely
 
+### Fixed
+
+- Batch selection now survives drag-and-drop and batch Keep/Trash — the moved cards stay selected until the user explicitly deselects (Escape / ✕ / re-sort / Done) (#76)
+
 ## [0.4.0] - 2026-08-05
 
 ### Added
