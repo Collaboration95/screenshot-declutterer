@@ -251,11 +251,10 @@ ENGINEERING & HARDENING
            Local-first means no telemetry by default. Optional, anonymous,
            clearly-documented toggle — only if the user base justifies it.
 
-[ ] FE-044  Photos-style batch drag preview (#74)                      [P2][S]
-           When dragging a selected card, show a fanned stack of the
-           selected thumbnails on the cursor (rotated, overlapping,
-           count badge when >6) via a composite canvas + setDragImage.
-           Purely visual — drop/undo/batch logic unchanged.
+[x] FE-044  Photos-style batch drag preview (#74)                      [P2][S]
+           Done — dragging a selected card fans the selected thumbnails out
+           on the cursor (rotated, overlapping, count badge when >6) via a
+           composite canvas + setDragImage. Visual only — drop logic intact.
 
 
 PARKED / PROBABLY NOT

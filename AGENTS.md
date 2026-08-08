@@ -65,7 +65,7 @@ All in `static/app.js`:
 - **Global state**: `decisions` (Map), `undoStack` (Array), `selectedCards` (Set), `totalCards`, `currentSort`
 - **Entry**: `init()` → loads saved state → `loadScreenshots()` → creates cards via `makeCard()`
 - **Core logic**: `moveCard(card, column)` updates decisions map, undo stack, DOM, and persists state
-- **Drag-and-drop**: Native HTML5 Drag and Drop API. Cards `draggable="true"`. Columns are drop targets with visual feedback via CSS classes (`dragging`, `drag-over`)
+- **Drag-and-drop**: Native HTML5 Drag and Drop API. Cards `draggable="true"`. Columns are drop targets with visual feedback via CSS classes (`dragging`, `drag-over`). Dragging a selected card attaches a Photos-style fanned stack of the whole selection to the cursor (`buildBatchDragGhost()` — composite canvas + `setDragImage`); visual only, drop still batch-moves
 - **Kanban layout**: Three columns — Keep (22% width), Unsorted (CSS Grid, flex:1), Trash (22% width)
 - **Undo**: `performUndo()` pops from stack, reverses the move
 - **Lightbox**: Double-click or Preview button → full-size overlay. Escape or backdrop click closes

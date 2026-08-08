@@ -12,6 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Multi-select + batch triage — click cards to select (blue ring + checkmark), floating batch bar moves the whole selection to Keep/Trash, dragging a selected card moves all selected; undo stays per-card (#69)
 - Reveal in Finder — `POST /api/reveal` runs `open -R` on macOS (fire-and-forget, path-traversal guarded); Finder button on card actions and in the lightbox (#71)
 - Empty-column drop hints — faint dashed "Drop here to keep/trash" placeholders inside empty side columns, dark-mode aware (#72)
+- Photos-style batch drag ghost — dragging a selected card fans the selection's thumbnails out on the cursor (composite canvas + `setDragImage`, capped at 6 tiles with a `+N` badge), visual only (#74)
 
 ### Removed
 

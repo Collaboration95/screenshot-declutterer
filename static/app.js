@@ -404,12 +404,23 @@ function attachDrag(card) {
     card.classList.add("dragging");
     e.dataTransfer.effectAllowed = "move";
     e.dataTransfer.setData("text/plain", card.dataset.filename);
+    // Dragging a selected card: attach a Photos-style fanned stack of the
+    // whole selection to the cursor (visual only — the drop still batchMoves).
+    _clearGhostCanvas();
+    if (selectedCards.has(card) && selectedCards.size > 1) {
+      const ghost = buildBatchDragGhost([...selectedCards], selectedCards.size);
+      if (ghost) {
+        _ghostCanvas = ghost.canvas;
+        e.dataTransfer.setDragImage(ghost.canvas, ghost.offsetX, ghost.offsetY);
+      }
+    }
   });
 
   card.addEventListener("dragend", () => {
     card.classList.remove("dragging");
     draggedCard = null;
     columns.forEach(c => c.classList.remove("drag-over"));
+    _clearGhostCanvas();
   });
 }
 
@@ -488,6 +499,143 @@ function batchMove(toColumn) {
 batchKeepBtn.addEventListener("click", () => batchMove("keep"));
 batchTrashBtn.addEventListener("click", () => batchMove("trash"));
 batchClearBtn.addEventListener("click", clearSelection);
+
+// ── Batch drag ghost (Photos-style) ─────────────────────────────────────────
+// When a drag starts on a selected card, fan the selected thumbnails out on
+// the cursor like the macOS Photos app. HTML5 DnD only supports ONE drag
+// image (setDragImage), so we composite the whole fanned stack onto a single
+// canvas. Purely visual — drop/undo/batch logic is untouched.
+const MAX_GHOST_TILES = 6;
+const GHOST_TILE_W = 168; // 4:3, matches the thumbnail ratio (2×)
+const GHOST_TILE_H = 126;
+
+// Deterministic fan layout: outer tiles tilt away from the middle card, which
+// stays straight-on as the "front" of the stack. Pure function → testable.
+function batchFanLayout(tileCount) {
+  const layout = [];
+  const mid = (tileCount - 1) / 2;
+  for (let i = 0; i < tileCount; i++) {
+    layout.push({
+      dx: Math.round((i - mid) * 18),
+      dy: Math.round(Math.abs(i - mid) * -5),
+      rot: Math.round((i - mid) * 7),
+    });
+  }
+  return layout;
+}
+
+function ghostRoundedRect(ctx, x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.lineTo(x + w - r, y);
+  ctx.arcTo(x + w, y, x + w, y + r, r);
+  ctx.lineTo(x + w, y + h - r);
+  ctx.arcTo(x + w, y + h, x + w - r, y + h, r);
+  ctx.lineTo(x + r, y + h);
+  ctx.arcTo(x, y + h, x, y + h - r, r);
+  ctx.lineTo(x, y + r);
+  ctx.arcTo(x, y, x + r, y, r);
+  ctx.closePath();
+}
+
+// Composite the selected thumbnails into one fanned-stack canvas. Returns
+// { canvas, offsetX, offsetY } for setDragImage, or null to keep the native
+// ghost (e.g. no thumbnails decoded yet). cards = selected card elements in
+// DOM order; total = number of cards in the selection (may exceed tiles).
+let _ghostCanvas = null; // composite canvas currently attached for drag image
+
+function _clearGhostCanvas() {
+  if (_ghostCanvas) {
+    _ghostCanvas.remove();
+    _ghostCanvas = null;
+  }
+}
+
+function buildBatchDragGhost(cards, total) {
+  // Every card has an <img>; decoding state doesn't matter — drawImage on an
+  // undecoded image simply paints nothing for that slot (graceful degrade).
+  const drawable = cards.filter(card => card.querySelector("img"));
+  if (drawable.length === 0) return null; // nothing usable — native ghost is fine
+  const tileCount = Math.min(drawable.length, MAX_GHOST_TILES);
+  const layout = batchFanLayout(tileCount);
+
+  // Canvas size: fan extent + rotation slack, so rotated corners never clip.
+  const maxRot = Math.max(...layout.map(t => Math.abs(t.rot))) * (Math.PI / 180);
+  const dxMax = Math.max(...layout.map(t => Math.abs(t.dx)));
+  const dyMax = Math.max(...layout.map(t => Math.abs(t.dy)));
+  const extW = GHOST_TILE_W / 2 + (GHOST_TILE_H / 2) * Math.sin(maxRot);
+  const extH = GHOST_TILE_H / 2 + (GHOST_TILE_W / 2) * Math.sin(maxRot);
+  const half = Math.ceil(Math.max(dxMax + extW, dyMax + extH) + 8);
+  const size = half * 2;
+  const dpr = Math.min(window.devicePixelRatio || 1, 3);
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.ceil(size * dpr);
+  canvas.height = Math.ceil(size * dpr);
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return null;
+  ctx.scale(dpr, dpr);
+  ctx.translate(half, half); // fan center = drag hotspot later
+
+  // Draw most-tilted tiles first so the straight-on "front" card is on top.
+  const order = [...layout.keys()].sort(
+    (a, b) => Math.abs(layout[b].rot) - Math.abs(layout[a].rot)
+  );
+  for (const i of order) {
+    const img = drawable[i].querySelector("img");
+    const t = layout[i];
+    ctx.save();
+    ctx.translate(t.dx, t.dy);
+    ctx.rotate((t.rot * Math.PI) / 180);
+    ghostRoundedRect(ctx, -GHOST_TILE_W / 2, -GHOST_TILE_H / 2, GHOST_TILE_W, GHOST_TILE_H, 8);
+    ctx.fillStyle = "#fff";
+    ctx.fill();
+    ctx.save();
+    ctx.clip();
+    ctx.drawImage(img, -GHOST_TILE_W / 2, -GHOST_TILE_H / 2, GHOST_TILE_W, GHOST_TILE_H);
+    ctx.restore();
+    ghostRoundedRect(ctx, -GHOST_TILE_W / 2, -GHOST_TILE_H / 2, GHOST_TILE_W, GHOST_TILE_H, 8);
+    ctx.strokeStyle = "rgba(30, 30, 30, 0.25)";
+    ctx.lineWidth = 1;
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  // Count badge: "+N" when the selection exceeds the rendered tiles (or some
+  // thumbnails weren't decoded yet).
+  if (total > tileCount) {
+    const label = "+" + (total - tileCount);
+    ctx.font = "600 16px -apple-system, system-ui, sans-serif";
+    const tw = ctx.measureText(label).width;
+    const bw = tw + 18;
+    const bh = 24;
+    const bx = -GHOST_TILE_W / 2 + 10;
+    const by = GHOST_TILE_H / 2 - 26;
+    ghostRoundedRect(ctx, bx, by, bw, bh, bh / 2);
+    ctx.fillStyle = "rgba(255, 255, 255, 0.96)";
+    ctx.fill();
+    ctx.fillStyle = "#1c1c1e";
+    ctx.textBaseline = "middle";
+    ctx.fillText(label, bx + 10, by + bh / 2 + 0.5);
+  }
+
+  // Chrome only rasterizes a drag image if the canvas has already been
+  // PAINTED — an unpainted canvas makes setDragImage fall back to the
+  // browser's blank icon (that little "globe") instead of the stack. So
+  // attach the canvas to the document offscreen (invisible but rendered)
+  // and force layout BEFORE setDragImage; _clearGhostCanvas() removes it
+  // again on dragend.
+  canvas.style.cssText =
+    "position:fixed;top:0;left:0;width:" + size + "px;height:" + size + "px;" +
+    "opacity:0.002;pointer-events:none;";
+  document.body.appendChild(canvas);
+  canvas.getBoundingClientRect(); // force layout → rasterize the bitmap now
+  try {
+    ctx.getImageData(0, 0, 1, 1); // defensive: synchronously commit the bitmap
+  } catch (_) {/* non-2d / tainted — ignore */}
+
+  // Hotspot = center of the front card (canvas center in CSS pixels).
+  return { canvas, offsetX: half, offsetY: half };
+}
 
 // ── Preview / Lightbox ───────────────────────────────────────────────────────
 function attachPreview(card) {
