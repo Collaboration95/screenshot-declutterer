@@ -338,6 +338,52 @@ def test_app_js_defines_batch_selection(client):
     assert b"function updateBatchBar(" in r.data
 
 
+def test_batch_move_preserves_selection():
+    """batchMove must NOT clear the selection — dropping a multi-drag (or
+    clicking batch Keep/Trash) keeps the set selected; deselection is only
+    explicit (Escape / ✕ Clear / re-sort / Done), per issue #76."""
+    import re
+
+    with open("static/app.js", encoding="utf-8") as f:
+        src = f.read()
+    m = re.search(r"function batchMove\(toColumn\) \{.*?\n\}", src, re.S)
+    assert m is not None, "batchMove not found in app.js"
+    body = m.group(0)
+    assert "clearSelection" not in body
+    # still moves every selected card, filtering out stale nodes
+    assert "cards.forEach(card => moveCard(card, toColumn))" in body
+    assert "document.contains(card)" in body
+
+
+def test_app_js_defines_batch_drag_ghost(client):
+    """Photos-style composite drag ghost must exist and attach via setDragImage."""
+    c, _ = client
+    r = c.get("/static/app.js")
+    assert r.status_code == 200
+    assert b"MAX_GHOST_TILES" in r.data
+    assert b"function batchFanLayout(" in r.data
+    assert b"function buildBatchDragGhost(" in r.data
+    assert b"setDragImage" in r.data
+    # ghost must only kick in when dragging a *selected* card
+    assert b"selectedCards.has(card)" in r.data
+    assert b"selectedCards.size > 1" in r.data
+
+
+def test_batch_fan_layout_is_symmetric_and_centered():
+    """batchFanLayout exposes pure geometry: middle tile center, symmetric."""
+    import re
+
+    with open("static/app.js", encoding="utf-8") as f:
+        src = f.read()
+    m = re.search(r"function batchFanLayout\(tileCount\) \{.*?\n\}", src, re.S)
+    assert m is not None
+    body = m.group(0)
+    # stagger scales with tile size (so the fan stays legible when resized),
+    # rotation symmetric around mid
+    assert "tileCount - 1" in body and "GHOST_TILE_H * 0.042" in body
+    assert "(i - mid) * 7" in body
+
+
 def test_app_js_defines_reveal_in_finder(client):
     """JS must define revealInFinder hitting /api/reveal."""
     c, _ = client
