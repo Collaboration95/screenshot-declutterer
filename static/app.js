@@ -1,5 +1,6 @@
 const decisions = new Map();
 const undoStack = [];
+const selectedCards = new Set();
 let totalCards = 0;
 let currentSort = "date_desc";
 
@@ -59,6 +60,12 @@ const renameCancel  = document.getElementById("rename-cancel");
 const renameConfirm = document.getElementById("rename-confirm");
 const renameError   = document.getElementById("rename-error");
 let renameTarget = null;
+
+const batchBar      = document.getElementById("batch-bar");
+const batchCount    = document.getElementById("batch-count");
+const batchKeepBtn  = document.getElementById("batch-keep-btn");
+const batchTrashBtn = document.getElementById("batch-trash-btn");
+const batchClearBtn = document.getElementById("batch-clear-btn");
 
 const columns = [colTrash, colUnsorted, colKeep];
 
@@ -147,6 +154,7 @@ function init() {
 }
 
 function loadScreenshots(savedDecisions) {
+  clearSelection();
   fetch(`/api/screenshots?sort=${encodeURIComponent(currentSort)}`)
     .then(r => r.json())
     .then(files => {
@@ -197,6 +205,7 @@ init();
 sortSelect.addEventListener("change", () => {
   currentSort = sortSelect.value;
   undoStack.length = 0;
+  clearSelection();
   document.querySelectorAll(".card").forEach(c => c.remove());
   loadScreenshots(Object.fromEntries(decisions));
 });
@@ -263,6 +272,7 @@ function makeCard(filename, column, fingerprint, memoryStatus, suggestedName, su
   attachPreview(card);
   attachKeyboard(card);
   attachTooltip(card);
+  attachSelect(card);
 
   return card;
 }
@@ -313,6 +323,7 @@ function setCardActions(card, column) {
 
   const renameBtn = makeActionBtn("Rename", "btn-rename", () => openRenameModal(card));
   const previewBtn = makeActionBtn("Preview", "btn-preview", () => openLightbox(card));
+  const revealBtn = makeActionBtn("Finder", "btn-reveal", () => revealInFinder(card.dataset.filename));
 
   if (column === "unsorted") {
     const keepBtn = makeActionBtn("\u2190 Keep", "btn-keep", () => moveCard(card, "keep"));
@@ -320,6 +331,7 @@ function setCardActions(card, column) {
     actions.appendChild(keepBtn);
     actions.appendChild(previewBtn);
     actions.appendChild(renameBtn);
+    actions.appendChild(revealBtn);
     actions.appendChild(trashBtn);
 
     // Show "✨ AI Suggest" for unprocessed files
@@ -333,6 +345,7 @@ function setCardActions(card, column) {
     const undoBtn = makeActionBtn("\u21A9 Undo", "btn-undo", () => moveCard(card, "unsorted"));
     actions.appendChild(previewBtn);
     actions.appendChild(renameBtn);
+    actions.appendChild(revealBtn);
     actions.appendChild(undoBtn);
   }
 }
@@ -387,6 +400,7 @@ let draggedCard = null;
 function attachDrag(card) {
   card.addEventListener("dragstart", e => {
     draggedCard = card;
+    _lastDragStart = Date.now();
     card.classList.add("dragging");
     e.dataTransfer.effectAllowed = "move";
     e.dataTransfer.setData("text/plain", card.dataset.filename);
@@ -418,9 +432,62 @@ columns.forEach(col => {
     if (!draggedCard) return;
 
     const targetColumn = col.dataset.column;
-    moveCard(draggedCard, targetColumn);
+    // Dragging a selected card moves the whole selection.
+    if (selectedCards.has(draggedCard)) {
+      batchMove(targetColumn);
+    } else {
+      moveCard(draggedCard, targetColumn);
+    }
   });
 });
+
+// ── Multi-select batch triage ─────────────────────────────────────────────
+// Click a card to toggle its selected state; Keep/Trash buttons (or dragging
+// a selected card) act on the whole selection at once. Each card is moved via
+// moveCard(), so every move still lands on the existing multi-level undo stack.
+let _lastDragStart = 0;
+
+function attachSelect(card) {
+  card.addEventListener("click", () => {
+    if (Date.now() - _lastDragStart < 350) return;
+    toggleSelect(card);
+  });
+}
+
+function toggleSelect(card) {
+  if (selectedCards.has(card)) {
+    selectedCards.delete(card);
+    card.classList.remove("selected");
+  } else {
+    selectedCards.add(card);
+    card.classList.add("selected");
+  }
+  updateBatchBar();
+}
+
+function clearSelection() {
+  selectedCards.forEach(card => card.classList.remove("selected"));
+  selectedCards.clear();
+  updateBatchBar();
+}
+
+function updateBatchBar() {
+  const n = selectedCards.size;
+  batchCount.textContent = n ? `${n} selected` : "0 selected";
+  batchKeepBtn.disabled = n === 0;
+  batchTrashBtn.disabled = n === 0;
+  batchBar.hidden = n === 0;
+}
+
+function batchMove(toColumn) {
+  const cards = [...selectedCards].filter(card => document.contains(card));
+  cards.forEach(card => moveCard(card, toColumn));
+  clearSelection();
+}
+
+batchKeepBtn.addEventListener("click", () => batchMove("keep"));
+batchTrashBtn.addEventListener("click", () => batchMove("trash"));
+batchClearBtn.addEventListener("click", clearSelection);
 
 // ── Preview / Lightbox ───────────────────────────────────────────────────────
 function attachPreview(card) {
@@ -464,6 +531,29 @@ function closeLightbox() {
 
 document.getElementById("lightbox-close").addEventListener("click", closeLightbox);
 document.querySelector(".lightbox-backdrop").addEventListener("click", closeLightbox);
+
+// ── Reveal in Finder ────────────────────────────────────────────────────────
+function revealInFinder(filename) {
+  if (!filename) return;
+  fetch("/api/reveal", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ filename }),
+  })
+    .then(r => r.json())
+    .then(data => {
+      statusMsg.textContent = data.ok
+        ? "Revealed in Finder."
+        : (data.error || "Could not reveal in Finder.");
+    })
+    .catch(() => {
+      statusMsg.textContent = "Network error — could not reveal in Finder.";
+    });
+}
+
+document.getElementById("lightbox-reveal-btn").addEventListener("click", () => {
+  revealInFinder(lightbox.dataset.currentFilename);
+});
 
 // ── Card tooltip ───────────────────────────────────────────────────────────
 function attachTooltip(card) {
@@ -654,6 +744,7 @@ document.addEventListener("keydown", e => {
     if (!confirmModal.hidden) { closeModal(); return; }
     if (!renameModal.hidden) { closeRenameModal(); return; }
     if (!settingsModal.hidden) { closeSettingsModal(); return; }
+    if (selectedCards.size > 0) { clearSelection(); return; }
   }
 
   if ((e.metaKey || e.ctrlKey) && e.key === "z") {
@@ -1137,6 +1228,7 @@ modalConfirm.addEventListener("click", () => {
       });
 
       undoStack.length = 0;
+      clearSelection();
 
       updateCounts();
       saveState();

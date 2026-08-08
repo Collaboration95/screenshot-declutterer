@@ -48,6 +48,7 @@ tests/test_frontend.py   Frontend integration tests
 | PUT | `/api/state` | Save decisions state |
 | POST | `/api/done` | Trash files — body `{filenames: [...]}`. Updates memory with `trashed` status. Returns 207 on partial failure with per-file errors |
 | POST | `/api/rename` | Rename a file — body `{old_name, new_name}`. Updates state, thumbnail, memory, and clears suggested_category hint. Returns 409 on conflict |
+| POST | `/api/reveal` | Reveal a file in Finder (macOS) — body `{filename}`. Runs `open -R` fire-and-forget; path-traversal guarded. Returns 400 off-macOS, 404 if missing |
 | GET | `/api/memory` | Get all persisted memory records `{files: {fingerprint: {status, suggested_name, last_updated}}}` |
 | POST | `/api/suggest-names` | Generate AI filename suggestions via Ollama — body `{fingerprints: [...]}`. Returns `{suggestions: {fp: name}, failures: [fp]}`. Uses `gemma4:e2b` by default |
 | POST | `/api/accept-suggestion` | Accept suggestion & rename file — body `{fingerprint}`. Handles name conflicts (appends `-2`) |
@@ -61,7 +62,7 @@ All filename-accepting routes validate against path traversal: bare name check (
 
 All in `static/app.js`:
 
-- **Global state**: `decisions` (Map), `undoStack` (Array), `totalCards`, `currentSort`
+- **Global state**: `decisions` (Map), `undoStack` (Array), `selectedCards` (Set), `totalCards`, `currentSort`
 - **Entry**: `init()` → loads saved state → `loadScreenshots()` → creates cards via `makeCard()`
 - **Core logic**: `moveCard(card, column)` updates decisions map, undo stack, DOM, and persists state
 - **Drag-and-drop**: Native HTML5 Drag and Drop API. Cards `draggable="true"`. Columns are drop targets with visual feedback via CSS classes (`dragging`, `drag-over`)
