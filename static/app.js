@@ -510,18 +510,20 @@ batchClearBtn.addEventListener("click", clearSelection);
 // image (setDragImage), so we composite the whole fanned stack onto a single
 // canvas. Purely visual — drop/undo/batch logic is untouched.
 const MAX_GHOST_TILES = 6;
-const GHOST_TILE_W = 168; // 4:3, matches the thumbnail ratio (2×)
-const GHOST_TILE_H = 126;
+const GHOST_TILE_W = 252; // 4:3, matches the thumbnail ratio (1.5× of 168)
+const GHOST_TILE_H = 189;
 
-// Deterministic fan layout: outer tiles tilt away from the middle card, which
+// Deterministic fan layout: tiles tilt away from the middle card, which
 // stays straight-on as the "front" of the stack. Pure function → testable.
+// Horizontal/vertical stagger scales with tile size so the fan stays legible
+// at any tile size.
 function batchFanLayout(tileCount) {
   const layout = [];
   const mid = (tileCount - 1) / 2;
   for (let i = 0; i < tileCount; i++) {
     layout.push({
-      dx: Math.round((i - mid) * 18),
-      dy: Math.round(Math.abs(i - mid) * -5),
+      dx: Math.round((i - mid) * (GHOST_TILE_W * 0.112)), // ≈28px @ 252px tiles
+      dy: Math.round(Math.abs(i - mid) * -(GHOST_TILE_H * 0.042)), // ≈ -8px
       rot: Math.round((i - mid) * 7),
     });
   }

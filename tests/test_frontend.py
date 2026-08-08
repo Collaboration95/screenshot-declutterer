@@ -378,8 +378,9 @@ def test_batch_fan_layout_is_symmetric_and_centered():
     m = re.search(r"function batchFanLayout\(tileCount\) \{.*?\n\}", src, re.S)
     assert m is not None
     body = m.group(0)
-    # dy arcs upward (negative excursions ok), rotation symmetric around mid
-    assert "tileCount - 1" in body and "Math.abs(i - mid) * -5" in body
+    # stagger scales with tile size (so the fan stays legible when resized),
+    # rotation symmetric around mid
+    assert "tileCount - 1" in body and "GHOST_TILE_H * 0.042" in body
     assert "(i - mid) * 7" in body
 
 
