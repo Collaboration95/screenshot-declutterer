@@ -5,6 +5,8 @@ import json
 import logging
 import os
 import socket
+import subprocess
+import sys
 import threading
 import time
 import urllib.error
@@ -55,6 +57,7 @@ MEMORY_FILE = Path.home() / ".ss-dcl" / "memory.json"
 SETTINGS_FILE = Path.home() / ".ss-dcl" / "settings.json"
 DEFAULT_LLM_MODEL = "gemma4:e2b"
 OLLAMA_BASE_URL = os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434")
+IS_MACOS = sys.platform == "darwin"
 OLLAMA_HEALTH_TIMEOUT = 3  # seconds
 _OLLAMA_HEALTH_TTL = 5.0  # seconds
 _ollama_health_cache: Optional[tuple[float, bool]] = None
@@ -251,6 +254,32 @@ def api_thumb(filename: str):
     response = make_response(send_file(thumb_path))
     response.headers["Cache-Control"] = "private, max-age=86400"
     return response
+
+
+@app.route("/api/reveal", methods=["POST"])
+def api_reveal():
+    """Reveal a screenshot in Finder (macOS) via `open -R`."""
+    data = request.get_json(silent=True) or {}
+    filename = data.get("filename")
+    if not isinstance(filename, str) or not filename:
+        abort(400)
+    reveal_path = _validate_desktop_path(filename)
+    if reveal_path is None:
+        abort(400)
+    if not reveal_path.exists():
+        abort(404)
+    if not IS_MACOS:
+        return jsonify({"ok": False, "error": "Reveal in Finder is only supported on macOS."}), 400
+    try:
+        subprocess.Popen(
+            ["open", "-R", str(reveal_path)],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+    except OSError as exc:
+        logger.warning("Reveal in Finder failed for %s: %s", filename, exc)
+        return jsonify({"ok": False, "error": "Could not launch Finder."}), 500
+    return jsonify({"ok": True})
 
 
 @app.route("/api/state", methods=["GET"])

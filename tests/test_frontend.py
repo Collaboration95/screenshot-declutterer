@@ -310,3 +310,64 @@ def test_app_js_shows_failure_count(client):
     assert r.status_code == 200
     assert b"failedCount" in r.data
     assert b"failures" in r.data
+
+
+# ── Sprint: multi-select, reveal in Finder, drop hints ─────────────────────
+
+
+def test_index_has_batch_bar(client):
+    """Multi-select batch bar exists in HTML."""
+    c, _ = client
+    html = c.get("/").data.decode()
+    assert 'id="batch-bar"' in html
+    assert 'id="batch-count"' in html
+    assert 'id="batch-keep-btn"' in html
+    assert 'id="batch-trash-btn"' in html
+    assert 'id="batch-clear-btn"' in html
+
+
+def test_app_js_defines_batch_selection(client):
+    """JS must define selection state and batch-move helpers."""
+    c, _ = client
+    r = c.get("/static/app.js")
+    assert r.status_code == 200
+    assert b"selectedCards" in r.data
+    assert b"function toggleSelect(" in r.data
+    assert b"function clearSelection(" in r.data
+    assert b"function batchMove(" in r.data
+    assert b"function updateBatchBar(" in r.data
+
+
+def test_app_js_defines_reveal_in_finder(client):
+    """JS must define revealInFinder hitting /api/reveal."""
+    c, _ = client
+    r = c.get("/static/app.js")
+    assert r.status_code == 200
+    assert b"function revealInFinder(" in r.data
+    assert b"/api/reveal" in r.data
+
+
+def test_index_has_lightbox_reveal_button(client):
+    """Lightbox bar must include a reveal-in-Finder button."""
+    c, _ = client
+    html = c.get("/").data.decode()
+    assert 'id="lightbox-reveal-btn"' in html
+
+
+def test_css_has_batch_bar_and_selection_styles(client):
+    """CSS must style the batch bar and .card.selected."""
+    c, _ = client
+    r = c.get("/static/style.css")
+    assert r.status_code == 200
+    assert b"batch-bar" in r.data
+    assert b"card.selected" in r.data
+
+
+def test_css_has_empty_column_hints(client):
+    """CSS must render dashed drop hints in empty side columns."""
+    c, _ = client
+    r = c.get("/static/style.css")
+    assert r.status_code == 200
+    assert b"column-cards:empty" in r.data
+    assert b"Drop here to keep" in r.data
+    assert b"Drop here to trash" in r.data

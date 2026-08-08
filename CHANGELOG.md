@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- Multi-select + batch triage — click cards to select (blue ring + checkmark), floating batch bar moves the whole selection to Keep/Trash, dragging a selected card moves all selected; undo stays per-card (#69)
+- Reveal in Finder — `POST /api/reveal` runs `open -R` on macOS (fire-and-forget, path-traversal guarded); Finder button on card actions and in the lightbox (#71)
+- Empty-column drop hints — faint dashed "Drop here to keep/trash" placeholders inside empty side columns, dark-mode aware (#72)
+
+### Removed
+
+- Keyboard-driven triage (FE-007) removed from the backlog indefinitely
+
 ## [0.4.0] - 2026-08-05
 
 ### Added

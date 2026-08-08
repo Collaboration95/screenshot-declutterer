@@ -17,10 +17,11 @@ SCOPE EXPANSION
            Currently scans top-level ~/Desktop only. Add option to
            recurse into subdirectories and surface nested screenshots.
 
-[ ] FE-003  Configurable source folders
-           Allow users to configure which directories to scan instead
-           of hardcoding ~/Desktop. Could be a simple settings UI or
-           a config file.
+[ ] FE-003  Tracking folders (configurable source folders)
+           Scan user-chosen directories in addition to ~/Desktop (e.g.
+           ~/Downloads, dev scratch dirs). LOGGED as GitHub issue #70 —
+           spec TBD: folder-picker UI, source tagging on cards, filename
+           collision handling, persistence in settings.json.
 
 
 NEW ACTIONS
@@ -46,10 +47,6 @@ UX IMPROVEMENTS
             Click to edit inline — no modal needed. Reuses existing
             POST /api/rename endpoint. No backend changes required.
             Design doc: docs/design-fe010-inline-rename.md
-
-[ ] FE-007  Keyboard-driven workflow
-           Vim-style keys (j/k to cycle cards, h/l to triage) for
-           fast keyboard-only operation.
 
 [ ] FE-008  Sort and filter by date range, file size, or screen region
            Let users narrow down visible screenshots before sorting.
@@ -104,9 +101,28 @@ QUALITY OF LIFE
            NOTE: Suggest All progress bar shipped in 0.4.0; trash-batch
            progress bar still pending.
 
-[ ] FE-015  Multi-level undo
+[x] FE-015  Multi-level undo (done — undoStack already supports arbitrary
+           depth, persisted in sessionStorage across reloads)
            Extend undo beyond a single level so users can step back
            through their full sorting history.
+
+SPRINT 0.5 — TRIAGE POLISH (shipped)
+--------------------------------------
+
+[x] FE-041  Multi-select + batch triage (done — issue #69)
+           Click cards to select (visual ring + checkmark); a floating
+           batch bar moves the whole selection to Keep/Trash; dragging a
+           selected card moves all selected. Undo stays per-card via the
+           existing multi-level undo stack.
+
+[x] FE-042  Reveal in Finder (done — issue #71)
+           POST /api/reveal runs `open -R` on macOS (fire-and-forget,
+           path-traversal guarded). Finder button on every card action
+           overlay and in the lightbox bar.
+
+[x] FE-043  Empty-column drop hints (done — issue #72)
+           Faint dashed "Drop here to keep/trash" placeholder inside
+           empty side columns. CSS-only, dark-mode aware.
 
 
 FUTURE IDEAS (ideation farm — not yet committed to a release)
