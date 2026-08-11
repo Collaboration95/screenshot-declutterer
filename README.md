@@ -2,7 +2,7 @@
 
 > Quickly sort and trash the screenshots cluttering your macOS Desktop.
 
-![Python 3.9+](https://img.shields.io/badge/python-3.9%2B-blue)
+![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue)
 ![License: MIT](https://img.shields.io/badge/license-MIT-green)
 ![macOS only](https://img.shields.io/badge/platform-macOS-lightgrey)
 

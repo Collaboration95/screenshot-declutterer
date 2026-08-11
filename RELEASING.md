@@ -48,7 +48,7 @@ Branch: __________   Commits ahead of main: ____   Version: ____
 ## 2. Automated gates
 
 ```bash
-make check          # ruff lint + pyright + pytest (all 250 tests)
+make check          # ruff lint + pyright + pytest (all 270 tests)
 ```
 
 Also run, if the tooling is installed:

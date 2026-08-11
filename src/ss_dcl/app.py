@@ -14,7 +14,7 @@ import urllib.request
 import webbrowser
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 from flask import (
     Flask,
@@ -60,7 +60,7 @@ OLLAMA_BASE_URL = os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434")
 IS_MACOS = sys.platform == "darwin"
 OLLAMA_HEALTH_TIMEOUT = 3  # seconds
 _OLLAMA_HEALTH_TTL = 5.0  # seconds
-_ollama_health_cache: Optional[tuple[float, bool]] = None
+_ollama_health_cache: tuple[float, bool] | None = None
 # TODO Need to check if rendering changes for .tiff or .bmp needs to be handled seperately
 SUPPORTED_IMAGE_EXTENSION = (".png", ".jpg", ".jpeg", ".tiff", ".bmp")
 
@@ -85,7 +85,7 @@ SORT_OPTIONS = {
 }
 
 
-_memory_store: Optional[MemoryStore] = None
+_memory_store: MemoryStore | None = None
 _memory_lock = threading.Lock()
 
 
@@ -108,7 +108,7 @@ def _reset_memory() -> None:
 
 
 # ── Settings cache (prune age) ──────────────────────────────────────────────
-_prune_max_age_cache: Optional[int] = None
+_prune_max_age_cache: int | None = None
 
 
 def _prune_max_age() -> int:
@@ -202,7 +202,7 @@ def _generate_thumbnail(src: Path, dst: Path) -> None:
         img.save(dst, "PNG")
 
 
-def _validate_desktop_path(filename: str) -> Optional[Path]:
+def _validate_desktop_path(filename: str) -> Path | None:
     if filename != Path(filename).name:
         return None
     resolved = (DESKTOP / filename).resolve()
@@ -462,9 +462,10 @@ def _is_retryable_ollama_error(exc: BaseException) -> bool:
         # Non-exception reason (e.g. plain string) — unknown, stay conservative.
         return True
 
-    if isinstance(exc, (socket.timeout, TimeoutError)):
+    # socket.timeout is an alias of TimeoutError since Python 3.10.
+    if isinstance(exc, TimeoutError):
         return True
-    if isinstance(exc, (ConnectionResetError, BrokenPipeError)):
+    if isinstance(exc, (ConnectionResetError | BrokenPipeError)):
         return True
     if isinstance(exc, socket.gaierror):
         return False
@@ -505,7 +506,7 @@ def _ollama_healthy() -> bool:
     return ok
 
 
-def _call_ollama_suggest(image_path: Path, model: str, extension: str = ".png") -> Optional[str]:
+def _call_ollama_suggest(image_path: Path, model: str, extension: str = ".png") -> str | None:
     """Call Ollama API with an image and return a suggested filename.
 
     Extracted as a module-level function so tests can monkeypatch it
@@ -644,7 +645,7 @@ def suggest_category(
     keywords: list[str],
     memory: MemoryStore,
     decisions: dict[str, str],
-) -> Optional[str]:
+) -> str | None:
     """Return 'keep', 'trash', or None based on the user's past decisions."""
     kw = set(keywords)
     keep_score = 0
@@ -699,7 +700,7 @@ def api_suggest_names():
             continue
 
         # Locate file on disk via last_known_name or original_name
-        file_path: Optional[Path] = None
+        file_path: Path | None = None
         for candidate_name in (rec.last_known_name, rec.original_name):
             if not candidate_name:
                 continue

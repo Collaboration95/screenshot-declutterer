@@ -223,9 +223,10 @@ PRODUCT FEATURES (NO AI)
 ENGINEERING & HARDENING
 -----------------------
 
-[ ] FE-034  CI pipeline (GitHub Actions)                              [P1][M]
-           ruff + pyright + pytest + pip-audit on push/PR. The release audit's
-           #1 gap — merging becomes safe and automatic.
+[x] FE-034  CI pipeline (GitHub Actions)                              [P1][M]
+           Done — shipped 0.5.0: ruff + pyright + pytest + pip-audit on
+           push/PR, matrix over Python 3.10/3.11, macOS runners
+           (.github/workflows/ci.yml).
 
 [ ] FE-035  E2E browser tests (Playwright)                            [P2][L]
            Real drag-and-drop, modal flows, dark mode toggling against a

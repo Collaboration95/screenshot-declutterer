@@ -3,7 +3,7 @@
 ## Prerequisites
 
 - macOS
-- Python 3.9+
+- Python 3.10+
 - [uv](https://docs.astral.sh/uv/) (recommended) or pip
 
 ## Setup

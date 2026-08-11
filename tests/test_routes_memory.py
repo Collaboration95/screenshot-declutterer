@@ -1471,7 +1471,7 @@ def test_is_retryable_ollama_error_classifier():
     )
 
     # Retryable: timeouts, resets, broken pipes, 429, 5xx, unknown errors
-    assert flask_app._is_retryable_ollama_error(socket.timeout())
+    assert flask_app._is_retryable_ollama_error(TimeoutError())
     assert flask_app._is_retryable_ollama_error(TimeoutError())
     assert flask_app._is_retryable_ollama_error(
         ConnectionResetError(54, "Connection reset by peer")
