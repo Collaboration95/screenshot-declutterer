@@ -50,7 +50,8 @@ tests/test_frontend.py   Frontend integration tests
 | POST | `/api/rename` | Rename a file — body `{old_name, new_name}`. Updates state, thumbnail, memory, and clears suggested_category hint. Returns 409 on conflict |
 | POST | `/api/reveal` | Reveal a file in Finder (macOS) — body `{filename}`. Runs `open -R` fire-and-forget; path-traversal guarded. Returns 400 off-macOS, 404 if missing |
 | GET | `/api/memory` | Get all persisted memory records `{files: {fingerprint: {status, suggested_name, last_updated}}}` |
-| POST | `/api/suggest-names` | Generate AI filename suggestions via Ollama — body `{fingerprints: [...]}`. Returns `{suggestions: {fp: name}, failures: [fp]}`. Uses `gemma4:e2b` by default |
+| POST | `/api/suggest-names` | Generate AI filename suggestions — body `{fingerprints: [...]}`. Returns `{suggestions: {fp: name}, failures: [fp]}`. Provider-aware (ollama \| litert) via settings; uses `gemma4:e2b` by default |
+| GET | `/api/llm/health` | Provider-aware reachability probe (ollama → `/api/tags`, litert → `/v1/models`). Returns `{ok, provider, error}`; 503 when down. Legacy `/api/ollama/health` kept as alias |
 | POST | `/api/accept-suggestion` | Accept suggestion & rename file — body `{fingerprint}`. Handles name conflicts (appends `-2`) |
 | POST | `/api/reject-suggestion` | Dismiss suggestion — body `{fingerprint}`. Marks memory status as `"ignored"` |
 | GET | `/api/settings` | Get config `{llm_provider, llm_model, auto_suggest, prune_max_age_days}` |
@@ -85,6 +86,9 @@ All in `static/app.js`:
 | MEMORY_FILE | `~/.ss-dcl/memory.json` |
 | SETTINGS_FILE | `~/.ss-dcl/settings.json` |
 | THUMB_SIZE | `(400, 300)` |
+| OLLAMA_BASE_URL | `http://localhost:11434` (env `OLLAMA_BASE_URL`) |
+| LITERT_BASE_URL | `http://localhost:9379` (env `LITERT_BASE_URL`) |
+| SUPPORTED_LLM_PROVIDERS | `("ollama", "litert")` |
 
 ## Dependencies
 

@@ -893,7 +893,7 @@ def test_settings_put_rejects_wrong_types(client):
     assert r.status_code == 400
 
 
-def test_suggest_names_rejects_non_ollama_provider(client):
+def test_suggest_names_rejects_unsupported_provider(client):
     """When provider is set to 'mlx', the endpoint should reject with a clear message."""
     c, _ = client
     c.put(
@@ -908,7 +908,8 @@ def test_suggest_names_rejects_non_ollama_provider(client):
     )
     assert r.status_code == 400
     data = json.loads(r.data)
-    assert "not yet supported" in data["error"]
+    assert "is not supported" in data["error"]
+    assert "ollama" in data["error"] and "litert" in data["error"]
 
 
 # ── _call_ollama_suggest sanitization ────────────────────────────────────
