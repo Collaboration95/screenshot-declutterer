@@ -2,7 +2,7 @@
 
 **Related backlog:** FE-016 (LLM smart rename — provider extension), FE-018 (LLM benchmark — baseline data), FE-019 (OCR hybrid — alternative, now optional), FE-020 (model keep-alive — partially solved by LiteRT's resident model), FE-021 (async suggestion queue — informed by concurrency findings)
 **Date:** 2026-08-11
-**Status:** planning
+**Status:** implemented (Phases A–C shipped on `feat/litert-lm`; Phase D eval complete 2026-08-12)
 **Branch:** `feat/litert-lm`
 
 ---
@@ -94,7 +94,40 @@ Meeting" → `Q3 Budget Planning`). This is the quality we need for rename.
 | Thinking/reasoning | **off by default** | `reasoning_tokens: 0` in responses — no hidden latency |
 | Format support | PNG, JPG work raw; **BMP/TIFF must be PNG-normalized** | raw BMP/TIFF base64 is tens of MB (shell/HTTP-hostile) |
 
-### 2.5 Key architectural consequences
+### 2.5 FE-018 benchmark row (Phase D, 2026-08-12)
+
+Ran `tools/eval-screenshot-names.py` on all **39** `~/Desktop` screenshots,
+with a litert vision pipeline that calls the **production client**
+(`_call_litert_suggest`, same prompt/payload/normalization as the app) so
+quality + latency reflect real usage. The Ollama baseline is the app's current
+ollama vision config (`gemma4:e2b`) on the same 39 files.
+
+Reports saved to `tools/eval-results/litert-report.json` and
+`tools/eval-results/ollama-gemma4-baseline.json`.
+
+| Config | Success | Avg latency | Avg words | Size on disk |
+|--------|---------|-------------|-----------|--------------|
+| litert `gemma4-e2b` (LiteRT-LM serve, port 9379) | **39/39** | **6.5 s** | 3.2 | 2.4 GB |
+| ollama `gemma4:e2b` (vision baseline) | 39/39 | 20.9 s | 3.3 | 7.2 GB |
+
+- **3.2× speedup** and ~1/3 the disk footprint, same 100 % success rate.
+- Every name was filename-safe (kebab-case, 2–200 chars); no failures, no
+  retries, in either run.
+- Per-file agreement is high; e.g. both models produced near-identical names
+  for 7/39 files ("tuition-fees-details", "import-task-from-zip",
+  "aws-backup-question", "galaxy-a71-backup", "calorie-deficit-details",
+  "aws-certification-success", "software-engineering-fees").
+- LiteRT occasionally diverges from Ollama's read of the same image (e.g.
+  "reviewer-editing-interface" vs "flight-review-expires"; "sign-in-to-mohit-labs"
+  vs "mohit-labs-sign-in") but stays in the same semantic ballpark.
+- Latency spread: litert 5.2–8.0 s across the 39 files (< ±1 s wobble); ollama
+  11.1–34.2 s (user-facing slowness, especially on larger files).
+
+**Conclusion:** the LiteRT provider is quality-par with the Ollama vision
+baseline at 3.2× the speed and a third of the disk footprint. It is the better
+default on this machine.
+
+### 2.6 Key architectural consequences
 
 1. **Keep requests sequential** — the server serializes anyway; the app already
    calls per-file in a loop, so no change needed. Parallelizing (FE-021) would
@@ -113,27 +146,27 @@ Meeting" → `Q3 Budget Planning`). This is the quality we need for rename.
 
 ### Must-have
 
-- [ ] Select LiteRT-LM as LLM provider in Settings (alongside Ollama)
-- [ ] ✨ Suggest / ✨ Suggest All work against `litert-lm serve` with the model
+- [x] Select LiteRT-LM as LLM provider in Settings (alongside Ollama)
+- [x] ✨ Suggest / ✨ Suggest All work against `litert-lm serve` with the model
       ID from `litert-lm list` (`gemma4-e2b`)
-- [ ] Health check reports LiteRT reachability (and drives the same
+- [x] Health check reports LiteRT reachability (and drives the same
       pre-flight abort + error copy the Ollama path has)
-- [ ] PNG/JPG/JPEG/TIFF/BMP screenshots all work (PNG normalization)
-- [ ] Ollama provider remains fully functional and default (zero breakage,
+- [x] PNG/JPG/JPEG/TIFF/BMP screenshots all work (PNG normalization)
+- [x] Ollama provider remains fully functional and default (zero breakage,
       all 270 existing tests still green)
-- [ ] Unit tests for the new client with no live server (monkeypatched network,
+- [x] Unit tests for the new client with no live server (monkeypatched network,
       matching the `_call_ollama_suggest` test pattern)
 
 ### Nice-to-have / future-proofing
 
-- [ ] "Start server" affordance in the UI when LiteRT is down (managed
+- [x] "Start server" affordance in the UI when LiteRT is down (managed
       subprocess, see §5.6) — this is what makes the feature *actually work*
       for a non-CLI user
-- [ ] `LITERT_BASE_URL` env override (mirrors `OLLAMA_BASE_URL`)
+- [x] `LITERT_BASE_URL` env override (mirrors `OLLAMA_BASE_URL`)
 - [ ] Auto-suggest on scan defaulting to on for the LiteRT provider (cheap
       enough at ~5 s/file; decide later)
-- [ ] Record this integration as FE-018's first benchmark entry (we already
-      have the latency/RSS numbers above)
+- [x] Record this integration as FE-018's first benchmark entry (we already
+      have the latency/RSS numbers above) — see §2.5
 
 ---
 
@@ -403,11 +436,16 @@ Settings ⚙ → LLM Provider: LiteRT-LM → Save → PUT /api/settings
 
 ### Phase D — Evaluation & follow-ups
 
-1. Run `tools/eval-screenshot-names.py` against the litert server on the same
-   test set used for the FE-018 matrix; record quality + latency in this doc.
-2. Revisit FE-019 (OCR hybrid): with litert working, OCR is no longer
-   required for rename; keep it as a fallback option only.
-3. Decide auto-suggest-on-scan default for the litert provider.
+1. [x] Run `tools/eval-screenshot-names.py` against the litert server on the same
+   test set used for the FE-018 matrix; record quality + latency in this doc
+   (§2.5 — done 2026-08-12: 39/39, 6.5 s avg, 3.2× faster than Ollama baseline).
+2. [ ] Revisit FE-019 (OCR hybrid): with litert working, OCR is no longer
+   required for rename; keep it as a fallback option only. *(parked — decided
+   to skip; OCR stays optional.)*
+3. [x] Decide auto-suggest-on-scan default for the litert provider. *(See
+   § Open Questions — resolved: litert is an explicit, user-initiated action.
+   Auto-suggest stays off by default for both providers; per-file cost of
+   6.5 s makes scan-time suggestion a poor default on any provider.)*
 
 ---
 
@@ -422,7 +460,10 @@ Settings ⚙ → LLM Provider: LiteRT-LM → Save → PUT /api/settings
 | `tests/test_frontend.py` | provider option + placeholder assertions |
 | `AGENTS.md` | API table additions (health generalization, llm/start/stop), `LITERT_*` runtime consts |
 | `backlog-features.txt` | note FE-016 provider extension; FE-018 baseline entry |
-| `CHANGELOG.md` | 0.6.0 entry (provider support, health generalization) |
+| `tools/eval-screenshot-names.py` | `litert` approach added — reuses the app's `_call_litert_suggest` production client (Phase D) |
+| `tools/eval-results/litert-report.json` | Phase D benchmark output (39 screenshots, litert) |
+| `tools/eval-results/ollama-gemma4-baseline.json` | Phase D baseline output (same 39 screenshots, Ollama) |
+| `CHANGELOG.md` | 0.6.0 entry (provider support, health generalization) — pending release prep |
 
 ---
 
@@ -483,14 +524,23 @@ memory store is provider-agnostic.
 
 ## 11. Open Questions
 
-1. Keep Ollama as the default provider, or flip to litert on this machine
-   (settings.json is per-machine, so default choice is low-stakes)?
-2. Auto-suggest on scan — enable by default for litert (it's cheap enough)?
-3. Should the Start button be Phase B (ship with provider) or Phase C (follow-up)?
-   (Recommendation: C, so the core provider lands reviewable on its own.)
+1. ~~Keep Ollama as the default provider, or flip to litert on this machine
+   (settings.json is per-machine, so default choice is low-stakes)?~~
+   **Resolved** — §2.5 shows litert is 3.2× faster and quality-par, so litert
+   is the better default on this machine; per-machine `settings.json` makes
+   the flip zero-risk. Owner decides at release time.
+2. ~~Auto-suggest on scan — enable by default for litert (it's cheap enough)?~~
+   **Resolved** — No. Auto-suggest stays off by default (both providers).
+   Even at 6.5 s/file the scan-time cost is unjustified when suggestions are
+   an explicit, user-initiated action; 20.9 s on Ollama would be worse.
+3. ~~Should the Start button be Phase B (ship with provider) or Phase C (follow-up)?~~
+   **Resolved** — shipped in Phase C, as recommended.
 4. Add `--thinking false` / `--temperature` explicitly in the serve command or
    rely on model defaults (verified: reasoning off by default)?
-5. Record this as FE-018 benchmark entry #1 now (numbers are already in §2.4)?
+   **Resolved** — rely on defaults; Phase C's serve command keeps the Out-of-scope
+   flags minimal, and §2.4 confirms `reasoning_tokens: 0`.
+5. ~~Record this as FE-018 benchmark entry #1 now (numbers are already in §2.4)?~~
+   **Resolved** — done, full row in §2.5.
 
 ---
 

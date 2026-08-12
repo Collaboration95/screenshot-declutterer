@@ -30,6 +30,11 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+_REPO_ROOT = Path(__file__).resolve().parents[1]
+for _p in [str(_REPO_ROOT / "src"), str(_REPO_ROOT)]:
+    if _p not in sys.path:
+        sys.path.insert(0, _p)
+
 DESKTOP = Path.home() / "Desktop"
 SCREENSHOT_GLOB = "Screenshot*.*"
 
@@ -57,6 +62,14 @@ VISION_STANDARD_PROMPT = (
     "Describe this screenshot in 3-5 words as a filename. "
     "Use lowercase, words separated by dashes. "
     "Only respond with the filename, nothing else."
+)
+
+LITERT_BASE_URL = "http://localhost:9379"
+LITERT_MODEL = "gemma4-e2b"
+# The exact prompt the production client ships to LiteRT-LM (src/ss_dcl/app.py).
+LITERT_PRODUCTION_PROMPT = (
+    "Describe this screenshot in 3-5 words as a filename. "
+    "Return only the filename, no explanation, no quotes."
 )
 
 
@@ -256,6 +269,41 @@ def run_vision_pipeline(screenshot_path: Path, model_name: str) -> ScreenshotRes
     )
 
 
+def run_litert_vision_pipeline(screenshot_path: Path, model_name: str) -> ScreenshotResult:
+    """Pipeline: vision via the app's LiteRT-LM OpenAI-compatible client.
+
+    Reuses the exact production client (`_call_litert_suggest`) so quality and
+    latency reflect real usage rather than a re-implementation. Requires the
+    LiteRT-LM server to be running (`~/.litert-lm` sample venv, port 9379).
+    """
+    from ss_dcl.app import _call_litert_suggest
+
+    t0 = time.perf_counter()
+    try:
+        suggested = _call_litert_suggest(screenshot_path, model_name)
+        error = None
+    except Exception as exc:
+        suggested = None
+        error = str(exc)
+
+    elapsed_ms = (time.perf_counter() - t0) * 1000
+
+    cleaned = clean_llm_output(suggested) if suggested else ""
+
+    return ScreenshotResult(
+        original_name=screenshot_path.name,
+        size_bytes=screenshot_path.stat().st_size,
+        size_kb=round(screenshot_path.stat().st_size / 1024, 1),
+        ocr_text="",
+        ocr_text_length=0,
+        suggested_name=cleaned,
+        word_count=word_count(cleaned) if cleaned else 0,
+        filename_safe=is_filename_safe(cleaned) if cleaned else False,
+        time_ms=round(elapsed_ms, 1),
+        error=error,
+    )
+
+
 # ── Screenshot selection ───────────────────────────────────────────────────
 
 
@@ -296,7 +344,12 @@ def run_evaluation(
         print(f"Size: {model_cfg['size_gb']} GB")
         print(f"{'=' * 60}")
 
-        pipeline = run_vision_pipeline if model_cfg["approach"] == "vision" else run_ocr_pipeline
+        if model_cfg["approach"] == "vision":
+            pipeline = run_vision_pipeline
+        elif model_cfg["approach"] == "litert":
+            pipeline = run_litert_vision_pipeline
+        else:
+            pipeline = run_ocr_pipeline
         model_name = model_cfg["name"]
 
         model_result = ModelResult(
@@ -304,7 +357,11 @@ def run_evaluation(
             model_size_gb=model_cfg["size_gb"],
             approach=model_cfg["approach"],
             prompt_used=(
-                VISION_STANDARD_PROMPT if model_cfg["approach"] == "vision" else STANDARD_PROMPT
+                LITERT_PRODUCTION_PROMPT
+                if model_cfg["approach"] == "litert"
+                else (
+                    VISION_STANDARD_PROMPT if model_cfg["approach"] == "vision" else STANDARD_PROMPT
+                )
             ),
         )
 
@@ -390,6 +447,14 @@ def print_model_list() -> None:
                     "params": "5.1B total, ~2B active",
                     "notes": "Current vision baseline. Q4_K_M quant. Best quality so far.",
                 },
+                {
+                    "name": "gemma4-e2b",
+                    "size_gb": 2.4,
+                    "approach": "litert",
+                    "params": "5.1B total, ~2B active",
+                    "notes": "LiteRT-LM on-disk model via litert-lm serve (port 9379). "
+                    "Production client; ~5s warm per image.",
+                },
             ],
             indent=2,
         )
@@ -454,9 +519,8 @@ def main() -> None:
     all_models = json.loads(
         """[
             {"name": "smollm", "size_gb": 0.7, "approach": "ocr+text"},
-            {"name": "llama3.2:1b", "size_gb": 1.0, "approach": "ocr+text"},
-            {"name": "qwen2.5:1.5b", "size_gb": 1.5, "approach": "ocr+text"},
-            {"name": "gemma4:e2b", "size_gb": 7.7, "approach": "vision"}
+            {"name": "gemma4:e2b", "size_gb": 7.7, "approach": "vision"},
+            {"name": "gemma4-e2b", "size_gb": 2.4, "approach": "litert"}
         ]"""
     )
     if args.models:
