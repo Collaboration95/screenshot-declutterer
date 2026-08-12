@@ -54,6 +54,8 @@ const settingsAuto    = document.getElementById("settings-auto");
 const settingsCancel  = document.getElementById("settings-cancel");
 const settingsSave    = document.getElementById("settings-save");
 
+const llmServerBtn    = document.getElementById("llm-server-btn");
+
 const renameModal   = document.getElementById("rename-modal");
 const renameInput   = document.getElementById("rename-input");
 const renameCancel  = document.getElementById("rename-cancel");

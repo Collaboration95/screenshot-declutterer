@@ -229,6 +229,15 @@ def test_index_has_llm_server_button(client):
     assert 'aria-label="Manage the LiteRT server"' in html
 
 
+def test_app_js_binds_llm_server_button(client):
+    """JS must declare llmServerBtn, else init() dies before loadScreenshots."""
+    c, _ = client
+    r = c.get("/static/app.js")
+    assert r.status_code == 200
+    assert b"const llmServerBtn" in r.data
+    assert b'getElementById("llm-server-btn")' in r.data
+
+
 def test_app_js_defines_server_control(client):
     """JS wires the start/stop button to /api/llm/start and /api/llm/stop."""
     c, _ = client
