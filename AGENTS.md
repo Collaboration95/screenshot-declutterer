@@ -52,6 +52,8 @@ tests/test_frontend.py   Frontend integration tests
 | GET | `/api/memory` | Get all persisted memory records `{files: {fingerprint: {status, suggested_name, last_updated}}}` |
 | POST | `/api/suggest-names` | Generate AI filename suggestions — body `{fingerprints: [...]}`. Returns `{suggestions: {fp: name}, failures: [fp]}`. Provider-aware (ollama \| litert) via settings; uses `gemma4:e2b` by default |
 | GET | `/api/llm/health` | Provider-aware reachability probe (ollama → `/api/tags`, litert → `/v1/models`). Returns `{ok, provider, error}`; 503 when down. Legacy `/api/ollama/health` kept as alias |
+| POST | `/api/llm/start` | Spawn the LiteRT server as a detached subprocess (litert provider only). Resolves `LITERT_SERVE_CMD` via PATH → `~/litert-lm/.venv/bin/litert-lm` fallback, logs to `~/.ss-dcl/litert.log`, records ownership in `LITERT_PIDFILE`, polls `/v1/models` until ready (30s). 400 for non-litert provider, 502 if spawn/ready fails |
+| POST | `/api/llm/stop` | Kill only the PID recorded in `LITERT_PIDFILE` (ownership rule — never a server the user started). 409 when no pidfile, 403 for a foreign PID |
 | POST | `/api/accept-suggestion` | Accept suggestion & rename file — body `{fingerprint}`. Handles name conflicts (appends `-2`) |
 | POST | `/api/reject-suggestion` | Dismiss suggestion — body `{fingerprint}`. Marks memory status as `"ignored"` |
 | GET | `/api/settings` | Get config `{llm_provider, llm_model, auto_suggest, prune_max_age_days}` |
@@ -89,6 +91,9 @@ All in `static/app.js`:
 | OLLAMA_BASE_URL | `http://localhost:11434` (env `OLLAMA_BASE_URL`) |
 | LITERT_BASE_URL | `http://localhost:9379` (env `LITERT_BASE_URL`) |
 | SUPPORTED_LLM_PROVIDERS | `("ollama", "litert")` |
+| LITERT_SERVE_CMD | `litert-lm serve` (env `LITERT_SERVE_CMD`; PATH → venv fallback) |
+| LITERT_PIDFILE | `~/.ss-dcl/litert.pid` |
+| LITERT_LOG_FILE | `~/.ss-dcl/litert.log` |
 
 ## Dependencies
 

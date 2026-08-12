@@ -221,6 +221,41 @@ def test_app_js_uses_generalized_health_endpoint(client):
     assert b"/api/ollama/health" not in r.data
 
 
+def test_index_has_llm_server_button(client):
+    """Header hosts the managed LiteRT start/stop button (hidden until litert)."""
+    c, _ = client
+    html = c.get("/").data.decode()
+    assert 'id="llm-server-btn"' in html
+    assert 'aria-label="Manage the LiteRT server"' in html
+
+
+def test_app_js_defines_server_control(client):
+    """JS wires the start/stop button to /api/llm/start and /api/llm/stop."""
+    c, _ = client
+    r = c.get("/static/app.js")
+    assert r.status_code == 200
+    assert b"refreshLLMServerButton" in r.data
+    assert b'"/api/llm/start"' in r.data
+    assert b'"/api/llm/stop"' in r.data
+
+
+def test_app_js_refreshes_server_button_on_init_and_save(client):
+    """Server button state must be recomputed on boot and after saving settings."""
+    c, _ = client
+    r = c.get("/static/app.js")
+    assert r.status_code == 200
+    assert b"refreshLLMServerButton();" in r.data
+    assert b"loadSettings().then(() => {\n    refreshLLMServerButton();" in r.data
+    assert b"closeSettingsModal();\n        refreshLLMServerButton();" in r.data
+
+
+def test_css_has_llm_server_button_style(client):
+    c, _ = client
+    r = c.get("/static/style.css")
+    assert r.status_code == 200
+    assert b".header-llm-btn" in r.data
+
+
 def test_app_js_has_per_provider_error_copy(client):
     """Provider-aware offline copy for the suggest error paths."""
     c, _ = client

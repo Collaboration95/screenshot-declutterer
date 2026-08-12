@@ -184,19 +184,22 @@ header h1 {
 }
 
 .header-settings-btn,
-.header-theme-btn {
+.header-theme-btn,
+.header-llm-btn {
   padding: 8px 12px;
   border: none;
   border-radius: 8px;
   background: var(--bg-settings-btn);
   color: var(--text-settings-btn);
-  font-size: 1rem;
+  font-size: 0.85rem;
+  font-weight: 600;
   cursor: pointer;
   transition: background 0.15s;
 }
 
 .header-settings-btn:hover,
-.header-theme-btn:hover {
+.header-theme-btn:hover,
+.header-llm-btn:hover {
   background: var(--bg-settings-btn-hover);
 }
 

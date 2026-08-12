@@ -5,6 +5,8 @@ import io
 import json
 import logging
 import os
+import shutil
+import signal
 import socket
 import subprocess
 import sys
@@ -68,6 +70,14 @@ LITERT_HEALTH_TIMEOUT = 3  # seconds
 _LITERT_HEALTH_TTL = 5.0  # seconds
 _litert_health_cache: tuple[float, bool] | None = None
 SUPPORTED_LLM_PROVIDERS = ("ollama", "litert")
+# Managed LiteRT server process (Phase C): command resolution, pidfile
+# ownership, readiness polling. Logs go to the app state dir.
+LITERT_SERVE_CMD = os.environ.get("LITERT_SERVE_CMD", "litert-lm serve")
+LITERT_SERVE_READY_TIMEOUT = 30  # seconds to wait for /v1/models after spawn
+LITERT_PIDFILE = str(Path.home() / ".ss-dcl" / "litert.pid")
+LITERT_LOG_FILE = str(Path.home() / ".ss-dcl" / "litert.log")
+# Fallback binary: the sample venv used in the verified workflow.
+LITERT_VENV_FALLBACK = str(Path.home() / "litert-lm" / ".venv" / "bin" / "litert-lm")
 # TODO Need to check if rendering changes for .tiff or .bmp needs to be handled seperately
 SUPPORTED_IMAGE_EXTENSION = (".png", ".jpg", ".jpeg", ".tiff", ".bmp")
 
@@ -746,6 +756,140 @@ def _litert_healthy() -> bool:
     return ok
 
 
+# ── Managed LiteRT server process (Option B: one-click start/stop) ──────────
+
+
+def _litert_serve_cmd() -> list[str]:
+    """Resolve the serve command: env override, then PATH, then the sample venv."""
+    parts = LITERT_SERVE_CMD.split()
+    if not parts:
+        raise ValueError("LITERT_SERVE_CMD is empty")
+    resolved = shutil.which(parts[0])
+    if resolved:
+        return [resolved, *parts[1:]]
+    if os.path.exists(LITERT_VENV_FALLBACK):
+        return [LITERT_VENV_FALLBACK, *parts[1:]]
+    return parts  # let Popen fail with a clear FileNotFoundError
+
+
+def _read_litert_pid() -> int | None:
+    """Read the pidfile; returns None when absent or malformed."""
+    try:
+        return int(Path(LITERT_PIDFILE).read_text().strip())
+    except (FileNotFoundError, ValueError, OSError):
+        return None
+
+
+def _pid_alive(pid: int) -> bool:
+    """True when a process with this pid exists (any owner)."""
+    if pid <= 0:
+        return False
+    try:
+        os.kill(pid, 0)
+        return True
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True  # exists, owned by another user
+
+
+def _spawn_litert_server() -> tuple[bool, str]:
+    """Start the LiteRT server unless one is already running.
+
+    Ownership rule: this only ever records and later kills the PID it spawned
+    itself (``LITERT_PIDFILE``). A live PID that isn't responding is left
+    alone — it may be the user's own server booting or a foreign process.
+    """
+    if _litert_healthy():
+        return True, "LiteRT server is already running."
+
+    pid = _read_litert_pid()
+    if pid is not None and _pid_alive(pid):
+        return (
+            False,
+            f"Process {pid} is already running and not responding — won't double-spawn. "
+            f"Check {LITERT_LOG_FILE} or stop it manually.",
+        )
+    if pid is not None:  # stale pidfile
+        Path(LITERT_PIDFILE).unlink(missing_ok=True)
+
+    try:
+        cmd = _litert_serve_cmd()
+    except ValueError as exc:
+        return False, str(exc)
+
+    with open(LITERT_LOG_FILE, "ab") as log_handle:
+        try:
+            proc = subprocess.Popen(
+                cmd,
+                stdin=subprocess.DEVNULL,
+                stdout=log_handle,
+                stderr=subprocess.STDOUT,
+                start_new_session=True,
+                cwd=str(Path.home()),
+            )
+        except FileNotFoundError:
+            return (
+                False,
+                f"litert-lm not found — install it or set LITERT_SERVE_CMD. Tried: {cmd}",
+            )
+
+    Path(LITERT_PIDFILE).write_text(str(proc.pid))
+
+    global _litert_health_cache
+    deadline = time.monotonic() + LITERT_SERVE_READY_TIMEOUT
+    while time.monotonic() < deadline:
+        # Bust the TTL-cached negative verdict so each poll is a real probe.
+        _litert_health_cache = None
+        if _litert_healthy():
+            return True, f"LiteRT server started (pid {proc.pid}) and is ready."
+        time.sleep(0.5)
+    return (
+        False,
+        f"LiteRT server started (pid {proc.pid}) but not ready within "
+        f"{LITERT_SERVE_READY_TIMEOUT}s. See {LITERT_LOG_FILE}.",
+    )
+
+
+@app.route("/api/llm/start", methods=["POST"])
+def api_llm_start():
+    """Start the LiteRT server as a detached subprocess (litert provider only)."""
+    if _load_settings().get("llm_provider", "ollama") != "litert":
+        msg = "Start is only available for the LiteRT provider."
+        return jsonify({"ok": False, "error": msg}), 400
+    ok, message = _spawn_litert_server()
+    return jsonify({"ok": ok, "message": message}), 200 if ok else 502
+
+
+@app.route("/api/llm/stop", methods=["POST"])
+def api_llm_stop():
+    """Stop a LiteRT server this app started. Never touches foreign PIDs."""
+    pid = _read_litert_pid()
+    if pid is None:
+        return jsonify({"ok": False, "error": "No LiteRT server was started from this app."}), 409
+    if not _pid_alive(pid):
+        Path(LITERT_PIDFILE).unlink(missing_ok=True)
+        _litert_health_cache = None
+        msg = "Server was already stopped; stale pidfile cleaned up."
+        return jsonify({"ok": True, "message": msg})
+    try:
+        os.kill(pid, signal.SIGTERM)
+    except ProcessLookupError:
+        Path(LITERT_PIDFILE).unlink(missing_ok=True)
+        _litert_health_cache = None
+        return jsonify({"ok": True, "message": "Server was already stopped."})
+    except PermissionError:
+        msg = f"Process {pid} isn't yours — refusing to kill it."
+        return jsonify({"ok": False, "error": msg}), 403
+
+    deadline = time.monotonic() + 5
+    while time.monotonic() < deadline and _pid_alive(pid):
+        time.sleep(0.2)
+    Path(LITERT_PIDFILE).unlink(missing_ok=True)
+    _litert_health_cache = None
+    return jsonify({"ok": True, "message": f"LiteRT server (pid {pid}) stopped."})
+
+
 def _load_settings() -> dict[str, Any]:
     if SETTINGS_FILE.exists():
         try:
@@ -884,9 +1028,7 @@ def api_llm_health():
     if provider == "litert":
         ok = _litert_healthy()
         message = (
-            ""
-            if ok
-            else "LiteRT server is not running — start it with 'litert-lm serve' and try again."
+            "" if ok else "LiteRT server is not running — use the Start button above and try again."
         )
     else:
         ok = _ollama_healthy()

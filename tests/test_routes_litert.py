@@ -9,6 +9,7 @@ pattern.
 
 import json
 import urllib.error
+from pathlib import Path
 
 import src.ss_dcl.app as flask_app
 from PIL import Image
@@ -392,3 +393,190 @@ def test_suggest_names_with_litert_provider(client, monkeypatch):
     rec = memory.lookup(fp)
     assert rec.status == "suggested"
     assert rec.suggested_name == "budget-review.png"
+
+
+# ── managed server process (Phase C) ───────────────────────────────────────
+
+
+class _FakeProc:
+    def __init__(self, pid: int = 12345):
+        self.pid = pid
+
+
+def _isolate_server_files(monkeypatch, tmp_path):
+    """Point pidfile + log at temp paths so tests never touch ~/.ss-dcl."""
+    monkeypatch.setattr(flask_app, "LITERT_PIDFILE", str(tmp_path / "litert.pid"))
+    monkeypatch.setattr(flask_app, "LITERT_LOG_FILE", str(tmp_path / "litert.log"))
+
+
+def test_litert_serve_cmd_resolves_via_path(monkeypatch):
+    monkeypatch.setattr(flask_app.shutil, "which", lambda name: "/usr/local/bin/litert-lm")
+    assert flask_app._litert_serve_cmd() == ["/usr/local/bin/litert-lm", "serve"]
+
+
+def test_litert_serve_cmd_falls_back_to_venv(monkeypatch, tmp_path):
+    venv_bin = tmp_path / "litert-lm" / ".venv" / "bin" / "litert-lm"
+    venv_bin.parent.mkdir(parents=True)
+    venv_bin.write_text("#!/bin/sh\n")
+    monkeypatch.setattr(flask_app.shutil, "which", lambda name: None)
+    monkeypatch.setattr(flask_app, "LITERT_VENV_FALLBACK", str(venv_bin))
+    assert flask_app._litert_serve_cmd() == [str(venv_bin), "serve"]
+
+
+def test_litert_serve_cmd_unresolved_keeps_tokens(monkeypatch, tmp_path):
+    monkeypatch.setattr(flask_app.shutil, "which", lambda name: None)
+    monkeypatch.setattr(flask_app, "LITERT_VENV_FALLBACK", str(tmp_path / "nope" / "litert-lm"))
+    assert flask_app._litert_serve_cmd() == ["litert-lm", "serve"]
+
+
+def test_start_requires_litert_provider(client):
+    c, _ = client
+    r = c.post("/api/llm/start")
+    assert r.status_code == 400
+    assert "LiteRT provider" in json.loads(r.data)["error"]
+
+
+def test_start_when_already_healthy_skips_spawn(client, monkeypatch, tmp_path):
+    c, _ = client
+    _isolate_server_files(monkeypatch, tmp_path)
+    c.put(
+        "/api/settings",
+        data=json.dumps({"llm_provider": "litert"}),
+        content_type="application/json",
+    )
+    monkeypatch.setattr(flask_app, "_litert_healthy", lambda: True)
+
+    def boom(*a, **k):
+        raise AssertionError("must not spawn when healthy")
+
+    monkeypatch.setattr(flask_app.subprocess, "Popen", boom)
+    r = c.post("/api/llm/start")
+    assert r.status_code == 200
+    assert json.loads(r.data)["ok"] is True
+
+
+def test_start_spawns_and_writes_pidfile(client, monkeypatch, tmp_path):
+    c, _ = client
+    _isolate_server_files(monkeypatch, tmp_path)
+    c.put(
+        "/api/settings",
+        data=json.dumps({"llm_provider": "litert"}),
+        content_type="application/json",
+    )
+
+    healths = iter([False, False, True])
+
+    def fake_healthy():
+        return next(healths, True)
+
+    monkeypatch.setattr(flask_app, "_litert_healthy", fake_healthy)
+    monkeypatch.setattr(flask_app.subprocess, "Popen", lambda *a, **k: _FakeProc(4242))
+    monkeypatch.setattr(flask_app.time, "sleep", lambda s: None)
+
+    r = c.post("/api/llm/start")
+    assert r.status_code == 200
+    data = json.loads(r.data)
+    assert data["ok"] is True
+    assert "4242" in data["message"]
+    assert Path(tmp_path / "litert.pid").read_text().strip() == "4242"
+
+
+def test_start_not_ready_within_timeout(client, monkeypatch, tmp_path):
+    c, _ = client
+    _isolate_server_files(monkeypatch, tmp_path)
+    c.put(
+        "/api/settings",
+        data=json.dumps({"llm_provider": "litert"}),
+        content_type="application/json",
+    )
+    monkeypatch.setattr(flask_app, "_litert_healthy", lambda: False)
+    monkeypatch.setattr(flask_app.subprocess, "Popen", lambda *a, **k: _FakeProc(777))
+    monkeypatch.setattr(flask_app.time, "sleep", lambda s: None)
+    monkeypatch.setattr(flask_app, "LITERT_SERVE_READY_TIMEOUT", 0)  # deadline passes immediately
+
+    r = c.post("/api/llm/start")
+    assert r.status_code == 502
+    data = json.loads(r.data)
+    assert data["ok"] is False
+    assert "not ready" in data["message"]
+
+
+def test_start_refuses_when_live_pid_present(client, monkeypatch, tmp_path):
+    """A recorded live-but-unresponsive pid blocks re-spawn (no double-spawn)."""
+    c, _ = client
+    _isolate_server_files(monkeypatch, tmp_path)
+    (tmp_path / "litert.pid").write_text("9999")
+    c.put(
+        "/api/settings",
+        data=json.dumps({"llm_provider": "litert"}),
+        content_type="application/json",
+    )
+    monkeypatch.setattr(flask_app, "_litert_healthy", lambda: False)
+    monkeypatch.setattr(flask_app, "_pid_alive", lambda pid: True)
+
+    def boom(*a, **k):
+        raise AssertionError("must not spawn when a live pid is recorded")
+
+    monkeypatch.setattr(flask_app.subprocess, "Popen", boom)
+    monkeypatch.setattr(flask_app.time, "sleep", lambda s: None)
+
+    r = c.post("/api/llm/start")
+    assert r.status_code == 502
+    assert "double-spawn" in json.loads(r.data)["message"]
+
+
+def test_stop_without_pidfile_returns_409(client, monkeypatch, tmp_path):
+    c, _ = client
+    _isolate_server_files(monkeypatch, tmp_path)
+    r = c.post("/api/llm/stop")
+    assert r.status_code == 409
+
+
+def test_stop_cleans_stale_pidfile(client, monkeypatch, tmp_path):
+    c, _ = client
+    _isolate_server_files(monkeypatch, tmp_path)
+    pidfile = tmp_path / "litert.pid"
+    pidfile.write_text("4242")
+    monkeypatch.setattr(flask_app, "_pid_alive", lambda pid: False)
+
+    r = c.post("/api/llm/stop")
+    assert r.status_code == 200
+    assert json.loads(r.data)["ok"] is True
+    assert not pidfile.exists()
+
+
+def test_stop_terminates_recorded_pid(client, monkeypatch, tmp_path):
+    c, _ = client
+    _isolate_server_files(monkeypatch, tmp_path)
+    pidfile = tmp_path / "litert.pid"
+    pidfile.write_text("4242")
+    # Alive on the first check, dead once the signal lands.
+    alive = iter([True, False])
+    monkeypatch.setattr(flask_app, "_pid_alive", lambda pid: next(alive))
+
+    killed = []
+
+    def fake_kill(pid, sig):
+        killed.append((pid, sig))
+
+    monkeypatch.setattr(flask_app.os, "kill", fake_kill)
+
+    r = c.post("/api/llm/stop")
+    assert r.status_code == 200
+    assert killed == [(4242, flask_app.signal.SIGTERM)]
+    assert not pidfile.exists()
+
+
+def test_stop_refuses_foreign_pid(client, monkeypatch, tmp_path):
+    c, _ = client
+    _isolate_server_files(monkeypatch, tmp_path)
+    (tmp_path / "litert.pid").write_text("4242")
+    monkeypatch.setattr(flask_app, "_pid_alive", lambda pid: True)
+
+    def fake_kill(pid, sig):
+        raise PermissionError("not yours")
+
+    monkeypatch.setattr(flask_app.os, "kill", fake_kill)
+
+    r = c.post("/api/llm/stop")
+    assert r.status_code == 403

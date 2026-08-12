@@ -144,10 +144,47 @@ const LLM_PROVIDER_MODELS = { ollama: "gemma4:e2b", litert: "gemma4-e2b" };
 function providerErrorCopy() {
   const label = LLM_PROVIDER_LABELS[llmSettings.llm_provider] || "LLM server";
   if (llmSettings.llm_provider === "litert") {
-    return `${label} is not running — start it in Settings and try again.`;
+    return `${label} is not running — use the Start button and try again.`;
   }
   return `Couldn't reach ${label} — is it running?`;
 }
+
+// ── Managed LiteRT server (start/stop button) ───────────────────────────────
+// Toggled on by the litert provider; label follows the last health verdict.
+function refreshLLMServerButton() {
+  if (llmSettings.llm_provider !== "litert") {
+    llmServerBtn.hidden = true;
+    llmServerBtn.disabled = true;
+    return;
+  }
+  llmServerBtn.hidden = false;
+  llmServerBtn.disabled = true;
+  fetch("/api/llm/health")
+    .then(r => r.json())
+    .then(h => {
+      llmServerBtn.textContent = h.ok ? "■ Stop LiteRT" : "▶ Start LiteRT";
+      llmServerBtn.disabled = false;
+    })
+    .catch(() => {
+      llmServerBtn.textContent = "▶ Start LiteRT";
+      llmServerBtn.disabled = false;
+    });
+}
+
+llmServerBtn.addEventListener("click", () => {
+  const starting = llmServerBtn.textContent.includes("Start");
+  llmServerBtn.disabled = true;
+  fetch(starting ? "/api/llm/start" : "/api/llm/stop", { method: "POST" })
+    .then(r => r.json())
+    .then(data => {
+      statusMsg.textContent = data.message || data.error || "Server control failed.";
+      refreshLLMServerButton();
+    })
+    .catch(() => {
+      statusMsg.textContent = "Couldn't reach the server controller.";
+      refreshLLMServerButton();
+    });
+});
 
 function loadSettings() {
   return fetch("/api/settings")
@@ -159,6 +196,7 @@ function loadSettings() {
 // ── Bootstrap ────────────────────────────────────────────────────────────────
 function init() {
   loadSettings().then(() => {
+    refreshLLMServerButton();
     fetch("/api/state")
       .then(r => r.json())
       .then(state => loadScreenshots(state.decisions || {}))
@@ -958,7 +996,7 @@ function suggestBatch(fingerprints) {
         statusMsg.textContent = firstError;
         setTimeout(() => { suggestProgress.hidden = true; suggestAllBtn.disabled = false; }, 4000);
       } else if (completed === 0) {
-        suggestProgressText.textContent = "No suggestions generated. Is Ollama running?";
+        suggestProgressText.textContent = providerErrorCopy();
         setTimeout(() => { suggestProgress.hidden = true; suggestAllBtn.disabled = false; }, 3000);
       } else {
         if (failedCount > 0) {
@@ -1195,6 +1233,7 @@ settingsSave.addEventListener("click", () => {
       if (data.ok) {
         llmSettings = newSettings;
         closeSettingsModal();
+        refreshLLMServerButton();
       }
     })
     .catch(() => {});
