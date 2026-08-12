@@ -161,7 +161,23 @@ def test_index_has_settings_modal(client):
     assert 'id="settings-provider"' in html
     assert 'id="settings-model"' in html
     assert 'id="settings-auto"' in html
-    assert "coming soon" in html.lower()  # MLX option marked as disabled
+
+
+def test_index_settings_provider_options(client):
+    """Provider dropdown offers ollama + litert; the dead MLX stub is gone."""
+    c, _ = client
+    html = c.get("/").data.decode()
+    assert 'value="ollama"' in html
+    assert 'value="litert"' in html
+    assert "LiteRT-LM" in html
+    assert "coming soon" not in html.lower()
+
+
+def test_index_settings_model_placeholder_is_ollama_default(client):
+    """Static placeholder matches the default ollama model id (colon form)."""
+    c, _ = client
+    html = c.get("/").data.decode()
+    assert 'placeholder="gemma4:e2b"' in html
 
 
 def test_app_js_defines_suggest_batch(client):
@@ -194,6 +210,33 @@ def test_app_js_defines_settings_modal(client):
     r = c.get("/static/app.js")
     assert r.status_code == 200
     assert b"settingsModal" in r.data
+
+
+def test_app_js_uses_generalized_health_endpoint(client):
+    """Suggest pre-flight must hit /api/llm/health, not the ollama alias."""
+    c, _ = client
+    r = c.get("/static/app.js")
+    assert r.status_code == 200
+    assert b'fetch("/api/llm/health")' in r.data
+    assert b"/api/ollama/health" not in r.data
+
+
+def test_app_js_has_per_provider_error_copy(client):
+    """Provider-aware offline copy for the suggest error paths."""
+    c, _ = client
+    r = c.get("/static/app.js")
+    assert r.status_code == 200
+    assert b"providerErrorCopy" in r.data
+    assert b"LLM_PROVIDER_MODELS" in r.data
+
+
+def test_app_js_syncs_model_id_on_provider_change(client):
+    """Switching providers in the settings modal fixes the default model id."""
+    c, _ = client
+    r = c.get("/static/app.js")
+    assert r.status_code == 200
+    assert b'settingsProvider.addEventListener("change"' in r.data
+    assert b"LLM_PROVIDER_MODELS[settingsProvider.value]" in r.data
 
 
 def test_app_js_has_suggestion_badge_maker(client):

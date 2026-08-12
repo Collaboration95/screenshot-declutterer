@@ -136,6 +136,19 @@ function sanitise(str) {
 // ── Settings state (loaded on init) ────────────────────────────────────────────
 let llmSettings = { llm_provider: "ollama", llm_model: "gemma4:e2b", auto_suggest: false, prune_max_age_days: 90 };
 
+// Per-provider display names + model-id defaults (ollama uses colon, litert doesn't).
+const LLM_PROVIDER_LABELS = { ollama: "Ollama", litert: "LiteRT-LM" };
+const LLM_PROVIDER_MODELS = { ollama: "gemma4:e2b", litert: "gemma4-e2b" };
+
+// Fallback offline copy when the health response carries no error message.
+function providerErrorCopy() {
+  const label = LLM_PROVIDER_LABELS[llmSettings.llm_provider] || "LLM server";
+  if (llmSettings.llm_provider === "litert") {
+    return `${label} is not running — start it in Settings and try again.`;
+  }
+  return `Couldn't reach ${label} — is it running?`;
+}
+
 function loadSettings() {
   return fetch("/api/settings")
     .then(r => r.json())
@@ -999,7 +1012,7 @@ function suggestBatch(fingerprints) {
         processChunk(nextIdx);
       })
       .catch(() => {
-        if (!firstError) firstError = "Couldn't reach Ollama — is it running?";
+        if (!firstError) firstError = providerErrorCopy();
         const nextIdx = startIdx + chunkSize;
         processChunk(nextIdx);
       });
@@ -1007,11 +1020,11 @@ function suggestBatch(fingerprints) {
 
   // Pre-flight circuit breaker: bail out before any per-file calls if
   // Ollama is down (avoids 3 futile retries per file on connection refused).
-  fetch("/api/ollama/health")
+  fetch("/api/llm/health")
     .then(r => r.json())
     .then(h => {
       if (!h.ok) {
-        statusMsg.textContent = h.error || "Couldn't reach Ollama — is it running?";
+        statusMsg.textContent = h.error || providerErrorCopy();
         suggestAllBtn.disabled = false;
         suggestProgress.hidden = true;
         suggestProgressFill.style.width = "0%";
@@ -1025,7 +1038,7 @@ function suggestBatch(fingerprints) {
       processChunk(0);
     })
     .catch(() => {
-      statusMsg.textContent = "Couldn't reach Ollama — is it running?";
+      statusMsg.textContent = providerErrorCopy();
       suggestAllBtn.disabled = false;
       suggestProgress.hidden = true;
     });
@@ -1137,10 +1150,21 @@ settingsBtn.addEventListener("click", () => {
   // Load current settings into form
   settingsProvider.value = llmSettings.llm_provider || "ollama";
   settingsModel.value = llmSettings.llm_model || "gemma4:e2b";
+  settingsModel.placeholder = LLM_PROVIDER_MODELS[settingsProvider.value] || "gemma4:e2b";
   settingsAuto.checked = llmSettings.auto_suggest || false;
   const pruneAge = document.getElementById("settings-prune-age");
   if (pruneAge) pruneAge.value = llmSettings.prune_max_age_days || 90;
   settingsModal.hidden = false;
+});
+
+// When switching providers, sync the placeholder and fix the model id if it
+// still points at the other provider's default (ollama: gemma4:e2b, litert: gemma4-e2b).
+settingsProvider.addEventListener("change", () => {
+  const def = LLM_PROVIDER_MODELS[settingsProvider.value] || "gemma4:e2b";
+  settingsModel.placeholder = def;
+  if (settingsModel.value.trim() === "gemma4:e2b" || settingsModel.value.trim() === "gemma4-e2b") {
+    settingsModel.value = def;
+  }
 });
 
 function closeSettingsModal() {
