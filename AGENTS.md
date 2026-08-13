@@ -50,7 +50,10 @@ tests/test_frontend.py   Frontend integration tests
 | POST | `/api/rename` | Rename a file — body `{old_name, new_name}`. Updates state, thumbnail, memory, and clears suggested_category hint. Returns 409 on conflict |
 | POST | `/api/reveal` | Reveal a file in Finder (macOS) — body `{filename}`. Runs `open -R` fire-and-forget; path-traversal guarded. Returns 400 off-macOS, 404 if missing |
 | GET | `/api/memory` | Get all persisted memory records `{files: {fingerprint: {status, suggested_name, last_updated}}}` |
-| POST | `/api/suggest-names` | Generate AI filename suggestions via Ollama — body `{fingerprints: [...]}`. Returns `{suggestions: {fp: name}, failures: [fp]}`. Uses `gemma4:e2b` by default |
+| POST | `/api/suggest-names` | Generate AI filename suggestions — body `{fingerprints: [...]}`. Returns `{suggestions: {fp: name}, failures: [fp]}`. LiteRT provider only; uses `gemma4-e2b` by default |
+| GET | `/api/llm/health` | LiteRT reachability probe (`/v1/models`). Returns `{ok, provider, error}`; 503 when down |
+| POST | `/api/llm/start` | Spawn the LiteRT server as a detached subprocess. Resolves `LITERT_SERVE_CMD` via PATH → `~/litert-lm/.venv/bin/litert-lm` fallback, logs to `~/.ss-dcl/litert.log`, records ownership in `LITERT_PIDFILE`, polls `/v1/models` until ready (30s). 502 if spawn/ready fails |
+| POST | `/api/llm/stop` | Kill only the PID recorded in `LITERT_PIDFILE` (ownership rule — never a server the user started). 409 when no pidfile, 403 for a foreign PID |
 | POST | `/api/accept-suggestion` | Accept suggestion & rename file — body `{fingerprint}`. Handles name conflicts (appends `-2`) |
 | POST | `/api/reject-suggestion` | Dismiss suggestion — body `{fingerprint}`. Marks memory status as `"ignored"` |
 | GET | `/api/settings` | Get config `{llm_provider, llm_model, auto_suggest, prune_max_age_days}` |
@@ -85,6 +88,10 @@ All in `static/app.js`:
 | MEMORY_FILE | `~/.ss-dcl/memory.json` |
 | SETTINGS_FILE | `~/.ss-dcl/settings.json` |
 | THUMB_SIZE | `(400, 300)` |
+| LITERT_BASE_URL | `http://localhost:9379` (env `LITERT_BASE_URL`) |
+| LITERT_SERVE_CMD | `litert-lm serve` (env `LITERT_SERVE_CMD`; PATH → venv fallback) |
+| LITERT_PIDFILE | `~/.ss-dcl/litert.pid` |
+| LITERT_LOG_FILE | `~/.ss-dcl/litert.log` |
 
 ## Dependencies
 

@@ -161,7 +161,23 @@ def test_index_has_settings_modal(client):
     assert 'id="settings-provider"' in html
     assert 'id="settings-model"' in html
     assert 'id="settings-auto"' in html
-    assert "coming soon" in html.lower()  # MLX option marked as disabled
+
+
+def test_index_settings_provider_options(client):
+    """Provider dropdown offers litert only; the dead MLX/Ollama stubs are gone."""
+    c, _ = client
+    html = c.get("/").data.decode()
+    assert 'value="ollama"' not in html
+    assert 'value="litert"' in html
+    assert "LiteRT-LM" in html
+    assert "coming soon" not in html.lower()
+
+
+def test_index_settings_model_placeholder_is_litert_default(client):
+    """Static placeholder matches the default litert model id (dash form)."""
+    c, _ = client
+    html = c.get("/").data.decode()
+    assert 'placeholder="gemma4-e2b"' in html
 
 
 def test_app_js_defines_suggest_batch(client):
@@ -194,6 +210,77 @@ def test_app_js_defines_settings_modal(client):
     r = c.get("/static/app.js")
     assert r.status_code == 200
     assert b"settingsModal" in r.data
+
+
+def test_app_js_uses_generalized_health_endpoint(client):
+    """Suggest pre-flight must hit /api/llm/health; no legacy alias remains."""
+    c, _ = client
+    r = c.get("/static/app.js")
+    assert r.status_code == 200
+    assert b'fetch("/api/llm/health")' in r.data
+    assert b"/api/ollama/health" not in r.data
+
+
+def test_index_has_llm_server_button(client):
+    """Header hosts the managed LiteRT start/stop button (hidden until litert)."""
+    c, _ = client
+    html = c.get("/").data.decode()
+    assert 'id="llm-server-btn"' in html
+    assert 'aria-label="Manage the LiteRT server"' in html
+
+
+def test_app_js_binds_llm_server_button(client):
+    """JS must declare llmServerBtn, else init() dies before loadScreenshots."""
+    c, _ = client
+    r = c.get("/static/app.js")
+    assert r.status_code == 200
+    assert b"const llmServerBtn" in r.data
+    assert b'getElementById("llm-server-btn")' in r.data
+
+
+def test_app_js_defines_server_control(client):
+    """JS wires the start/stop button to /api/llm/start and /api/llm/stop."""
+    c, _ = client
+    r = c.get("/static/app.js")
+    assert r.status_code == 200
+    assert b"refreshLLMServerButton" in r.data
+    assert b'"/api/llm/start"' in r.data
+    assert b'"/api/llm/stop"' in r.data
+
+
+def test_app_js_refreshes_server_button_on_init_and_save(client):
+    """Server button state must be recomputed on boot and after saving settings."""
+    c, _ = client
+    r = c.get("/static/app.js")
+    assert r.status_code == 200
+    assert b"refreshLLMServerButton();" in r.data
+    assert b"loadSettings().then(() => {\n    refreshLLMServerButton();" in r.data
+    assert b"closeSettingsModal();\n        refreshLLMServerButton();" in r.data
+
+
+def test_css_has_llm_server_button_style(client):
+    c, _ = client
+    r = c.get("/static/style.css")
+    assert r.status_code == 200
+    assert b".header-llm-btn" in r.data
+
+
+def test_app_js_has_per_provider_error_copy(client):
+    """Provider-aware offline copy for the suggest error paths."""
+    c, _ = client
+    r = c.get("/static/app.js")
+    assert r.status_code == 200
+    assert b"providerErrorCopy" in r.data
+    assert b"LLM_PROVIDER_MODELS" in r.data
+
+
+def test_app_js_syncs_model_id_on_provider_change(client):
+    """Switching providers in the settings modal fixes the default model id."""
+    c, _ = client
+    r = c.get("/static/app.js")
+    assert r.status_code == 200
+    assert b'settingsProvider.addEventListener("change"' in r.data
+    assert b"LLM_PROVIDER_MODELS[settingsProvider.value]" in r.data
 
 
 def test_app_js_has_suggestion_badge_maker(client):

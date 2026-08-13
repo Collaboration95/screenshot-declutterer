@@ -54,6 +54,8 @@ const settingsAuto    = document.getElementById("settings-auto");
 const settingsCancel  = document.getElementById("settings-cancel");
 const settingsSave    = document.getElementById("settings-save");
 
+const llmServerBtn    = document.getElementById("llm-server-btn");
+
 const renameModal   = document.getElementById("rename-modal");
 const renameInput   = document.getElementById("rename-input");
 const renameCancel  = document.getElementById("rename-cancel");
@@ -134,7 +136,49 @@ function sanitise(str) {
 }
 
 // ── Settings state (loaded on init) ────────────────────────────────────────────
-let llmSettings = { llm_provider: "ollama", llm_model: "gemma4:e2b", auto_suggest: false, prune_max_age_days: 90 };
+let llmSettings = { llm_provider: "litert", llm_model: "gemma4-e2b", auto_suggest: false, prune_max_age_days: 90 };
+
+// LiteRT is the only provider.
+const LLM_PROVIDER_LABELS = { litert: "LiteRT-LM" };
+const LLM_PROVIDER_MODELS = { litert: "gemma4-e2b" };
+
+// Fallback offline copy when the health response carries no error message.
+function providerErrorCopy() {
+  const label = LLM_PROVIDER_LABELS[llmSettings.llm_provider] || "LiteRT-LM";
+  return `${label} is not running — use the Start button and try again.`;
+}
+
+// ── Managed LiteRT server (start/stop button) ───────────────────────────────
+// Label follows the last health verdict.
+function refreshLLMServerButton() {
+  llmServerBtn.hidden = false;
+  llmServerBtn.disabled = true;
+  fetch("/api/llm/health")
+    .then(r => r.json())
+    .then(h => {
+      llmServerBtn.textContent = h.ok ? "■ Stop LiteRT" : "▶ Start LiteRT";
+      llmServerBtn.disabled = false;
+    })
+    .catch(() => {
+      llmServerBtn.textContent = "▶ Start LiteRT";
+      llmServerBtn.disabled = false;
+    });
+}
+
+llmServerBtn.addEventListener("click", () => {
+  const starting = llmServerBtn.textContent.includes("Start");
+  llmServerBtn.disabled = true;
+  fetch(starting ? "/api/llm/start" : "/api/llm/stop", { method: "POST" })
+    .then(r => r.json())
+    .then(data => {
+      statusMsg.textContent = data.message || data.error || "Server control failed.";
+      refreshLLMServerButton();
+    })
+    .catch(() => {
+      statusMsg.textContent = "Couldn't reach the server controller.";
+      refreshLLMServerButton();
+    });
+});
 
 function loadSettings() {
   return fetch("/api/settings")
@@ -146,6 +190,7 @@ function loadSettings() {
 // ── Bootstrap ────────────────────────────────────────────────────────────────
 function init() {
   loadSettings().then(() => {
+    refreshLLMServerButton();
     fetch("/api/state")
       .then(r => r.json())
       .then(state => loadScreenshots(state.decisions || {}))
@@ -945,7 +990,7 @@ function suggestBatch(fingerprints) {
         statusMsg.textContent = firstError;
         setTimeout(() => { suggestProgress.hidden = true; suggestAllBtn.disabled = false; }, 4000);
       } else if (completed === 0) {
-        suggestProgressText.textContent = "No suggestions generated. Is Ollama running?";
+        suggestProgressText.textContent = providerErrorCopy();
         setTimeout(() => { suggestProgress.hidden = true; suggestAllBtn.disabled = false; }, 3000);
       } else {
         if (failedCount > 0) {
@@ -999,19 +1044,19 @@ function suggestBatch(fingerprints) {
         processChunk(nextIdx);
       })
       .catch(() => {
-        if (!firstError) firstError = "Couldn't reach Ollama — is it running?";
+        if (!firstError) firstError = providerErrorCopy();
         const nextIdx = startIdx + chunkSize;
         processChunk(nextIdx);
       });
   }
 
   // Pre-flight circuit breaker: bail out before any per-file calls if
-  // Ollama is down (avoids 3 futile retries per file on connection refused).
-  fetch("/api/ollama/health")
+  // LiteRT is down (avoids 3 futile retries per file on connection refused).
+  fetch("/api/llm/health")
     .then(r => r.json())
     .then(h => {
       if (!h.ok) {
-        statusMsg.textContent = h.error || "Couldn't reach Ollama — is it running?";
+        statusMsg.textContent = h.error || providerErrorCopy();
         suggestAllBtn.disabled = false;
         suggestProgress.hidden = true;
         suggestProgressFill.style.width = "0%";
@@ -1025,7 +1070,7 @@ function suggestBatch(fingerprints) {
       processChunk(0);
     })
     .catch(() => {
-      statusMsg.textContent = "Couldn't reach Ollama — is it running?";
+      statusMsg.textContent = providerErrorCopy();
       suggestAllBtn.disabled = false;
       suggestProgress.hidden = true;
     });
@@ -1135,12 +1180,22 @@ suggestAllBtn.addEventListener("click", () => {
 // ── Settings modal ────────────────────────────────────────────────────────────
 settingsBtn.addEventListener("click", () => {
   // Load current settings into form
-  settingsProvider.value = llmSettings.llm_provider || "ollama";
-  settingsModel.value = llmSettings.llm_model || "gemma4:e2b";
+  settingsProvider.value = llmSettings.llm_provider || "litert";
+  settingsModel.value = llmSettings.llm_model || "gemma4-e2b";
+  settingsModel.placeholder = LLM_PROVIDER_MODELS[settingsProvider.value] || "gemma4-e2b";
   settingsAuto.checked = llmSettings.auto_suggest || false;
   const pruneAge = document.getElementById("settings-prune-age");
   if (pruneAge) pruneAge.value = llmSettings.prune_max_age_days || 90;
   settingsModal.hidden = false;
+});
+
+// When the model field holds a legacy/default id, snap it to the LiteRT form.
+settingsProvider.addEventListener("change", () => {
+  const def = LLM_PROVIDER_MODELS[settingsProvider.value] || "gemma4-e2b";
+  settingsModel.placeholder = def;
+  if (settingsModel.value.trim() === "gemma4-e2b" || settingsModel.value.trim() === "gemma4:e2b") {
+    settingsModel.value = def;
+  }
 });
 
 function closeSettingsModal() {
@@ -1156,7 +1211,7 @@ settingsSave.addEventListener("click", () => {
   const pruneVal = parseInt(document.getElementById("settings-prune-age")?.value || "90", 10);
   const newSettings = {
     llm_provider: settingsProvider.value,
-    llm_model: settingsModel.value.trim() || "gemma4:e2b",
+    llm_model: settingsModel.value.trim() || "gemma4-e2b",
     auto_suggest: settingsAuto.checked,
     prune_max_age_days: isNaN(pruneVal) || pruneVal < 1 ? 90 : pruneVal,
   };
@@ -1171,6 +1226,7 @@ settingsSave.addEventListener("click", () => {
       if (data.ok) {
         llmSettings = newSettings;
         closeSettingsModal();
+        refreshLLMServerButton();
       }
     })
     .catch(() => {});
