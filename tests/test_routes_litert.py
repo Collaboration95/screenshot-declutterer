@@ -1,10 +1,8 @@
 """Tests for the LiteRT-LM provider integration.
 
-Covers ``_call_litert_suggest`` (OpenAI-compatible client), the provider
-dispatcher, the litert health probe + generalized ``/api/llm/health`` route,
-and image normalization to PNG data URIs. All tests run offline — the
-network layer is monkeypatched, matching the ``_call_ollama_suggest`` test
-pattern.
+Covers ``_call_litert_suggest`` (OpenAI-compatible client), the litert
+health probe + ``/api/llm/health`` route, and image normalization to PNG
+data URIs. All tests run offline — the network layer is monkeypatched.
 """
 
 import json
@@ -207,52 +205,6 @@ def test_call_litert_suggest_sends_openai_payload(tmp_path, monkeypatch):
     assert content[1]["image_url"]["url"].startswith("data:image/png;base64,")
 
 
-# ── _call_model_suggest dispatcher ────────────────────────────────────────
-
-
-def test_call_model_suggest_dispatches_to_litert(monkeypatch):
-    """provider='litert' routes to _call_litert_suggest only."""
-    calls = {"litert": 0, "ollama": 0}
-
-    def fake_litert(image_path, model, extension=".png"):
-        calls["litert"] += 1
-        return "litert-name.png"
-
-    def fake_ollama(image_path, model, extension=".png"):
-        calls["ollama"] += 1
-        return "ollama-name.png"
-
-    monkeypatch.setattr(flask_app, "_call_litert_suggest", fake_litert)
-    monkeypatch.setattr(flask_app, "_call_ollama_suggest", fake_ollama)
-
-    result = flask_app._call_model_suggest(None, "m", ".png", "litert")
-    assert result == "litert-name.png"
-    assert calls == {"litert": 1, "ollama": 0}
-
-
-def test_call_model_suggest_dispatches_to_ollama(monkeypatch):
-    """provider='ollama' (and unknown values) route to _call_ollama_suggest."""
-    calls = {"litert": 0, "ollama": 0}
-
-    def fake_litert(image_path, model, extension=".png"):
-        calls["litert"] += 1
-        return "litert-name.png"
-
-    def fake_ollama(image_path, model, extension=".png"):
-        calls["ollama"] += 1
-        return "ollama-name.png"
-
-    monkeypatch.setattr(flask_app, "_call_litert_suggest", fake_litert)
-    monkeypatch.setattr(flask_app, "_call_ollama_suggest", fake_ollama)
-
-    assert flask_app._call_model_suggest(None, "m", ".png", "ollama") == "ollama-name.png"
-    assert calls == {"litert": 0, "ollama": 1}
-
-    calls["ollama"] = 0
-    assert flask_app._call_model_suggest(None, "m", ".png", "weird") == "ollama-name.png"
-    assert calls == {"litert": 0, "ollama": 1}
-
-
 # ── _litert_healthy ───────────────────────────────────────────────────────
 
 
@@ -335,27 +287,6 @@ def test_api_llm_health_litert_down(client, monkeypatch):
     assert "litert" in data["error"].lower()
 
 
-def test_api_llm_health_defaults_to_ollama(client, monkeypatch):
-    """With no provider setting, /api/llm/health uses the Ollama probe."""
-    c, _ = client
-    monkeypatch.setattr(flask_app, "_ollama_healthy", lambda: True)
-    r = c.get("/api/llm/health")
-    assert r.status_code == 200
-    data = json.loads(r.data)
-    assert data["provider"] == "ollama"
-
-
-def test_api_ollama_health_alias_still_works(client, monkeypatch):
-    """The legacy /api/ollama/health route keeps its response shape."""
-    c, _ = client
-    monkeypatch.setattr(flask_app, "_ollama_healthy", lambda: True)
-    r = c.get("/api/ollama/health")
-    assert r.status_code == 200
-    data = json.loads(r.data)
-    assert data["ok"] is True
-    assert data["error"] == ""
-
-
 # ── end-to-end suggest with the litert provider ───────────────────────────
 
 
@@ -427,13 +358,6 @@ def test_litert_serve_cmd_unresolved_keeps_tokens(monkeypatch, tmp_path):
     monkeypatch.setattr(flask_app.shutil, "which", lambda name: None)
     monkeypatch.setattr(flask_app, "LITERT_VENV_FALLBACK", str(tmp_path / "nope" / "litert-lm"))
     assert flask_app._litert_serve_cmd() == ["litert-lm", "serve"]
-
-
-def test_start_requires_litert_provider(client):
-    c, _ = client
-    r = c.post("/api/llm/start")
-    assert r.status_code == 400
-    assert "LiteRT provider" in json.loads(r.data)["error"]
 
 
 def test_start_when_already_healthy_skips_spawn(client, monkeypatch, tmp_path):

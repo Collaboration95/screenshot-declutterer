@@ -136,29 +136,21 @@ function sanitise(str) {
 }
 
 // ── Settings state (loaded on init) ────────────────────────────────────────────
-let llmSettings = { llm_provider: "ollama", llm_model: "gemma4:e2b", auto_suggest: false, prune_max_age_days: 90 };
+let llmSettings = { llm_provider: "litert", llm_model: "gemma4-e2b", auto_suggest: false, prune_max_age_days: 90 };
 
-// Per-provider display names + model-id defaults (ollama uses colon, litert doesn't).
-const LLM_PROVIDER_LABELS = { ollama: "Ollama", litert: "LiteRT-LM" };
-const LLM_PROVIDER_MODELS = { ollama: "gemma4:e2b", litert: "gemma4-e2b" };
+// LiteRT is the only provider.
+const LLM_PROVIDER_LABELS = { litert: "LiteRT-LM" };
+const LLM_PROVIDER_MODELS = { litert: "gemma4-e2b" };
 
 // Fallback offline copy when the health response carries no error message.
 function providerErrorCopy() {
-  const label = LLM_PROVIDER_LABELS[llmSettings.llm_provider] || "LLM server";
-  if (llmSettings.llm_provider === "litert") {
-    return `${label} is not running — use the Start button and try again.`;
-  }
-  return `Couldn't reach ${label} — is it running?`;
+  const label = LLM_PROVIDER_LABELS[llmSettings.llm_provider] || "LiteRT-LM";
+  return `${label} is not running — use the Start button and try again.`;
 }
 
 // ── Managed LiteRT server (start/stop button) ───────────────────────────────
-// Toggled on by the litert provider; label follows the last health verdict.
+// Label follows the last health verdict.
 function refreshLLMServerButton() {
-  if (llmSettings.llm_provider !== "litert") {
-    llmServerBtn.hidden = true;
-    llmServerBtn.disabled = true;
-    return;
-  }
   llmServerBtn.hidden = false;
   llmServerBtn.disabled = true;
   fetch("/api/llm/health")
@@ -1059,7 +1051,7 @@ function suggestBatch(fingerprints) {
   }
 
   // Pre-flight circuit breaker: bail out before any per-file calls if
-  // Ollama is down (avoids 3 futile retries per file on connection refused).
+  // LiteRT is down (avoids 3 futile retries per file on connection refused).
   fetch("/api/llm/health")
     .then(r => r.json())
     .then(h => {
@@ -1188,21 +1180,20 @@ suggestAllBtn.addEventListener("click", () => {
 // ── Settings modal ────────────────────────────────────────────────────────────
 settingsBtn.addEventListener("click", () => {
   // Load current settings into form
-  settingsProvider.value = llmSettings.llm_provider || "ollama";
-  settingsModel.value = llmSettings.llm_model || "gemma4:e2b";
-  settingsModel.placeholder = LLM_PROVIDER_MODELS[settingsProvider.value] || "gemma4:e2b";
+  settingsProvider.value = llmSettings.llm_provider || "litert";
+  settingsModel.value = llmSettings.llm_model || "gemma4-e2b";
+  settingsModel.placeholder = LLM_PROVIDER_MODELS[settingsProvider.value] || "gemma4-e2b";
   settingsAuto.checked = llmSettings.auto_suggest || false;
   const pruneAge = document.getElementById("settings-prune-age");
   if (pruneAge) pruneAge.value = llmSettings.prune_max_age_days || 90;
   settingsModal.hidden = false;
 });
 
-// When switching providers, sync the placeholder and fix the model id if it
-// still points at the other provider's default (ollama: gemma4:e2b, litert: gemma4-e2b).
+// When the model field holds a legacy/default id, snap it to the LiteRT form.
 settingsProvider.addEventListener("change", () => {
-  const def = LLM_PROVIDER_MODELS[settingsProvider.value] || "gemma4:e2b";
+  const def = LLM_PROVIDER_MODELS[settingsProvider.value] || "gemma4-e2b";
   settingsModel.placeholder = def;
-  if (settingsModel.value.trim() === "gemma4:e2b" || settingsModel.value.trim() === "gemma4-e2b") {
+  if (settingsModel.value.trim() === "gemma4-e2b" || settingsModel.value.trim() === "gemma4:e2b") {
     settingsModel.value = def;
   }
 });
@@ -1220,7 +1211,7 @@ settingsSave.addEventListener("click", () => {
   const pruneVal = parseInt(document.getElementById("settings-prune-age")?.value || "90", 10);
   const newSettings = {
     llm_provider: settingsProvider.value,
-    llm_model: settingsModel.value.trim() || "gemma4:e2b",
+    llm_model: settingsModel.value.trim() || "gemma4-e2b",
     auto_suggest: settingsAuto.checked,
     prune_max_age_days: isNaN(pruneVal) || pruneVal < 1 ? 90 : pruneVal,
   };

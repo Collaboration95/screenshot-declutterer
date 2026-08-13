@@ -164,20 +164,20 @@ def test_index_has_settings_modal(client):
 
 
 def test_index_settings_provider_options(client):
-    """Provider dropdown offers ollama + litert; the dead MLX stub is gone."""
+    """Provider dropdown offers litert only; the dead MLX/Ollama stubs are gone."""
     c, _ = client
     html = c.get("/").data.decode()
-    assert 'value="ollama"' in html
+    assert 'value="ollama"' not in html
     assert 'value="litert"' in html
     assert "LiteRT-LM" in html
     assert "coming soon" not in html.lower()
 
 
-def test_index_settings_model_placeholder_is_ollama_default(client):
-    """Static placeholder matches the default ollama model id (colon form)."""
+def test_index_settings_model_placeholder_is_litert_default(client):
+    """Static placeholder matches the default litert model id (dash form)."""
     c, _ = client
     html = c.get("/").data.decode()
-    assert 'placeholder="gemma4:e2b"' in html
+    assert 'placeholder="gemma4-e2b"' in html
 
 
 def test_app_js_defines_suggest_batch(client):
@@ -213,7 +213,7 @@ def test_app_js_defines_settings_modal(client):
 
 
 def test_app_js_uses_generalized_health_endpoint(client):
-    """Suggest pre-flight must hit /api/llm/health, not the ollama alias."""
+    """Suggest pre-flight must hit /api/llm/health; no legacy alias remains."""
     c, _ = client
     r = c.get("/static/app.js")
     assert r.status_code == 200

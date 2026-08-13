@@ -58,18 +58,12 @@ THUMB_DIR = Path.home() / ".cache" / "ss-dcl" / "thumbs"
 STATE_FILE = Path.home() / ".ss-dcl" / "state.json"
 MEMORY_FILE = Path.home() / ".ss-dcl" / "memory.json"
 SETTINGS_FILE = Path.home() / ".ss-dcl" / "settings.json"
-DEFAULT_LLM_MODEL = "gemma4:e2b"
-OLLAMA_BASE_URL = os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434")
+DEFAULT_LLM_MODEL = "gemma4-e2b"
 IS_MACOS = sys.platform == "darwin"
-OLLAMA_HEALTH_TIMEOUT = 3  # seconds
-_OLLAMA_HEALTH_TTL = 5.0  # seconds
-_ollama_health_cache: tuple[float, bool] | None = None
 LITERT_BASE_URL = os.environ.get("LITERT_BASE_URL", "http://localhost:9379")
-LITERT_DEFAULT_MODEL = "gemma4-e2b"
 LITERT_HEALTH_TIMEOUT = 3  # seconds
 _LITERT_HEALTH_TTL = 5.0  # seconds
 _litert_health_cache: tuple[float, bool] | None = None
-SUPPORTED_LLM_PROVIDERS = ("ollama", "litert")
 # Managed LiteRT server process (Phase C): command resolution, pidfile
 # ownership, readiness polling. Logs go to the app state dir.
 LITERT_SERVE_CMD = os.environ.get("LITERT_SERVE_CMD", "litert-lm serve")
@@ -459,7 +453,7 @@ def api_memory():
     return jsonify({"files": result})
 
 
-def _is_retryable_ollama_error(exc: BaseException) -> bool:
+def _is_retryable_llm_error(exc: BaseException) -> bool:
     """Return True if *exc* is transient and worth retrying.
 
     Unwraps ``urllib.error.URLError`` (whose ``.reason`` may itself be an
@@ -475,7 +469,7 @@ def _is_retryable_ollama_error(exc: BaseException) -> bool:
     if isinstance(exc, urllib.error.URLError):
         reason = exc.reason
         if isinstance(reason, BaseException):
-            return _is_retryable_ollama_error(reason)
+            return _is_retryable_llm_error(reason)
         # Non-exception reason (e.g. plain string) — unknown, stay conservative.
         return True
 
@@ -496,117 +490,6 @@ def _is_retryable_ollama_error(exc: BaseException) -> bool:
         # Unknown OSError (possibly no errno) — conservative default.
         return True
     return True
-
-
-def _ollama_healthy() -> bool:
-    """Cheap reachability probe (GET /api/tags).
-
-    Negative AND positive verdicts are cached for ``_OLLAMA_HEALTH_TTL``
-    seconds so a down server is probed at most once per batch instead of
-    once per file.
-    """
-    global _ollama_health_cache
-    now = time.monotonic()
-    if _ollama_health_cache is not None and now - _ollama_health_cache[0] < _OLLAMA_HEALTH_TTL:
-        return _ollama_health_cache[1]
-
-    ok = False
-    try:
-        with urllib.request.urlopen(
-            f"{OLLAMA_BASE_URL}/api/tags", timeout=OLLAMA_HEALTH_TIMEOUT
-        ) as resp:
-            ok = resp.status == 200
-    except (urllib.error.URLError, OSError):
-        ok = False
-
-    _ollama_health_cache = (time.monotonic(), ok)
-    return ok
-
-
-def _call_ollama_suggest(image_path: Path, model: str, extension: str = ".png") -> str | None:
-    """Call Ollama API with an image and return a suggested filename.
-
-    Extracted as a module-level function so tests can monkeypatch it
-    without needing Ollama running.
-
-    *extension* is appended to the sanitized name and should include
-    the leading dot (e.g. ``".jpg"``).  Defaults to ``".png"`` for
-    backward compatibility.
-
-    Retries up to 2 times on transient connection/timeout errors with
-    1s/2s backoff.  Permanent errors (connection refused, DNS failure,
-    HTTP 4xx) fail fast.  JSON decode errors are not retried (malformed
-    response won't fix itself).
-    """
-    max_retries = 2
-    with open(image_path, "rb") as fh:
-        image_b64 = base64.b64encode(fh.read()).decode("ascii")
-
-    prompt = (
-        "Describe this screenshot in 3-5 words as a filename. "
-        "Return only the filename, no explanation, no quotes."
-    )
-
-    payload = json.dumps(
-        {
-            "model": model,
-            "messages": [
-                {
-                    "role": "user",
-                    "content": prompt,
-                    "images": [image_b64],
-                }
-            ],
-            "stream": False,
-        }
-    ).encode("utf-8")
-
-    req = urllib.request.Request(
-        f"{OLLAMA_BASE_URL}/api/chat",
-        data=payload,
-        headers={"Content-Type": "application/json"},
-    )
-
-    for attempt in range(max_retries + 1):
-        try:
-            with urllib.request.urlopen(req, timeout=30) as resp:
-                result = json.loads(resp.read())
-                raw = result.get("message", {}).get("content", "").strip()
-                break
-        except json.JSONDecodeError as exc:
-            logger.warning("Ollama returned malformed JSON for %s: %s", image_path.name, exc)
-            return None
-        except (urllib.error.URLError, OSError) as exc:
-            if not _is_retryable_ollama_error(exc):
-                logger.warning(
-                    "Ollama unreachable for %s, not retrying: %s",
-                    image_path.name,
-                    exc,
-                )
-                return None
-            if attempt < max_retries:
-                wait = 2**attempt
-                logger.warning(
-                    "Ollama attempt %d/%d failed for %s, retrying in %ds: %s",
-                    attempt + 1,
-                    max_retries + 1,
-                    image_path.name,
-                    wait,
-                    exc,
-                )
-                time.sleep(wait)
-            else:
-                logger.warning(
-                    "Ollama suggest failed after %d attempts for %s: %s",
-                    max_retries + 1,
-                    image_path.name,
-                    exc,
-                )
-                return None
-
-    if not raw:
-        return None
-    return _sanitize_suggestion(raw, extension)
 
 
 def _sanitize_suggestion(raw: str, extension: str = ".png") -> str | None:
@@ -645,8 +528,8 @@ def _call_litert_suggest(image_path: Path, model: str, extension: str = ".png") 
     """Call the LiteRT-LM OpenAI-compatible server with an image.
 
     Returns a sanitized suggested filename (extension included), or None on
-    failure. Same retry policy as ``_call_ollama_suggest``: up to 2 retries on
-    transient errors with 1s/2s backoff, fail fast on permanent ones.
+    failure. Retries up to 2 times on transient errors with 1s/2s backoff,
+    fails fast on permanent ones.
     """
     max_retries = 2
     data_uri = _image_to_png_data_uri(image_path)
@@ -690,7 +573,7 @@ def _call_litert_suggest(image_path: Path, model: str, extension: str = ".png") 
             logger.warning("LiteRT returned malformed JSON for %s: %s", image_path.name, exc)
             return None
         except (urllib.error.URLError, OSError) as exc:
-            if not _is_retryable_ollama_error(exc):
+            if not _is_retryable_llm_error(exc):
                 logger.warning(
                     "LiteRT unreachable for %s, not retrying: %s",
                     image_path.name,
@@ -720,15 +603,6 @@ def _call_litert_suggest(image_path: Path, model: str, extension: str = ".png") 
     if not raw:
         return None
     return _sanitize_suggestion(raw, extension)
-
-
-def _call_model_suggest(
-    image_path: Path, model: str, extension: str = ".png", provider: str = "ollama"
-) -> str | None:
-    """Dispatch a suggest call to the configured LLM provider."""
-    if provider == "litert":
-        return _call_litert_suggest(image_path, model, extension)
-    return _call_ollama_suggest(image_path, model, extension)
 
 
 def _litert_healthy() -> bool:
@@ -853,10 +727,7 @@ def _spawn_litert_server() -> tuple[bool, str]:
 
 @app.route("/api/llm/start", methods=["POST"])
 def api_llm_start():
-    """Start the LiteRT server as a detached subprocess (litert provider only)."""
-    if _load_settings().get("llm_provider", "ollama") != "litert":
-        msg = "Start is only available for the LiteRT provider."
-        return jsonify({"ok": False, "error": msg}), 400
+    """Start the LiteRT server as a detached subprocess."""
     ok, message = _spawn_litert_server()
     return jsonify({"ok": ok, "message": message}), 200 if ok else 502
 
@@ -893,9 +764,13 @@ def api_llm_stop():
 def _load_settings() -> dict[str, Any]:
     if SETTINGS_FILE.exists():
         try:
-            return json.loads(SETTINGS_FILE.read_text())
+            data = json.loads(SETTINGS_FILE.read_text())
         except (json.JSONDecodeError, OSError):
             return {}
+        # LiteRT is the only provider; normalize any legacy/stale value.
+        if data.get("llm_provider") != "litert":
+            data["llm_provider"] = "litert"
+        return data
     return {}
 
 
@@ -968,13 +843,6 @@ def api_suggest_names():
         abort(400)
 
     settings = _load_settings()
-    provider = settings.get("llm_provider", "ollama")
-    if provider not in SUPPORTED_LLM_PROVIDERS:
-        msg = (
-            f"Provider {provider!r} is not supported. "
-            f"Choose from: {', '.join(SUPPORTED_LLM_PROVIDERS)}."
-        )
-        return jsonify({"error": msg}), 400
     model = settings.get("llm_model", DEFAULT_LLM_MODEL)
 
     memory = _get_memory()
@@ -1002,7 +870,7 @@ def api_suggest_names():
         if file_path is None:
             continue
 
-        suggested = _call_model_suggest(file_path, model, rec.extension, provider)
+        suggested = _call_litert_suggest(file_path, model, rec.extension)
         if suggested:
             keywords = extract_keywords(suggested)
             rec.meta["keywords"] = keywords
@@ -1022,28 +890,12 @@ def api_suggest_names():
 
 @app.route("/api/llm/health")
 def api_llm_health():
-    """Provider-aware reachability check used by the frontend before a suggest batch."""
-    settings = _load_settings()
-    provider = settings.get("llm_provider", "ollama")
-    if provider == "litert":
-        ok = _litert_healthy()
-        message = (
-            "" if ok else "LiteRT server is not running — use the Start button above and try again."
-        )
-    else:
-        ok = _ollama_healthy()
-        message = (
-            "" if ok else "Ollama is not reachable — start it with 'ollama serve' and try again."
-        )
-    return jsonify({"ok": ok, "provider": provider, "error": message}), 200 if ok else 503
-
-
-@app.route("/api/ollama/health")
-def api_ollama_health():
-    """Backward-compatible alias of /api/llm/health for the Ollama provider."""
-    ok = _ollama_healthy()
-    message = "" if ok else "Ollama is not reachable — start it with 'ollama serve' and try again."
-    return jsonify({"ok": ok, "error": message}), 200 if ok else 503
+    """LiteRT reachability check used by the frontend before a suggest batch."""
+    ok = _litert_healthy()
+    message = (
+        "" if ok else "LiteRT server is not running — use the Start button above and try again."
+    )
+    return jsonify({"ok": ok, "provider": "litert", "error": message}), 200 if ok else 503
 
 
 @app.route("/api/accept-suggestion", methods=["POST"])
@@ -1146,7 +998,7 @@ def api_get_settings():
     s = _load_settings()
     return jsonify(
         {
-            "llm_provider": s.get("llm_provider", "ollama"),
+            "llm_provider": s.get("llm_provider", "litert"),
             "llm_model": s.get("llm_model", DEFAULT_LLM_MODEL),
             "auto_suggest": s.get("auto_suggest", False),
             "prune_max_age_days": s.get("prune_max_age_days", 90),

@@ -498,11 +498,11 @@ def test_suggest_names_with_real_file_and_mock_llm(client, monkeypatch):
     fp = json.loads(r.data)[0]["fingerprint"]
     assert json.loads(r.data)[0]["memory_status"] == "new"
 
-    # Mock the Ollama call
+    # Mock the LiteRT call
     def mock_suggest(image_path, model, extension=".png"):
         return "customer-onboarding" + extension
 
-    monkeypatch.setattr(flask_app, "_call_ollama_suggest", mock_suggest)
+    monkeypatch.setattr(flask_app, "_call_litert_suggest", mock_suggest)
 
     # Now suggest names
     r = c.post(
@@ -543,7 +543,7 @@ def test_suggest_names_skips_already_processed(client, monkeypatch):
         call_count += 1
         return "should-not-be-called" + extension
 
-    monkeypatch.setattr(flask_app, "_call_ollama_suggest", mock_suggest)
+    monkeypatch.setattr(flask_app, "_call_litert_suggest", mock_suggest)
 
     r = c.post(
         "/api/suggest-names",
@@ -567,7 +567,7 @@ def test_suggest_names_handles_llm_returning_none(client, monkeypatch):
     def mock_suggest(image_path, model, extension=".png"):
         return None
 
-    monkeypatch.setattr(flask_app, "_call_ollama_suggest", mock_suggest)
+    monkeypatch.setattr(flask_app, "_call_litert_suggest", mock_suggest)
 
     r = c.post(
         "/api/suggest-names",
@@ -820,8 +820,8 @@ def test_settings_get_returns_defaults(client):
     r = c.get("/api/settings")
     assert r.status_code == 200
     data = json.loads(r.data)
-    assert data["llm_provider"] == "ollama"
-    assert data["llm_model"] == "gemma4:e2b"
+    assert data["llm_provider"] == "litert"
+    assert data["llm_model"] == "gemma4-e2b"
     assert data["auto_suggest"] is False
 
 
@@ -839,7 +839,7 @@ def test_settings_put_and_get_roundtrip(client):
     data = json.loads(r.data)
     assert data["llm_model"] == "qwen2.5:1.5b"
     assert data["auto_suggest"] is True
-    assert data["llm_provider"] == "ollama"  # unchanged
+    assert data["llm_provider"] == "litert"  # unchanged
 
 
 def test_settings_persists_to_disk(client):
@@ -893,138 +893,33 @@ def test_settings_put_rejects_wrong_types(client):
     assert r.status_code == 400
 
 
-def test_suggest_names_rejects_unsupported_provider(client):
-    """When provider is set to 'mlx', the endpoint should reject with a clear message."""
-    c, _ = client
-    c.put(
-        "/api/settings",
-        data=json.dumps({"llm_provider": "mlx"}),
-        content_type="application/json",
-    )
-    r = c.post(
-        "/api/suggest-names",
-        data=json.dumps({"fingerprints": ["fp1"]}),
-        content_type="application/json",
-    )
-    assert r.status_code == 400
-    data = json.loads(r.data)
-    assert "is not supported" in data["error"]
-    assert "ollama" in data["error"] and "litert" in data["error"]
-
-
-# ── _call_ollama_suggest sanitization ────────────────────────────────────
-
-
-def test_call_ollama_suggest_sanitizes_filename(tmp_path, monkeypatch):
+def test_sanitize_suggestion_basic(tmp_path):
     """Verify the sanitization logic produces safe filenames."""
-    import json as _json
-
-    img = tmp_path / "test.png"
-    img.write_bytes(b"fake-png-data")
-
-    class FakeResponse:
-        def read(self):
-            return _json.dumps(
-                {"message": {"content": "  Hello World! This is GREAT  "}},
-            ).encode()
-
-        def __enter__(self):
-            return self
-
-        def __exit__(self, *a):
-            pass
-
-    def mock_urlopen(req, timeout=None):
-        return FakeResponse()
-
-    monkeypatch.setattr(flask_app.urllib.request, "urlopen", mock_urlopen)
-
-    result = flask_app._call_ollama_suggest(img, "test-model")
+    result = flask_app._sanitize_suggestion("  Hello World! This is GREAT  ")
     assert result == "hello-world-this-is-great.png"
 
 
-def test_call_ollama_suggest_collapses_repeated_hyphens(tmp_path, monkeypatch):
+def test_sanitize_suggestion_collapses_repeated_hyphens(tmp_path):
     """Multi-space / punctuation gaps should not produce '--'."""
-    import json as _json
-
-    img = tmp_path / "test.png"
-    img.write_bytes(b"fake-data")
-
-    class FakeResponse:
-        def read(self):
-            return _json.dumps(
-                {"message": {"content": "foo   bar!!!baz"}},
-            ).encode()
-
-        def __enter__(self):
-            return self
-
-        def __exit__(self, *a):
-            pass
-
-    monkeypatch.setattr(
-        flask_app.urllib.request, "urlopen", lambda req, timeout=None: FakeResponse()
-    )
-
-    result = flask_app._call_ollama_suggest(img, "test-model")
+    result = flask_app._sanitize_suggestion("foo   bar!!!baz")
     # "foo   bar!!!baz" → "foo---barbaz" → collapsed to "foo-barbaz"
     assert result == "foo-barbaz.png"
     assert "--" not in result
 
 
-def test_call_ollama_suggest_strips_trailing_hyphen_after_truncation(tmp_path, monkeypatch):
+def test_sanitize_suggestion_strips_trailing_hyphen_after_truncation(tmp_path):
     """Truncation must not leave a trailing hyphen."""
-    import json as _json
-
-    img = tmp_path / "test.png"
-    img.write_bytes(b"fake-data")
-
     # A long string where the 120-char slice cuts right after a hyphen
     long_text = "a" * 119 + "-b"
-
-    class FakeResponse:
-        def read(self):
-            return _json.dumps(
-                {"message": {"content": long_text}},
-            ).encode()
-
-        def __enter__(self):
-            return self
-
-        def __exit__(self, *a):
-            pass
-
-    monkeypatch.setattr(
-        flask_app.urllib.request, "urlopen", lambda req, timeout=None: FakeResponse()
-    )
-
-    result = flask_app._call_ollama_suggest(img, "test-model")
+    result = flask_app._sanitize_suggestion(long_text)
+    assert result is not None
     assert not result.startswith("-")
     assert not result.rstrip(".png").endswith("-")
 
 
-def test_call_ollama_suggest_preserves_extension(tmp_path, monkeypatch):
+def test_sanitize_suggestion_preserves_extension(tmp_path):
     """The extension parameter is used, not hardcoded .png."""
-    import json as _json
-
-    img = tmp_path / "test.jpg"
-    img.write_bytes(b"fake-jpg-data")
-
-    class FakeResponse:
-        def read(self):
-            return _json.dumps({"message": {"content": "sunny beach"}}).encode()
-
-        def __enter__(self):
-            return self
-
-        def __exit__(self, *a):
-            pass
-
-    monkeypatch.setattr(
-        flask_app.urllib.request, "urlopen", lambda req, timeout=None: FakeResponse()
-    )
-
-    result = flask_app._call_ollama_suggest(img, "test-model", extension=".jpg")
+    result = flask_app._sanitize_suggestion("sunny beach", extension=".jpg")
     assert result == "sunny-beach.jpg"
 
 
@@ -1042,7 +937,7 @@ def test_suggest_names_preserves_non_png_extension(client, monkeypatch):
         assert extension == ".jpg"
         return "beach-photo" + extension
 
-    monkeypatch.setattr(flask_app, "_call_ollama_suggest", mock_suggest)
+    monkeypatch.setattr(flask_app, "_call_litert_suggest", mock_suggest)
 
     r = c.post(
         "/api/suggest-names",
@@ -1331,7 +1226,7 @@ def test_suggest_names_stores_keywords_in_meta(client, monkeypatch):
     def mock_suggest(image_path, model, extension=".png"):
         return "customer-onboarding-discussion" + extension
 
-    monkeypatch.setattr(flask_app, "_call_ollama_suggest", mock_suggest)
+    monkeypatch.setattr(flask_app, "_call_litert_suggest", mock_suggest)
 
     c.post(
         "/api/suggest-names",
@@ -1373,7 +1268,7 @@ def test_suggest_names_returns_failures_list(client, monkeypatch):
     def mock_suggest(image_path, model, extension=".png"):
         return None
 
-    monkeypatch.setattr(flask_app, "_call_ollama_suggest", mock_suggest)
+    monkeypatch.setattr(flask_app, "_call_litert_suggest", mock_suggest)
 
     r = c.post(
         "/api/suggest-names",
@@ -1397,7 +1292,7 @@ def test_suggest_names_empty_failures_on_success(client, monkeypatch):
     def mock_suggest(image_path, model, extension=".png"):
         return "good-suggestion" + extension
 
-    monkeypatch.setattr(flask_app, "_call_ollama_suggest", mock_suggest)
+    monkeypatch.setattr(flask_app, "_call_litert_suggest", mock_suggest)
 
     r = c.post(
         "/api/suggest-names",
@@ -1409,35 +1304,10 @@ def test_suggest_names_empty_failures_on_success(client, monkeypatch):
     assert fp in data["suggestions"]
 
 
-def test_call_ollama_suggest_fails_fast_on_connection_refused(tmp_path, monkeypatch):
-    """Connection refused (Errno 61) is permanent — no retries, no backoff sleep."""
-    img = tmp_path / "test.png"
-    img.write_bytes(b"fake-data")
-
-    call_count = 0
-    sleeps = []
-
-    def mock_urlopen(req, timeout=None):
-        nonlocal call_count
-        call_count += 1
-        raise urllib.error.URLError(ConnectionRefusedError(61, "Connection refused"))
-
-    def mock_sleep(seconds):
-        sleeps.append(seconds)
-
-    monkeypatch.setattr(flask_app.urllib.request, "urlopen", mock_urlopen)
-    monkeypatch.setattr(flask_app.time, "sleep", mock_sleep)
-
-    result = flask_app._call_ollama_suggest(img, "test-model")
-    assert result is None
-    assert call_count == 1, "connection refused should fail fast (no retries)"
-    assert len(sleeps) == 0, "no backoff sleep for a permanent error"
-
-
-def test_call_ollama_suggest_retries_on_transient_error(tmp_path, monkeypatch):
+def test_call_litert_suggest_retries_on_transient_error(tmp_path, monkeypatch):
     """Unrecognized URLError stays retryable — 3 attempts before giving up."""
     img = tmp_path / "test.png"
-    img.write_bytes(b"fake-data")
+    img.write_bytes(_make_png(10, 10))
 
     call_count = 0
 
@@ -1449,192 +1319,39 @@ def test_call_ollama_suggest_retries_on_transient_error(tmp_path, monkeypatch):
     monkeypatch.setattr(flask_app.urllib.request, "urlopen", mock_urlopen)
     monkeypatch.setattr(flask_app.time, "sleep", lambda s: None)
 
-    result = flask_app._call_ollama_suggest(img, "test-model")
+    result = flask_app._call_litert_suggest(img, "test-model")
     assert result is None
     assert call_count == 3  # initial + 2 retries = 3 attempts
 
 
-def test_is_retryable_ollama_error_classifier():
-    """_is_retryable_ollama_error classifies transient vs permanent errors."""
+def test_is_retryable_llm_error_classifier():
+    """_is_retryable_llm_error classifies transient vs permanent errors."""
     # Not retryable: connection refused, DNS failure, 4xx (except 429)
-    assert not flask_app._is_retryable_ollama_error(
-        ConnectionRefusedError(61, "Connection refused")
-    )
-    assert not flask_app._is_retryable_ollama_error(
+    assert not flask_app._is_retryable_llm_error(ConnectionRefusedError(61, "Connection refused"))
+    assert not flask_app._is_retryable_llm_error(
         urllib.error.URLError(ConnectionRefusedError(61, "Connection refused"))
     )
-    assert not flask_app._is_retryable_ollama_error(socket.gaierror())
-    assert not flask_app._is_retryable_ollama_error(
+    assert not flask_app._is_retryable_llm_error(socket.gaierror())
+    assert not flask_app._is_retryable_llm_error(
         urllib.error.HTTPError("http://x/api/chat", 404, "Not Found", None, None)
     )
-    assert not flask_app._is_retryable_ollama_error(
+    assert not flask_app._is_retryable_llm_error(
         urllib.error.HTTPError("http://x/api/chat", 400, "Bad Request", None, None)
     )
 
     # Retryable: timeouts, resets, broken pipes, 429, 5xx, unknown errors
-    assert flask_app._is_retryable_ollama_error(TimeoutError())
-    assert flask_app._is_retryable_ollama_error(TimeoutError())
-    assert flask_app._is_retryable_ollama_error(
-        ConnectionResetError(54, "Connection reset by peer")
-    )
-    assert flask_app._is_retryable_ollama_error(BrokenPipeError(32, "Broken pipe"))
-    assert flask_app._is_retryable_ollama_error(
+    assert flask_app._is_retryable_llm_error(TimeoutError())
+    assert flask_app._is_retryable_llm_error(TimeoutError())
+    assert flask_app._is_retryable_llm_error(ConnectionResetError(54, "Connection reset by peer"))
+    assert flask_app._is_retryable_llm_error(BrokenPipeError(32, "Broken pipe"))
+    assert flask_app._is_retryable_llm_error(
         urllib.error.HTTPError("http://x/api/chat", 429, "Too Many Requests", None, None)
     )
-    assert flask_app._is_retryable_ollama_error(
+    assert flask_app._is_retryable_llm_error(
         urllib.error.HTTPError("http://x/api/chat", 500, "Server Error", None, None)
     )
-    assert flask_app._is_retryable_ollama_error(urllib.error.URLError("temporary failure"))
-    assert flask_app._is_retryable_ollama_error(OSError("temporary failure"))
-
-
-class _FakeHealthResponse:
-    """Minimal stand-in for urllib response with .status and a .read()."""
-
-    def __init__(self, status):
-        self.status = status
-
-    def read(self):
-        return b"{}"
-
-    def __enter__(self):
-        return self
-
-    def __exit__(self, *a):
-        return None
-
-
-def test_ollama_healthy_true_on_200(monkeypatch):
-    """GET /api/tags returning 200 → healthy."""
-    monkeypatch.setattr(flask_app, "_ollama_health_cache", None)
-    monkeypatch.setattr(
-        flask_app.urllib.request, "urlopen", lambda url, timeout=None: _FakeHealthResponse(200)
-    )
-
-    assert flask_app._ollama_healthy() is True
-
-
-def test_ollama_healthy_false_on_connection_refused(monkeypatch):
-    """Connection refused → unhealthy."""
-
-    def mock_urlopen(url, timeout=None):
-        raise urllib.error.URLError(ConnectionRefusedError(61, "Connection refused"))
-
-    monkeypatch.setattr(flask_app, "_ollama_health_cache", None)
-    monkeypatch.setattr(flask_app.urllib.request, "urlopen", mock_urlopen)
-
-    assert flask_app._ollama_healthy() is False
-
-
-def test_ollama_healthy_caches_negative_verdict(monkeypatch):
-    """A False verdict is cached for the TTL even if the server comes back."""
-    calls = []
-
-    def mock_urlopen(url, timeout=None):
-        calls.append(1)
-        raise urllib.error.URLError(ConnectionRefusedError(61, "Connection refused"))
-
-    monkeypatch.setattr(flask_app, "_ollama_health_cache", None)
-    monkeypatch.setattr(flask_app.urllib.request, "urlopen", mock_urlopen)
-
-    assert flask_app._ollama_healthy() is False
-    assert len(calls) == 1
-
-    # Server "comes back", but the cached False verdict is still fresh.
-    monkeypatch.setattr(
-        flask_app.urllib.request, "urlopen", lambda url, timeout=None: _FakeHealthResponse(200)
-    )
-    assert flask_app._ollama_healthy() is False  # served from cache
-    assert len(calls) == 1
-
-
-def test_ollama_health_route(client, monkeypatch):
-    """GET /api/ollama/health returns 200 when healthy, 503 when not."""
-    c, _ = client
-
-    monkeypatch.setattr(flask_app, "_ollama_healthy", lambda: True)
-    r = c.get("/api/ollama/health")
-    assert r.status_code == 200
-    data = json.loads(r.data)
-    assert data["ok"] is True
-    assert data["error"] == ""
-
-    monkeypatch.setattr(flask_app, "_ollama_healthy", lambda: False)
-    r = c.get("/api/ollama/health")
-    assert r.status_code == 503
-    data = json.loads(r.data)
-    assert data["ok"] is False
-    assert data["error"]  # non-empty error message
-
-
-def test_call_ollama_suggest_succeeds_on_retry(tmp_path, monkeypatch):
-    """Second attempt succeeds → returns suggestion."""
-    import json as _json
-
-    img = tmp_path / "test.png"
-    img.write_bytes(b"fake-data")
-
-    call_count = 0
-
-    class FakeResponse:
-        def read(self):
-            return _json.dumps({"message": {"content": "retry-success"}}).encode()
-
-        def __enter__(self):
-            return self
-
-        def __exit__(self, *a):
-            pass
-
-    def mock_urlopen(req, timeout=None):
-        nonlocal call_count
-        call_count += 1
-        if call_count == 1:
-            raise OSError("temporary failure")
-        return FakeResponse()
-
-    monkeypatch.setattr(flask_app.urllib.request, "urlopen", mock_urlopen)
-    monkeypatch.setattr(flask_app.time, "sleep", lambda s: None)
-
-    result = flask_app._call_ollama_suggest(img, "test-model")
-    assert result == "retry-success.png"
-    assert call_count == 2
-
-
-def test_call_ollama_suggest_no_retry_on_bad_json(tmp_path, monkeypatch):
-    """JSONDecodeError fails fast (no retry, no sleep)."""
-    img = tmp_path / "test.png"
-    img.write_bytes(b"fake-data")
-
-    call_count = 0
-    sleep_called = False
-
-    class BadResponse:
-        def read(self):
-            return b"not json at all"
-
-        def __enter__(self):
-            return self
-
-        def __exit__(self, *a):
-            pass
-
-    def mock_urlopen(req, timeout=None):
-        nonlocal call_count
-        call_count += 1
-        return BadResponse()
-
-    def mock_sleep(s):
-        nonlocal sleep_called
-        sleep_called = True
-
-    monkeypatch.setattr(flask_app.urllib.request, "urlopen", mock_urlopen)
-    monkeypatch.setattr(flask_app.time, "sleep", mock_sleep)
-
-    result = flask_app._call_ollama_suggest(img, "test-model")
-    assert result is None
-    assert call_count == 1, "JSONDecodeError should not retry"
-    assert not sleep_called, "No sleep on JSON error"
+    assert flask_app._is_retryable_llm_error(urllib.error.URLError("temporary failure"))
+    assert flask_app._is_retryable_llm_error(OSError("temporary failure"))
 
 
 # ── Bug fix: category hint clearing ─────────────────────────────────────────
