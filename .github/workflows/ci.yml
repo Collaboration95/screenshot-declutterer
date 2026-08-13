@@ -14,7 +14,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.10", "3.11"]
+        python-version: ["3.10", "3.11", "3.12", "3.13"]
 
     steps:
       - name: Check out repository
@@ -36,6 +36,9 @@ jobs:
 
       - name: Run Ruff
         run: uv run ruff check .
+
+      - name: Check Ruff formatting
+        run: uv run ruff format --check .
 
       - name: Run Pyright
         run: uv run pyright

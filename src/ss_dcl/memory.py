@@ -216,28 +216,9 @@ class MemoryStore:
         """Look up a record by its last-known or original filename (O(1))."""
         return self._name_index.get(filename)
 
-    def get_status(self, fingerprint: str) -> str | None:
-        """Return the status for *fingerprint*, or ``None`` if unknown."""
-        rec = self._files.get(fingerprint)
-        return rec.status if rec else None
-
-    def get_unprocessed(self, active_fingerprints: set[str]) -> list[FileRecord]:
-        """Return records whose fingerprint is in *active_fingerprints* and
-        whose status is ``"new"`` (not yet processed by the LLM).
-        """
-        return [
-            self._files[fp]
-            for fp in active_fingerprints
-            if fp in self._files and self._files[fp].status == "new"
-        ]
-
     def all_records(self) -> list[FileRecord]:
         """Return all stored records."""
         return list(self._files.values())
-
-    @property
-    def count(self) -> int:
-        return len(self._files)
 
     # ── Mutations ────────────────────────────────────────────────
 
@@ -323,12 +304,6 @@ class MemoryStore:
             raise KeyError(f"Unknown fingerprint: {fingerprint}")
         rec.status = "trashed"
         rec.last_updated = _now_iso()
-
-    def remove(self, fingerprint: str) -> None:
-        """Remove a record entirely."""
-        rec = self._files.pop(fingerprint, None)
-        if rec is not None:
-            self._unindex_record(rec)
 
     # ── Maintenance ──────────────────────────────────────────────
 

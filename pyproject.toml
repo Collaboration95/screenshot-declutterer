@@ -43,6 +43,10 @@ include = ["src", "tests", "tools"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src"]
+addopts = "--cov=src --cov-report=term-missing --cov-fail-under=85"
+
+[tool.coverage.run]
+branch = true
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/ss_dcl"]
