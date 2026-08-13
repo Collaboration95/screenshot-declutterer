@@ -3,6 +3,7 @@ from unittest.mock import patch
 
 import pytest
 import src.ss_dcl.app as flask_app
+import src.ss_dcl.thumbs as thumbs
 from src.ss_dcl.memory import atomic_write
 
 from helpers import _make_png
@@ -51,7 +52,7 @@ def test_generate_thumbnail_unit(client):
     src = desktop / "Screenshot 2024-01-01 at 12.00.00 PM.png"
     src.write_bytes(_make_png(500, 500))
     dst = desktop / "thumbs" / src.name
-    flask_app._generate_thumbnail(src, dst)
+    thumbs._generate_thumbnail(src, dst)
     assert dst.exists()
     assert dst.stat().st_size < src.stat().st_size
 

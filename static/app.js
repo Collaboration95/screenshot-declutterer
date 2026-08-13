@@ -125,16 +125,6 @@ document.getElementById("theme-toggle").addEventListener("click", () => {
 });
 _updateThemeLabel();
 
-// ── Sanitise filenames for safe DOM insertion ────────────────────────────────
-function sanitise(str) {
-  return str
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;");
-}
-
 // ── Settings state (loaded on init) ────────────────────────────────────────────
 let llmSettings = { llm_provider: "litert", llm_model: "gemma4-e2b", auto_suggest: false, prune_max_age_days: 90 };
 
@@ -291,7 +281,7 @@ function makeCard(filename, column, fingerprint, memoryStatus, suggestedName, su
 
   const img = document.createElement("img");
   img.src = `/api/thumb/${encodeURIComponent(filename)}`;
-  img.alt = sanitise(filename);
+  img.alt = filename;
   img.loading = "lazy";
   img.decoding = "async";
 
@@ -699,7 +689,7 @@ function attachPreview(card) {
 function openLightbox(card) {
   lightbox.dataset.currentFilename = card.dataset.filename;
   lightboxImg.src = `/api/image/${encodeURIComponent(card.dataset.filename)}`;
-  lightboxImg.alt = sanitise(card.dataset.filename);
+  lightboxImg.alt = card.dataset.filename;
   _updateLightboxBar(card.dataset.filename);
   lightbox.hidden = false;
 }
@@ -715,7 +705,7 @@ function _lightboxNavigate(direction) {
   const nextName = nextCard.dataset.filename;
   lightbox.dataset.currentFilename = nextName;
   lightboxImg.src = `/api/image/${encodeURIComponent(nextName)}`;
-  lightboxImg.alt = sanitise(nextName);
+  lightboxImg.alt = nextName;
   _updateLightboxBar(nextName);
 }
 
