@@ -125,16 +125,6 @@ document.getElementById("theme-toggle").addEventListener("click", () => {
 });
 _updateThemeLabel();
 
-// ── Sanitise filenames for safe DOM insertion ────────────────────────────────
-function sanitise(str) {
-  return str
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;");
-}
-
 // ── Settings state (loaded on init) ────────────────────────────────────────────
 let llmSettings = { llm_provider: "litert", llm_model: "gemma4-e2b", auto_suggest: false, prune_max_age_days: 90 };
 
@@ -291,7 +281,7 @@ function makeCard(filename, column, fingerprint, memoryStatus, suggestedName, su
 
   const img = document.createElement("img");
   img.src = `/api/thumb/${encodeURIComponent(filename)}`;
-  img.alt = sanitise(filename);
+  img.alt = filename;
   img.loading = "lazy";
   img.decoding = "async";
 
@@ -554,26 +544,10 @@ batchClearBtn.addEventListener("click", clearSelection);
 // the cursor like the macOS Photos app. HTML5 DnD only supports ONE drag
 // image (setDragImage), so we composite the whole fanned stack onto a single
 // canvas. Purely visual — drop/undo/batch logic is untouched.
+// Fan geometry lives in ss_dcl_pure.js (SsDcl.batchFanLayout) — unit-tested.
 const MAX_GHOST_TILES = 6;
-const GHOST_TILE_W = 252; // 4:3, matches the thumbnail ratio (1.5× of 168)
-const GHOST_TILE_H = 189;
-
-// Deterministic fan layout: tiles tilt away from the middle card, which
-// stays straight-on as the "front" of the stack. Pure function → testable.
-// Horizontal/vertical stagger scales with tile size so the fan stays legible
-// at any tile size.
-function batchFanLayout(tileCount) {
-  const layout = [];
-  const mid = (tileCount - 1) / 2;
-  for (let i = 0; i < tileCount; i++) {
-    layout.push({
-      dx: Math.round((i - mid) * (GHOST_TILE_W * 0.112)), // ≈28px @ 252px tiles
-      dy: Math.round(Math.abs(i - mid) * -(GHOST_TILE_H * 0.042)), // ≈ -8px
-      rot: Math.round((i - mid) * 7),
-    });
-  }
-  return layout;
-}
+const GHOST_TILE_W = SsDcl.GHOST_TILE_W;
+const GHOST_TILE_H = SsDcl.GHOST_TILE_H;
 
 function ghostRoundedRect(ctx, x, y, w, h, r) {
   ctx.beginPath();
@@ -608,7 +582,7 @@ function buildBatchDragGhost(cards, total) {
   const drawable = cards.filter(card => card.querySelector("img"));
   if (drawable.length === 0) return null; // nothing usable — native ghost is fine
   const tileCount = Math.min(drawable.length, MAX_GHOST_TILES);
-  const layout = batchFanLayout(tileCount);
+  const layout = SsDcl.batchFanLayout(tileCount);
 
   // Canvas size: fan extent + rotation slack, so rotated corners never clip.
   const maxRot = Math.max(...layout.map(t => Math.abs(t.rot))) * (Math.PI / 180);
@@ -699,7 +673,7 @@ function attachPreview(card) {
 function openLightbox(card) {
   lightbox.dataset.currentFilename = card.dataset.filename;
   lightboxImg.src = `/api/image/${encodeURIComponent(card.dataset.filename)}`;
-  lightboxImg.alt = sanitise(card.dataset.filename);
+  lightboxImg.alt = card.dataset.filename;
   _updateLightboxBar(card.dataset.filename);
   lightbox.hidden = false;
 }
@@ -715,7 +689,7 @@ function _lightboxNavigate(direction) {
   const nextName = nextCard.dataset.filename;
   lightbox.dataset.currentFilename = nextName;
   lightboxImg.src = `/api/image/${encodeURIComponent(nextName)}`;
-  lightboxImg.alt = sanitise(nextName);
+  lightboxImg.alt = nextName;
   _updateLightboxBar(nextName);
 }
 
@@ -831,6 +805,35 @@ function _cancelLightboxRename() {
   lightboxBar.style.minWidth = "";
 }
 
+function applyRenameToCard(card, oldName, newName) {
+  // Shared post-rename DOM/state dance (issue #101): used by the lightbox
+  // rename, the rename modal, and acceptSuggestion.
+  const col = getCardColumn(card);
+  if (col === "unsorted") {
+    decisions.delete(oldName);
+  } else {
+    decisions.delete(oldName);
+    decisions.set(newName, col);
+  }
+  card.dataset.filename = newName;
+  // A rename always transitions status to "renamed".
+  // fingerprint stays unchanged — it's the stable identity key
+  // (original macOS name + size), not a derived filename attribute.
+  card.dataset.memoryStatus = "renamed";
+  card.dataset.suggestedName = "";
+  const badge = card.querySelector(".suggestion-badge");
+  if (badge) badge.remove();
+  // Clear category hint
+  card.classList.remove("category-hint-keep", "category-hint-trash");
+  delete card.dataset.suggestedCategory;
+  const cardImg = card.querySelector("img");
+  cardImg.alt = newName;
+  cardImg.src = `/api/thumb/${encodeURIComponent(newName)}?t=${Date.now()}`;
+  setCardActions(card, col);
+  updateCounts();
+  saveState();
+}
+
 function _confirmLightboxRename() {
   if (lightboxRenameInput.disabled || lightboxRenameInput.hidden || lightbox.hidden) return;
   const oldName = lightbox.dataset.currentFilename;
@@ -846,7 +849,7 @@ function _confirmLightboxRename() {
     _cancelLightboxRename();
     return;
   }
-  if (newName !== Path_name(newName)) {
+  if (newName !== SsDcl.Path_name(newName)) {
     lightboxRenameInput.classList.add("error");
     lightboxRenameError.textContent = "Filename must not contain path separators.";
     lightboxRenameInput.focus();
@@ -872,30 +875,7 @@ function _confirmLightboxRename() {
       }
       const card = document.querySelector(`[data-filename="${CSS.escape(oldName)}"]`);
       if (card) {
-        const col = getCardColumn(card);
-        if (col === "unsorted") {
-          decisions.delete(oldName);
-        } else {
-          decisions.delete(oldName);
-          decisions.set(newName, col);
-        }
-        card.dataset.filename = newName;
-        // A rename always transitions status to "renamed".
-        // fingerprint stays unchanged — it's the stable identity key
-        // (original macOS name + size), not a derived filename attribute.
-        card.dataset.memoryStatus = "renamed";
-        card.dataset.suggestedName = "";
-        const badge = card.querySelector(".suggestion-badge");
-        if (badge) badge.remove();
-        // Clear category hint
-        card.classList.remove("category-hint-keep", "category-hint-trash");
-        delete card.dataset.suggestedCategory;
-        const cardImg = card.querySelector("img");
-        cardImg.alt = newName;
-        cardImg.src = `/api/thumb/${encodeURIComponent(newName)}?t=${Date.now()}`;
-        setCardActions(card, col);
-        updateCounts();
-        saveState();
+        applyRenameToCard(card, oldName, newName);
       }
       lightbox.dataset.currentFilename = newName;
       lightboxImg.src = `/api/image/${encodeURIComponent(newName)}?t=${Date.now()}`;
@@ -965,7 +945,11 @@ function suggestBatch(fingerprints) {
 
   _suggestCancelled = false;
 
-  const chunkSize = 1;
+  // Chunk requests (issue #81): the backend parallelizes LLM calls per
+  // chunk, so a larger chunk cuts round trips without serializing anything.
+  // Chunking logic lives in ss_dcl_pure.js (SsDcl.chunked) — unit-tested.
+  const chunkSize = 5;
+  const chunks = SsDcl.chunked(fingerprints, chunkSize);
   let completed = 0;
   let firstError = null;
   let failedCount = 0;
@@ -977,13 +961,13 @@ function suggestBatch(fingerprints) {
     setTimeout(() => { suggestProgress.hidden = true; suggestAllBtn.disabled = false; }, 4000);
   }
 
-  function processChunk(startIdx) {
+  function processChunk(chunkIdx) {
     if (_suggestCancelled) {
       suggestProgressText.textContent = `Cancelled (${completed} processed)`;
       setTimeout(() => { suggestProgress.hidden = true; suggestAllBtn.disabled = false; }, 1500);
       return;
     }
-    if (startIdx >= fingerprints.length) {
+    if (chunkIdx >= chunks.length) {
       suggestProgressFill.style.width = "100%";
       if (completed === 0 && firstError) {
         suggestProgressText.textContent = firstError;
@@ -1006,7 +990,7 @@ function suggestBatch(fingerprints) {
       return;
     }
 
-    const chunk = fingerprints.slice(startIdx, startIdx + chunkSize);
+    const chunk = chunks[chunkIdx];
 
     fetch("/api/suggest-names", {
       method: "POST",
@@ -1037,15 +1021,15 @@ function suggestBatch(fingerprints) {
           }
           completed++;
         }
-        const nextIdx = startIdx + chunkSize;
-        const pct = Math.round((Math.min(nextIdx, fingerprints.length) / fingerprints.length) * 100);
+        const nextIdx = chunkIdx + 1;
+        const pct = Math.round((Math.min((nextIdx) * chunkSize, fingerprints.length) / fingerprints.length) * 100);
         suggestProgressFill.style.width = pct + "%";
-        suggestProgressText.textContent = `${Math.min(nextIdx, fingerprints.length)} / ${fingerprints.length}`;
+        suggestProgressText.textContent = `${Math.min(nextIdx * chunkSize, fingerprints.length)} / ${fingerprints.length}`;
         processChunk(nextIdx);
       })
       .catch(() => {
         if (!firstError) firstError = providerErrorCopy();
-        const nextIdx = startIdx + chunkSize;
+        const nextIdx = chunkIdx + 1;
         processChunk(nextIdx);
       });
   }
@@ -1094,28 +1078,7 @@ function acceptSuggestion(card) {
       }
       const oldName = card.dataset.filename;
       const newName = data.new_name;
-      const col = getCardColumn(card);
-      if (col === "unsorted") {
-        decisions.delete(oldName);
-      } else {
-        decisions.delete(oldName);
-        decisions.set(newName, col);
-      }
-      card.dataset.filename = newName;
-      card.dataset.memoryStatus = "renamed";
-      card.dataset.suggestedName = "";
-      const cardImg = card.querySelector("img");
-      cardImg.alt = newName;
-      cardImg.src = `/api/thumb/${encodeURIComponent(newName)}?t=${Date.now()}`;
-      // Remove badge
-      const badge = card.querySelector(".suggestion-badge");
-      if (badge) badge.remove();
-      // Clear category hint
-      card.classList.remove("category-hint-keep", "category-hint-trash");
-      delete card.dataset.suggestedCategory;
-      setCardActions(card, col);
-      updateCounts();
-      saveState();
+      applyRenameToCard(card, oldName, newName);
     })
     .catch(() => alert("Network error — please try again."));
 }
@@ -1266,13 +1229,7 @@ function performUndo() {
 
 // ── Counts & status ──────────────────────────────────────────────────────────
 function updateCounts() {
-  let nKeep = 0, nTrash = 0;
-  for (const v of decisions.values()) {
-    if (v === "keep") nKeep++;
-    else nTrash++;
-  }
-  const nUnsorted = totalCards - nKeep - nTrash;
-  const total     = totalCards;
+  const { keep: nKeep, trash: nTrash, unsorted: nUnsorted, total } = SsDcl.computeCounts(decisions, totalCards);
 
   countUnsorted.textContent = nUnsorted;
   countTrash.textContent    = nTrash;
@@ -1323,7 +1280,7 @@ renameConfirm.addEventListener("click", () => {
     closeRenameModal();
     return;
   }
-  if (newName !== Path_name(newName)) {
+  if (newName !== SsDcl.Path_name(newName)) {
     renameError.textContent = "Filename must not contain path separators.";
     return;
   }
@@ -1342,30 +1299,7 @@ renameConfirm.addEventListener("click", () => {
         renameError.textContent = data.error || "Rename failed.";
         return;
       }
-      const col = getCardColumn(renameTarget);
-      if (col === "unsorted") {
-        decisions.delete(oldName);
-      } else {
-        decisions.delete(oldName);
-        decisions.set(newName, col);
-      }
-      renameTarget.dataset.filename = newName;
-      // A rename always transitions status to "renamed".
-      // fingerprint stays unchanged — it's the stable identity key
-      // (original macOS name + size), not a derived filename attribute.
-      renameTarget.dataset.memoryStatus = "renamed";
-      renameTarget.dataset.suggestedName = "";
-      const badge = renameTarget.querySelector(".suggestion-badge");
-      if (badge) badge.remove();
-      // Clear category hint
-      renameTarget.classList.remove("category-hint-keep", "category-hint-trash");
-      delete renameTarget.dataset.suggestedCategory;
-      const cardImg = renameTarget.querySelector("img");
-      cardImg.alt = newName;
-      cardImg.src = `/api/thumb/${encodeURIComponent(newName)}?t=${Date.now()}`;
-      setCardActions(renameTarget, col);
-      updateCounts();
-      saveState();
+      applyRenameToCard(renameTarget, oldName, newName);
       closeRenameModal();
     })
     .catch(() => {
@@ -1379,9 +1313,7 @@ renameInput.addEventListener("keydown", e => {
   if (e.key === "Escape") closeRenameModal();
 });
 
-function Path_name(filename) {
-  return filename.split("/").pop().split("\\").pop();
-}
+// Path_name lives in ss_dcl_pure.js (SsDcl.Path_name) — unit-tested.
 
 // ── Done button / modal ──────────────────────────────────────────────────────
 doneBtn.addEventListener("click", () => {

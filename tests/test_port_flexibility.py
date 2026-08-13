@@ -1,6 +1,6 @@
 import socket
 
-import src.ss_dcl.app as flask_app
+import ss_dcl.app as flask_app
 
 
 def test_find_free_port_returns_a_port():

@@ -129,12 +129,37 @@ class MemoryStore:
     def __init__(self, path: Path) -> None:
         self._path = path
         self._files: dict[str, FileRecord] = {}
+        self._name_index: dict[str, FileRecord] = {}
+
+    # ── Name index ─────────────────────────────────────────────────
+    #
+    # Maps every last_known_name / original_name to its record so
+    # lookup_by_name() is O(1) instead of a linear scan over all records
+    # (issue #79 — get_screenshots calls it per file per decision).
+
+    def _rebuild_name_index(self) -> None:
+        self._name_index.clear()
+        for rec in self._files.values():
+            for name in (rec.last_known_name, rec.original_name):
+                if name:
+                    self._name_index[name] = rec
+
+    def _index_name(self, rec: FileRecord) -> None:
+        for name in (rec.last_known_name, rec.original_name):
+            if name:
+                self._name_index[name] = rec
+
+    def _unindex_record(self, rec: FileRecord) -> None:
+        for name in (rec.last_known_name, rec.original_name):
+            if name and self._name_index.get(name) is rec:
+                del self._name_index[name]
 
     # ── Load / Save ──────────────────────────────────────────────
 
     def load(self) -> None:
         """Load memory from disk.  Resets to empty on corruption."""
         self._files.clear()
+        self._name_index.clear()
         if not self._path.exists():
             return
         try:
@@ -171,6 +196,7 @@ class MemoryStore:
                 )
             except (ValueError, TypeError) as exc:
                 logger.warning("Skipping malformed memory entry %s: %s", fp, exc)
+        self._rebuild_name_index()
 
     def save(self) -> None:
         """Persist current state to disk atomically."""
@@ -187,37 +213,12 @@ class MemoryStore:
         return self._files.get(fingerprint)
 
     def lookup_by_name(self, filename: str) -> FileRecord | None:
-        """Look up a record by its last-known or original filename.
-
-        Scans all records since the primary key is the fingerprint.
-        """
-        for rec in self._files.values():
-            if rec.last_known_name == filename or rec.original_name == filename:
-                return rec
-        return None
-
-    def get_status(self, fingerprint: str) -> str | None:
-        """Return the status for *fingerprint*, or ``None`` if unknown."""
-        rec = self._files.get(fingerprint)
-        return rec.status if rec else None
-
-    def get_unprocessed(self, active_fingerprints: set[str]) -> list[FileRecord]:
-        """Return records whose fingerprint is in *active_fingerprints* and
-        whose status is ``"new"`` (not yet processed by the LLM).
-        """
-        return [
-            self._files[fp]
-            for fp in active_fingerprints
-            if fp in self._files and self._files[fp].status == "new"
-        ]
+        """Look up a record by its last-known or original filename (O(1))."""
+        return self._name_index.get(filename)
 
     def all_records(self) -> list[FileRecord]:
         """Return all stored records."""
         return list(self._files.values())
-
-    @property
-    def count(self) -> int:
-        return len(self._files)
 
     # ── Mutations ────────────────────────────────────────────────
 
@@ -244,6 +245,7 @@ class MemoryStore:
             last_updated=now,
         )
         self._files[fp] = rec
+        self._name_index[name] = rec
         return rec
 
     def update_suggestion(self, fingerprint: str, suggested_name: str) -> None:
@@ -260,11 +262,13 @@ class MemoryStore:
         rec = self._files.get(fingerprint)
         if rec is None:
             raise KeyError(f"Unknown fingerprint: {fingerprint}")
+        self._unindex_record(rec)
         rec.user_name = user_name
         rec.last_known_name = user_name
         rec.status = "renamed"
         rec.last_updated = _now_iso()
         rec.meta.pop("suggested_category", None)
+        self._index_name(rec)
 
     def reject_suggestion(self, fingerprint: str) -> None:
         """Reject / dismiss the LLM suggestion (status → ``ignored``)."""
@@ -285,11 +289,13 @@ class MemoryStore:
         rec = self._files.get(fingerprint)
         if rec is None:
             raise KeyError(f"Unknown fingerprint: {fingerprint}")
+        self._unindex_record(rec)
         rec.last_known_name = new_name
         rec.user_name = new_name
         rec.status = "renamed"
         rec.last_updated = _now_iso()
         rec.meta.pop("suggested_category", None)
+        self._index_name(rec)
 
     def mark_trashed(self, fingerprint: str) -> None:
         """Mark a file as trashed (status → ``trashed``)."""
@@ -298,10 +304,6 @@ class MemoryStore:
             raise KeyError(f"Unknown fingerprint: {fingerprint}")
         rec.status = "trashed"
         rec.last_updated = _now_iso()
-
-    def remove(self, fingerprint: str) -> None:
-        """Remove a record entirely."""
-        self._files.pop(fingerprint, None)
 
     # ── Maintenance ──────────────────────────────────────────────
 
@@ -323,5 +325,6 @@ class MemoryStore:
             if (now - updated).days > max_age_days:
                 to_prune.append(fp)
         for fp in to_prune:
-            del self._files[fp]
+            rec = self._files.pop(fp)
+            self._unindex_record(rec)
         return len(to_prune)

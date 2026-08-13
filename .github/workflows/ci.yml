@@ -14,7 +14,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.10", "3.11"]
+        python-version: ["3.10", "3.11", "3.12", "3.13"]
 
     steps:
       - name: Check out repository
@@ -37,11 +37,17 @@ jobs:
       - name: Run Ruff
         run: uv run ruff check .
 
+      - name: Check Ruff formatting
+        run: uv run ruff format --check .
+
       - name: Run Pyright
         run: uv run pyright
 
       - name: Run tests
         run: uv run pytest
+
+      - name: Run JS unit tests
+        run: node --test "tests/js/**/*.test.js"
 
       - name: Audit dependencies
         run: uv run pip-audit

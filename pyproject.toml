@@ -1,3 +1,7 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
 [project]
 name = "screenshot-declutterer"
 
@@ -34,8 +38,20 @@ select = ["E", "F", "W", "I", "UP", "B", "SIM", "RUF"]
 [tool.pyright]
 pythonVersion = "3.10"
 typeCheckingMode = "basic"
-include = ["src"]
+include = ["src", "tests", "tools"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-pythonpath = ["src", "."]
+pythonpath = ["src"]
+addopts = "--cov=src --cov-report=term-missing --cov-fail-under=85 -m 'not perf and not integration'"
+markers = [
+    "perf: performance/load benchmarks (run with: uv run pytest -m perf)",
+    "integration: opt-in tests requiring a live LiteRT server (run with: SS_DCL_LITERT_URL=http://... uv run pytest -m integration)",
+]
+
+[tool.coverage.run]
+branch = true
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/ss_dcl"]
+force-include = { templates = "templates", static = "static" }

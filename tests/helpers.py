@@ -1,7 +1,7 @@
 import io
 
 
-def _make_png(width=10, height=10, color="red"):
+def _make_png(width: int = 10, height: int = 10, color: str = "red") -> bytes:
     from PIL import Image
 
     buf = io.BytesIO()

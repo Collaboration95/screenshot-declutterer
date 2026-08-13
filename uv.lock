@@ -1029,7 +1029,7 @@ wheels = [
 [[package]]
 name = "screenshot-declutterer"
 version = "0.5.0"
-source = { virtual = "." }
+source = { editable = "." }
 dependencies = [
     { name = "flask" },
     { name = "pillow" },

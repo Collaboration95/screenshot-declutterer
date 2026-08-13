@@ -2,10 +2,11 @@ import json
 from unittest.mock import patch
 
 import pytest
-import src.ss_dcl.app as flask_app
-from src.ss_dcl.memory import atomic_write
 
+import ss_dcl.app as flask_app
+import ss_dcl.thumbs as thumbs
 from helpers import _make_png
+from ss_dcl.memory import atomic_write
 
 
 def test_state_file_corruption(client):
@@ -51,7 +52,7 @@ def test_generate_thumbnail_unit(client):
     src = desktop / "Screenshot 2024-01-01 at 12.00.00 PM.png"
     src.write_bytes(_make_png(500, 500))
     dst = desktop / "thumbs" / src.name
-    flask_app._generate_thumbnail(src, dst)
+    thumbs._generate_thumbnail(src, dst)
     assert dst.exists()
     assert dst.stat().st_size < src.stat().st_size
 
@@ -95,7 +96,7 @@ def test_done_large_batch(client):
         name = f"Screenshot {i:04d}.png"
         (desktop / name).write_bytes(b"")
         names.append(name)
-    with patch("src.ss_dcl.app.send2trash"):
+    with patch("ss_dcl.app.send2trash"):
         r = c.post("/api/done", json={"filenames": names})
     assert r.status_code == 200
     assert r.get_json()["ok"] is True

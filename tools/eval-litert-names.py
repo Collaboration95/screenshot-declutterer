@@ -157,11 +157,13 @@ def run_litert_vision_pipeline(screenshot_path: Path, model_name: str) -> Screen
     latency reflect real usage rather than a re-implementation. Requires the
     LiteRT-LM server to be running (`~/.litert-lm` sample venv, port 9379).
     """
-    from ss_dcl.app import _call_litert_suggest
+    from ss_dcl.llm import _call_litert_suggest
 
     t0 = time.perf_counter()
     try:
-        suggested = _call_litert_suggest(screenshot_path, model_name)
+        suggested = _call_litert_suggest(
+            screenshot_path, model_name, screenshot_path.suffix.lower()
+        )
         error = None
     except Exception as exc:
         suggested = None

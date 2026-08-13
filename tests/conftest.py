@@ -1,16 +1,25 @@
+import os
+from collections.abc import Iterator
+from pathlib import Path
+
 import pytest
-import src.ss_dcl.app as flask_app
+from flask.testing import FlaskClient
+
+os.environ.setdefault("SS_DCL_LOG_FILE", "/tmp/ss-dcl-test-app.log")
+
+import ss_dcl.app as flask_app
+import ss_dcl.settings as settings_module
 
 
 @pytest.fixture()
-def client(tmp_path, monkeypatch):
+def client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[tuple[FlaskClient, Path]]:
     thumb_dir = tmp_path / "thumbs"
     thumb_dir.mkdir()
     monkeypatch.setattr(flask_app, "DESKTOP", tmp_path)
     monkeypatch.setattr(flask_app, "THUMB_DIR", thumb_dir)
     monkeypatch.setattr(flask_app, "STATE_FILE", tmp_path / "state.json")
     monkeypatch.setattr(flask_app, "MEMORY_FILE", tmp_path / "memory.json")
-    monkeypatch.setattr(flask_app, "SETTINGS_FILE", tmp_path / "settings.json")
+    monkeypatch.setattr(settings_module, "SETTINGS_FILE", tmp_path / "settings.json")
     flask_app._reset_memory()
     flask_app.app.config["TESTING"] = True
     with flask_app.app.test_client() as c:

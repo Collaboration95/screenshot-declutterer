@@ -24,3 +24,43 @@ def test_index_has_sort_select(client):
     c, _ = client
     r = c.get("/")
     assert b'id="sort-select"' in r.data
+
+
+def test_index_sets_security_headers(client):
+    c, _ = client
+    r = c.get("/")
+    assert r.headers.get("X-Content-Type-Options") == "nosniff"
+    assert r.headers.get("X-Frame-Options") == "DENY"
+    assert r.headers.get("Referrer-Policy") == "no-referrer"
+    assert r.headers.get("Permissions-Policy") == "camera=(), microphone=(), geolocation=()"
+    assert "default-src 'self'" in r.headers.get("Content-Security-Policy", "")
+
+
+def test_health_returns_ok_and_shape(client):
+    c, _ = client
+    r = c.get("/api/health")
+    assert r.status_code == 200
+    data = r.get_json()
+    assert data["ok"] is True
+    assert data["desktop_scanable"] is True
+    assert isinstance(data["version"], str) and data["version"]
+    assert data["memory_records"] == 0
+
+
+def test_health_503_when_desktop_unavailable(client, monkeypatch):
+    c, desktop = client
+    monkeypatch.setattr("ss_dcl.app.DESKTOP", desktop / "missing-dir")
+    r = c.get("/api/health")
+    assert r.status_code == 503
+    data = r.get_json()
+    assert data["ok"] is False
+    assert data["desktop_scanable"] is False
+
+
+def test_health_reports_memory_records(client):
+    c, desktop = client
+    (desktop / "Screenshot A.png").write_bytes(b"hello")
+    c.get("/api/screenshots")
+    r = c.get("/api/health")
+    assert r.status_code == 200
+    assert r.get_json()["memory_records"] == 1

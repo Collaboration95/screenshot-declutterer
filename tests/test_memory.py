@@ -13,9 +13,11 @@ Covers:
 
 import json
 from datetime import datetime, timezone
+from typing import Any
 
 import pytest
-from src.ss_dcl.memory import (
+
+from ss_dcl.memory import (
     FileRecord,
     MemoryStore,
     atomic_write,
@@ -62,8 +64,8 @@ class TestComputeFingerprint:
 
 
 class TestFileRecord:
-    def _make_record(self, **overrides):
-        defaults = dict(
+    def _make_record(self, **overrides: Any) -> FileRecord:
+        defaults: dict[str, Any] = dict(
             fingerprint="test|100",
             original_name="test",
             last_known_name="test",
@@ -159,10 +161,9 @@ class TestMemoryStoreCRUD:
 
     def test_empty_store(self, tmp_path):
         store = self._store(tmp_path)
-        assert store.count == 0
+        assert len(store._files) == 0
         assert store.lookup("nonexistent") is None
         assert store.lookup_by_name("nonexistent") is None
-        assert store.get_status("nonexistent") is None
 
     def test_record_file_creates_new(self, tmp_path):
         store = self._store(tmp_path)
@@ -181,13 +182,13 @@ class TestMemoryStoreCRUD:
         rec1 = store.record_file("Screenshot A.png", 100)
         rec2 = store.record_file("Screenshot A.png", 100)
         assert rec1 is rec2
-        assert store.count == 1
+        assert len(store._files) == 1
 
     def test_record_different_files(self, tmp_path):
         store = self._store(tmp_path)
         store.record_file("Screenshot A.png", 100)
         store.record_file("Screenshot B.png", 200)
-        assert store.count == 2
+        assert len(store._files) == 2
 
     def test_lookup_by_fingerprint(self, tmp_path):
         store = self._store(tmp_path)
@@ -218,25 +219,6 @@ class TestMemoryStoreCRUD:
         store = self._store(tmp_path)
         assert store.lookup_by_name("ghost.png") is None
 
-    def test_get_status(self, tmp_path):
-        store = self._store(tmp_path)
-        rec = store.record_file("Screenshot A.png", 100)
-        assert store.get_status(rec.fingerprint) == "new"
-        assert store.get_status("nonexistent") is None
-
-    def test_remove(self, tmp_path):
-        store = self._store(tmp_path)
-        rec = store.record_file("Screenshot A.png", 100)
-        assert store.count == 1
-        store.remove(rec.fingerprint)
-        assert store.count == 0
-        assert store.lookup(rec.fingerprint) is None
-
-    def test_remove_nonexistent_is_noop(self, tmp_path):
-        store = self._store(tmp_path)
-        store.remove("nonexistent")  # should not raise
-        assert store.count == 0
-
     def test_all_records(self, tmp_path):
         store = self._store(tmp_path)
         store.record_file("Screenshot A.png", 100)
@@ -246,14 +228,13 @@ class TestMemoryStoreCRUD:
         names = {r.original_name for r in records}
         assert names == {"Screenshot A.png", "Screenshot B.png"}
 
-    def test_lookup_by_name_returns_first_match(self, tmp_path):
-        """When two records share last_known_name, the first found is returned."""
+    def test_lookup_by_name_returns_any_match(self, tmp_path):
+        """Duplicate last_known_name across records: resolves to one of them."""
         store = self._store(tmp_path)
         rec1 = store.record_file("Screenshot A.png", 100)
+        store.record_rename(rec1.fingerprint, "duplicate.png")
         rec2 = store.record_file("Screenshot B.png", 200)
-        # Manually set both to the same last_known_name (edge case)
-        rec1.last_known_name = "duplicate.png"
-        rec2.last_known_name = "duplicate.png"
+        store.record_rename(rec2.fingerprint, "duplicate.png")
         found = store.lookup_by_name("duplicate.png")
         assert found is not None
         assert found.fingerprint in {rec1.fingerprint, rec2.fingerprint}
@@ -344,7 +325,7 @@ class TestPersistence:
 
         store2 = MemoryStore(path)
         store2.load()
-        assert store2.count == 0
+        assert len(store2._files) == 0
 
     def test_save_and_load_with_records(self, tmp_path):
         path = tmp_path / "memory.json"
@@ -355,7 +336,7 @@ class TestPersistence:
 
         store2 = MemoryStore(path)
         store2.load()
-        assert store2.count == 1
+        assert len(store2._files) == 1
         loaded = store2.lookup(rec.fingerprint)
         assert loaded is not None
         assert loaded.original_name == "Screenshot 2024-01-01.png"
@@ -372,7 +353,7 @@ class TestPersistence:
 
         store2 = MemoryStore(path)
         store2.load()
-        assert store2.count == 3
+        assert len(store2._files) == 3
         assert store2.lookup_by_name("Screenshot B.png") is not None
 
     def test_load_preserves_meta(self, tmp_path):
@@ -394,14 +375,14 @@ class TestPersistence:
         path.write_text("{invalid json!!!")
         store = MemoryStore(path)
         store.load()
-        assert store.count == 0
+        assert len(store._files) == 0
 
     def test_load_missing_version_key_resets(self, tmp_path):
         path = tmp_path / "memory.json"
         path.write_text(json.dumps({"not_files": True}))
         store = MemoryStore(path)
         store.load()
-        assert store.count == 0
+        assert len(store._files) == 0
 
     def test_load_wrong_version_resets(self, tmp_path):
         path = tmp_path / "memory.json"
@@ -421,7 +402,7 @@ class TestPersistence:
         path.write_text(json.dumps(data))
         store = MemoryStore(path)
         store.load()
-        assert store.count == 0  # rejected due to version mismatch
+        assert len(store._files) == 0  # rejected due to version mismatch
 
     def test_load_skips_malformed_entry(self, tmp_path):
         path = tmp_path / "memory.json"
@@ -447,7 +428,7 @@ class TestPersistence:
 
         store = MemoryStore(path)
         store.load()
-        assert store.count == 1
+        assert len(store._files) == 1
         assert store.lookup("good.png|100") is not None
 
     def test_load_uses_dict_key_as_fingerprint(self, tmp_path):
@@ -480,7 +461,7 @@ class TestPersistence:
         store2 = MemoryStore(path)
         store2.load()
         assert store2.lookup("correct_key.png|100") is not None
-        assert store2.count == 1
+        assert len(store2._files) == 1
 
     def test_load_replaces_in_memory_data(self, tmp_path):
         """Loading replaces whatever was in memory."""
@@ -491,10 +472,10 @@ class TestPersistence:
 
         store2 = MemoryStore(path)
         store2.record_file("Transient.png", 2)  # in-memory only
-        assert store2.count == 1  # not loaded from disk yet
+        assert len(store2._files) == 1  # not loaded from disk yet
 
         store2.load()  # load from disk replaces in-memory state
-        assert store2.count == 1
+        assert len(store2._files) == 1
         assert store2.lookup_by_name("Old.png") is not None
         assert store2.lookup_by_name("Transient.png") is None
 
@@ -503,35 +484,6 @@ class TestPersistence:
         store = MemoryStore(path)
         store.save()
         assert path.exists()
-
-
-# ── get_unprocessed ──────────────────────────────────────────────
-
-
-class TestGetUnprocessed:
-    def test_returns_only_new(self, tmp_path):
-        store = MemoryStore(tmp_path / "memory.json")
-        rec1 = store.record_file("Screenshot A.png", 100)  # new
-        rec2 = store.record_file("Screenshot B.png", 200)  # new
-        rec3 = store.record_file("Screenshot C.png", 300)  # will be suggested
-        store.update_suggestion(rec3.fingerprint, "report.png")
-
-        active = {rec1.fingerprint, rec2.fingerprint, rec3.fingerprint}
-        unprocessed = store.get_unprocessed(active)
-        fps = {r.fingerprint for r in unprocessed}
-        assert rec1.fingerprint in fps
-        assert rec2.fingerprint in fps
-        assert rec3.fingerprint not in fps
-
-    def test_ignores_unknown_fingerprints(self, tmp_path):
-        store = MemoryStore(tmp_path / "memory.json")
-        active = {"nonexistent.png|999"}
-        assert store.get_unprocessed(active) == []
-
-    def test_empty_active_set(self, tmp_path):
-        store = MemoryStore(tmp_path / "memory.json")
-        store.record_file("Screenshot A.png", 100)
-        assert store.get_unprocessed(set()) == []
 
 
 # ── Prune stale ──────────────────────────────────────────────────
@@ -556,7 +508,7 @@ class TestPruneStale:
 
         pruned = store.prune_stale(active_fingerprints={rec1.fingerprint})
         assert pruned == 1
-        assert store.count == 1
+        assert len(store._files) == 1
         assert store.lookup(rec1.fingerprint) is not None
 
     def test_keeps_recent_inactive_records(self, tmp_path):
@@ -568,7 +520,7 @@ class TestPruneStale:
 
         pruned = store.prune_stale(active_fingerprints={rec1.fingerprint}, max_age_days=90)
         assert pruned == 0
-        assert store.count == 2
+        assert len(store._files) == 2
         assert store.lookup(rec2.fingerprint) is not None
 
     def test_prune_all_old(self, tmp_path):
@@ -577,14 +529,14 @@ class TestPruneStale:
         self._make_old_record(store, "Screenshot B.png", 200, days_old=100)
         pruned = store.prune_stale(active_fingerprints=set(), max_age_days=90)
         assert pruned == 2
-        assert store.count == 0
+        assert len(store._files) == 0
 
     def test_prune_none_when_all_active(self, tmp_path):
         store = MemoryStore(tmp_path / "memory.json")
         rec = store.record_file("Screenshot A.png", 100)
         pruned = store.prune_stale(active_fingerprints={rec.fingerprint})
         assert pruned == 0
-        assert store.count == 1
+        assert len(store._files) == 1
 
     def test_prune_respects_age_threshold_boundary(self, tmp_path):
         """A record exactly at the threshold should NOT be pruned."""
@@ -593,7 +545,7 @@ class TestPruneStale:
         self._make_old_record(store, "Screenshot A.png", 100, days_old=90)
         pruned = store.prune_stale(active_fingerprints=set(), max_age_days=90)
         assert pruned == 0
-        assert store.count == 1
+        assert len(store._files) == 1
 
     def test_trashed_file_preserved_within_window(self, tmp_path):
         """Simulate the restore-from-trash scenario."""
@@ -603,10 +555,45 @@ class TestPruneStale:
         # File was just trashed (last_updated is now), not on Desktop
         pruned = store.prune_stale(active_fingerprints=set(), max_age_days=90)
         assert pruned == 0
-        assert store.count == 1
+        assert len(store._files) == 1
         # If file reappears, record_file is idempotent and returns the trashed record
         rec2 = store.record_file("Screenshot A.png", 100)
         assert rec2.status == "trashed"
+
+
+# ── Name index (issue #79) ────────────────────────────────────────
+
+
+class TestNameIndex:
+    def test_lookup_by_name_uses_index_after_load(self, tmp_path):
+        """Index is rebuilt from disk on load — both original and last names."""
+        path = tmp_path / "memory.json"
+        store = MemoryStore(path)
+        rec = store.record_file("Screenshot A.png", 100)
+        store.accept_suggestion(rec.fingerprint, "renamed-a.png")
+        store.save()
+
+        store2 = MemoryStore(path)
+        store2.load()
+        assert store2.lookup_by_name("Screenshot A.png") is not None  # original
+        assert store2.lookup_by_name("renamed-a.png") is not None  # last known
+
+    def test_index_tracks_rename(self, tmp_path):
+        """After a rename, the old last-known name no longer resolves."""
+        store = MemoryStore(tmp_path / "memory.json")
+        rec = store.record_file("Screenshot A.png", 100)
+        store.record_rename(rec.fingerprint, "new-name.png")
+        assert store.lookup_by_name("new-name.png") is rec
+        assert store.lookup_by_name("Screenshot A.png") is rec  # original kept
+        assert store.lookup_by_name("old-name.png") is None
+
+    def test_index_survives_prune(self, tmp_path):
+        """prune_stale() unindexes pruned records."""
+        store = MemoryStore(tmp_path / "memory.json")
+        store.record_file("Screenshot A.png", 100)
+        pruned = store.prune_stale(set(), max_age_days=-1)
+        assert pruned == 1
+        assert store.lookup_by_name("Screenshot A.png") is None
 
 
 # ── Edge cases ───────────────────────────────────────────────────
