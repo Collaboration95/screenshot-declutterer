@@ -805,6 +805,35 @@ function _cancelLightboxRename() {
   lightboxBar.style.minWidth = "";
 }
 
+function applyRenameToCard(card, oldName, newName) {
+  // Shared post-rename DOM/state dance (issue #101): used by the lightbox
+  // rename, the rename modal, and acceptSuggestion.
+  const col = getCardColumn(card);
+  if (col === "unsorted") {
+    decisions.delete(oldName);
+  } else {
+    decisions.delete(oldName);
+    decisions.set(newName, col);
+  }
+  card.dataset.filename = newName;
+  // A rename always transitions status to "renamed".
+  // fingerprint stays unchanged — it's the stable identity key
+  // (original macOS name + size), not a derived filename attribute.
+  card.dataset.memoryStatus = "renamed";
+  card.dataset.suggestedName = "";
+  const badge = card.querySelector(".suggestion-badge");
+  if (badge) badge.remove();
+  // Clear category hint
+  card.classList.remove("category-hint-keep", "category-hint-trash");
+  delete card.dataset.suggestedCategory;
+  const cardImg = card.querySelector("img");
+  cardImg.alt = newName;
+  cardImg.src = `/api/thumb/${encodeURIComponent(newName)}?t=${Date.now()}`;
+  setCardActions(card, col);
+  updateCounts();
+  saveState();
+}
+
 function _confirmLightboxRename() {
   if (lightboxRenameInput.disabled || lightboxRenameInput.hidden || lightbox.hidden) return;
   const oldName = lightbox.dataset.currentFilename;
@@ -846,30 +875,7 @@ function _confirmLightboxRename() {
       }
       const card = document.querySelector(`[data-filename="${CSS.escape(oldName)}"]`);
       if (card) {
-        const col = getCardColumn(card);
-        if (col === "unsorted") {
-          decisions.delete(oldName);
-        } else {
-          decisions.delete(oldName);
-          decisions.set(newName, col);
-        }
-        card.dataset.filename = newName;
-        // A rename always transitions status to "renamed".
-        // fingerprint stays unchanged — it's the stable identity key
-        // (original macOS name + size), not a derived filename attribute.
-        card.dataset.memoryStatus = "renamed";
-        card.dataset.suggestedName = "";
-        const badge = card.querySelector(".suggestion-badge");
-        if (badge) badge.remove();
-        // Clear category hint
-        card.classList.remove("category-hint-keep", "category-hint-trash");
-        delete card.dataset.suggestedCategory;
-        const cardImg = card.querySelector("img");
-        cardImg.alt = newName;
-        cardImg.src = `/api/thumb/${encodeURIComponent(newName)}?t=${Date.now()}`;
-        setCardActions(card, col);
-        updateCounts();
-        saveState();
+        applyRenameToCard(card, oldName, newName);
       }
       lightbox.dataset.currentFilename = newName;
       lightboxImg.src = `/api/image/${encodeURIComponent(newName)}?t=${Date.now()}`;
@@ -1072,28 +1078,7 @@ function acceptSuggestion(card) {
       }
       const oldName = card.dataset.filename;
       const newName = data.new_name;
-      const col = getCardColumn(card);
-      if (col === "unsorted") {
-        decisions.delete(oldName);
-      } else {
-        decisions.delete(oldName);
-        decisions.set(newName, col);
-      }
-      card.dataset.filename = newName;
-      card.dataset.memoryStatus = "renamed";
-      card.dataset.suggestedName = "";
-      const cardImg = card.querySelector("img");
-      cardImg.alt = newName;
-      cardImg.src = `/api/thumb/${encodeURIComponent(newName)}?t=${Date.now()}`;
-      // Remove badge
-      const badge = card.querySelector(".suggestion-badge");
-      if (badge) badge.remove();
-      // Clear category hint
-      card.classList.remove("category-hint-keep", "category-hint-trash");
-      delete card.dataset.suggestedCategory;
-      setCardActions(card, col);
-      updateCounts();
-      saveState();
+      applyRenameToCard(card, oldName, newName);
     })
     .catch(() => alert("Network error — please try again."));
 }
@@ -1314,30 +1299,7 @@ renameConfirm.addEventListener("click", () => {
         renameError.textContent = data.error || "Rename failed.";
         return;
       }
-      const col = getCardColumn(renameTarget);
-      if (col === "unsorted") {
-        decisions.delete(oldName);
-      } else {
-        decisions.delete(oldName);
-        decisions.set(newName, col);
-      }
-      renameTarget.dataset.filename = newName;
-      // A rename always transitions status to "renamed".
-      // fingerprint stays unchanged — it's the stable identity key
-      // (original macOS name + size), not a derived filename attribute.
-      renameTarget.dataset.memoryStatus = "renamed";
-      renameTarget.dataset.suggestedName = "";
-      const badge = renameTarget.querySelector(".suggestion-badge");
-      if (badge) badge.remove();
-      // Clear category hint
-      renameTarget.classList.remove("category-hint-keep", "category-hint-trash");
-      delete renameTarget.dataset.suggestedCategory;
-      const cardImg = renameTarget.querySelector("img");
-      cardImg.alt = newName;
-      cardImg.src = `/api/thumb/${encodeURIComponent(newName)}?t=${Date.now()}`;
-      setCardActions(renameTarget, col);
-      updateCounts();
-      saveState();
+      applyRenameToCard(renameTarget, oldName, newName);
       closeRenameModal();
     })
     .catch(() => {

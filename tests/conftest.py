@@ -1,8 +1,11 @@
+import os
 from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
 from flask.testing import FlaskClient
+
+os.environ.setdefault("SS_DCL_LOG_FILE", "/tmp/ss-dcl-test-app.log")
 
 import ss_dcl.app as flask_app
 import ss_dcl.settings as settings_module

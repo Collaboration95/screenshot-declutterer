@@ -17,11 +17,15 @@ static/app.js            Frontend JS (Kanban, drag-and-drop, undo, lightbox, ren
 static/style.css         All CSS (Kanban layout, cards, lightbox, rename modal, confirm modal)
 templates/index.html     SPA shell — three-column layout + lightbox + rename modal + confirm modal
 tests/conftest.py        Shared pytest fixtures and helpers
-tests/test_routes_*.py   Route-specific test files (index, screenshots, image, thumb, state, done, rename, memory)
+tests/test_routes_*.py   Route-specific test files (index, screenshots, image, thumb, state, done, rename, memory split into records/suggest/prune/persistence)
 tests/test_memory.py     Memory store unit tests (fingerprint, CRUD, persistence, status transitions, edge cases)
 tests/test_port_flexibility.py  Port auto-detection tests
 tests/test_edge_cases.py Edge case tests
 tests/test_frontend.py   Frontend integration tests
+tests/test_logging.py    Logging config + request correlation tests
+tests/test_litert_stub.py     LiteRT HTTP contract tests against an in-process stub server
+tests/test_litert_integration.py  Opt-in real-LiteRT tests (SS_DCL_LITERT_URL)
+tests/test_performance.py     Perf benchmarks, @pytest.mark.perf (scan/thumbs/suggest)
 ```
 
 ## Design Decisions
@@ -52,6 +56,7 @@ tests/test_frontend.py   Frontend integration tests
 | GET | `/api/memory` | Get all persisted memory records `{files: {fingerprint: {status, suggested_name, last_updated}}}` |
 | POST | `/api/suggest-names` | Generate AI filename suggestions — body `{fingerprints: [...]}`. Returns `{suggestions: {fp: name}, failures: [fp]}`. LiteRT provider only; uses `gemma4-e2b` by default |
 | GET | `/api/llm/health` | LiteRT reachability probe (`/v1/models`). Returns `{ok, provider, error}`; 503 when down |
+| GET | `/api/health` | Liveness probe `{ok, version, desktop_scanable, memory_records}`; 503 when Desktop unavailable |
 | POST | `/api/llm/start` | Spawn the LiteRT server as a detached subprocess. Resolves `LITERT_SERVE_CMD` via PATH → `~/litert-lm/.venv/bin/litert-lm` fallback, logs to `~/.ss-dcl/litert.log`, records ownership in `LITERT_PIDFILE`, polls `/v1/models` until ready (30s). 502 if spawn/ready fails |
 | POST | `/api/llm/stop` | Kill only the PID recorded in `LITERT_PIDFILE` (ownership rule — never a server the user started). 409 when no pidfile, 403 for a foreign PID |
 | POST | `/api/accept-suggestion` | Accept suggestion & rename file — body `{fingerprint}`. Handles name conflicts (appends `-2`) |
@@ -87,11 +92,17 @@ All in `static/app.js`:
 | STATE_FILE | `~/.ss-dcl/state.json` |
 | MEMORY_FILE | `~/.ss-dcl/memory.json` |
 | SETTINGS_FILE | `~/.ss-dcl/settings.json` |
+| APP_LOG_FILE | `~/.ss-dcl/app.log` (env `SS_DCL_LOG_FILE`; rotating, 1MB × 3) |
 | THUMB_SIZE | `(400, 300)` |
 | LITERT_BASE_URL | `http://localhost:9379` (env `LITERT_BASE_URL`) |
 | LITERT_SERVE_CMD | `litert-lm serve` (env `LITERT_SERVE_CMD`; PATH → venv fallback) |
 | LITERT_PIDFILE | `~/.ss-dcl/litert.pid` |
 | LITERT_LOG_FILE | `~/.ss-dcl/litert.log` |
+
+## Logging
+
+- Configured at import time in `ss_dcl/logging_config.py` (console + rotating file handler) — `__main__` has no `basicConfig` anymore
+- Every log record carries a `request_id` (12-hex contextvar, also returned as `X-Request-ID` header); access log line per request: `ACCESS <METHOD> <path> -> <status> (<ms>)`
 
 ## Dependencies
 
@@ -104,7 +115,8 @@ All in `static/app.js`:
 - Fixture: `client(tmp_path, monkeypatch)` — temp dir as fake Desktop, patches `DESKTOP`, `THUMB_DIR`, `STATE_FILE`
 - `send2trash` always mocked to avoid actually trashing files
 - Helper `_make_png()` creates valid minimal PNGs in-memory
-- ~244 tests across focused test files covering all routes, sorting, path traversal, state round-trip, partial failures, rename, port flexibility, edge cases, LLM suggest/accept/reject flows, pruning, dark mode, auto-categorization, LLM retry
+- ~332 tests across focused test files covering all routes, sorting, path traversal, state round-trip, partial failures, rename, port flexibility, edge cases, LLM suggest/accept/reject flows, pruning, dark mode, auto-categorization, LLM retry, LiteRT HTTP contract (stub server), health endpoint, logging/correlation
+- `@pytest.mark.perf` benchmarks (scan/thumbnails/suggest, `uv run pytest -m perf`) and `@pytest.mark.integration` opt-in tests (real LiteRT, `SS_DCL_LITERT_URL=... uv run pytest -m integration`) are deselected by default
 
 ## Tooling Config
 
