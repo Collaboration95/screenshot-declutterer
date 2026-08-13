@@ -8,6 +8,7 @@ import sys
 import threading
 import time
 import webbrowser
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Any
 
@@ -22,12 +23,29 @@ from flask import (
     send_file,
 )
 from send2trash import send2trash
-from src.ss_dcl import categorize, llm, server, settings, thumbs
-from src.ss_dcl.memory import MemoryStore, atomic_write, compute_fingerprint
+
+from ss_dcl import categorize, llm, server, settings, thumbs
+from ss_dcl.memory import MemoryStore, atomic_write, compute_fingerprint
 
 logger = logging.getLogger(__name__)
 
-_HERE = Path(__file__).resolve().parent.parent.parent
+
+def _resource_root() -> Path:
+    """Directory holding ``templates/`` and ``static/``.
+
+    Running from source (``src/ss_dcl/app.py``) this is the repo root;
+    installed as a wheel (``site-packages/ss_dcl/app.py``) it is the
+    ``site-packages`` root where hatchling's ``force-include`` places the
+    assets.
+    """
+    pkg_dir = Path(__file__).resolve().parent
+    for base in (pkg_dir.parent.parent, pkg_dir.parent):
+        if (base / "templates").is_dir() and (base / "static").is_dir():
+            return base
+    return pkg_dir.parent.parent
+
+
+_HERE = _resource_root()
 app = Flask(__name__, template_folder=str(_HERE / "templates"), static_folder=str(_HERE / "static"))
 
 
@@ -102,6 +120,9 @@ def get_screenshots(sort: str = "name") -> list[dict[str, Any]]:
     any_new = False
     active_fps: set[str] = set()
     decisions = _read_decisions()
+    # Per-request accumulator: one pass over decisions instead of one per file
+    # with keywords (issue #79 — drops the D term from O(F*D*R)).
+    keyword_scores = categorize.build_keyword_scores(memory, decisions)
     for p in DESKTOP.glob("Screenshot*.*"):
         if not p.is_file() or (p.suffix.lower() not in SUPPORTED_IMAGE_EXTENSION):
             continue
@@ -127,7 +148,7 @@ def get_screenshots(sort: str = "name") -> list[dict[str, Any]]:
         # (refreshes hints as user history accumulates)
         if existing and existing.meta.get("keywords"):
             suggested_category = categorize.suggest_category(
-                existing.meta["keywords"], memory, decisions
+                existing.meta["keywords"], memory, decisions, keyword_scores
             )
             if suggested_category != existing.meta.get("suggested_category"):
                 existing.meta["suggested_category"] = suggested_category
@@ -205,10 +226,7 @@ def api_thumb(filename: str):
     thumb_path = THUMB_DIR / filename
     if not thumb_path.exists() or image_path.stat().st_mtime > thumb_path.stat().st_mtime:
         try:
-            future = thumbs._THUMB_EXECUTOR.submit(
-                thumbs._generate_thumbnail, image_path, thumb_path
-            )
-            future.result(timeout=5)
+            thumbs._generate_thumbnail(image_path, thumb_path)
         except Exception:
             logger.warning("Thumbnail generation failed for %s, serving full image", filename)
             return api_image(filename)
@@ -420,38 +438,55 @@ def api_suggest_names():
     suggestions: dict[str, str] = {}
     failures: list[str] = []
     decisions = _read_decisions()
+    keyword_scores = categorize.build_keyword_scores(memory, decisions)
 
+    # Preflight: resolve each fingerprint to a record + on-disk path. Records
+    # are I/O-free here; the LLM calls (HTTP to LiteRT) run in a bounded
+    # thread pool since they're the only slow part (issue #81). Memory
+    # mutations are applied serially in the main thread after each call.
+    pending: list[tuple[str, str, Path]] = []
     for fp in fingerprints:
         rec = memory.lookup(fp)
-        if rec is None:
+        if rec is None or rec.status != "new":
             continue
-        if rec.status != "new":
-            continue
-
-        # Locate file on disk via last_known_name or original_name
-        file_path: Path | None = None
         for candidate_name in (rec.last_known_name, rec.original_name):
             if not candidate_name:
                 continue
             p = DESKTOP / candidate_name
             if p.exists() and p.is_file():
-                file_path = p
+                pending.append((fp, rec.extension, p))
                 break
 
-        if file_path is None:
-            continue
+    if pending:
+        workers = min(len(pending), int(os.environ.get("SS_DCL_SUGGEST_WORKERS", "4")))
+        with ThreadPoolExecutor(max_workers=workers, thread_name_prefix="suggest") as pool:
+            futures = {
+                pool.submit(llm._call_litert_suggest, path, model, ext): fp
+                for fp, ext, path in pending
+            }
+            for future in as_completed(futures):
+                fp = futures[future]
+                try:
+                    suggested = future.result()
+                except Exception as exc:
+                    logger.warning("Suggestion failed for %s: %s", fp, exc)
+                    failures.append(fp)
+                    continue
+                if not suggested:
+                    failures.append(fp)
+                    continue
 
-        suggested = llm._call_litert_suggest(file_path, model, rec.extension)
-        if suggested:
-            keywords = categorize.extract_keywords(suggested)
-            rec.meta["keywords"] = keywords
-            memory.update_suggestion(fp, suggested)
-            category = categorize.suggest_category(keywords, memory, decisions)
-            if category:
-                rec.meta["suggested_category"] = category
-            suggestions[fp] = suggested
-        else:
-            failures.append(fp)
+                rec = memory.lookup(fp)
+                if rec is None:
+                    failures.append(fp)
+                    continue
+                keywords = categorize.extract_keywords(suggested)
+                rec.meta["keywords"] = keywords
+                memory.update_suggestion(fp, suggested)
+                category = categorize.suggest_category(keywords, memory, decisions, keyword_scores)
+                if category:
+                    rec.meta["suggested_category"] = category
+                suggestions[fp] = suggested
 
     if suggestions:
         memory.save()

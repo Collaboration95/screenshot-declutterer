@@ -87,7 +87,7 @@ def test_full_sort_and_trash_flow(client):
     c.put("/api/state", json=state)
     r = c.get("/api/state")
     assert r.get_json()["decisions"][name] == "trash"
-    with patch("src.ss_dcl.app.send2trash"):
+    with patch("ss_dcl.app.send2trash"):
         r = c.post("/api/done", json={"filenames": [name]})
     assert r.status_code == 200
 
@@ -467,7 +467,7 @@ def test_app_js_defines_batch_drag_ghost(client):
     r = c.get("/static/app.js")
     assert r.status_code == 200
     assert b"MAX_GHOST_TILES" in r.data
-    assert b"function batchFanLayout(" in r.data
+    assert b"SsDcl.batchFanLayout" in r.data
     assert b"function buildBatchDragGhost(" in r.data
     assert b"setDragImage" in r.data
     # ghost must only kick in when dragging a *selected* card
@@ -475,19 +475,24 @@ def test_app_js_defines_batch_drag_ghost(client):
     assert b"selectedCards.size > 1" in r.data
 
 
-def test_batch_fan_layout_is_symmetric_and_centered():
-    """batchFanLayout exposes pure geometry: middle tile center, symmetric."""
-    import re
+def test_pure_module_loads_before_app_js(client):
+    """Pure logic must be served and referenced via SsDcl (issue #92)."""
+    c, _ = client
+    pure = c.get("/static/ss_dcl_pure.js")
+    assert pure.status_code == 200
+    for fn in (b"function batchFanLayout", b"function Path_name", b"function computeCounts"):
+        assert fn in pure.data
 
-    with open("static/app.js", encoding="utf-8") as f:
-        src = f.read()
-    m = re.search(r"function batchFanLayout\(tileCount\) \{.*?\n\}", src, re.S)
-    assert m is not None
-    body = m.group(0)
-    # stagger scales with tile size (so the fan stays legible when resized),
-    # rotation symmetric around mid
-    assert "tileCount - 1" in body and "GHOST_TILE_H * 0.042" in body
-    assert "(i - mid) * 7" in body
+    app_js = c.get("/static/app.js").data
+    assert b"module.exports" in pure.data  # node:test can require() it
+    assert b"SsDcl.Path_name" in app_js
+    assert b"SsDcl.computeCounts" in app_js
+    assert b"SsDcl.chunked" in app_js
+
+    html = c.get("/").data
+    pure_pos = html.find(b"ss_dcl_pure.js")
+    app_pos = html.find(b"app.js")
+    assert pure_pos != -1 and app_pos != -1 and pure_pos < app_pos
 
 
 def test_app_js_defines_reveal_in_finder(client):

@@ -1,3 +1,7 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
 [project]
 name = "screenshot-declutterer"
 
@@ -34,8 +38,12 @@ select = ["E", "F", "W", "I", "UP", "B", "SIM", "RUF"]
 [tool.pyright]
 pythonVersion = "3.10"
 typeCheckingMode = "basic"
-include = ["src"]
+include = ["src", "tests", "tools"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-pythonpath = ["src", "."]
+pythonpath = ["src"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/ss_dcl"]
+force-include = { templates = "templates", static = "static" }

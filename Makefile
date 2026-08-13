@@ -1,10 +1,10 @@
-.PHONY: install run dev test lint typecheck check clean
+.PHONY: install run dev test js-test lint typecheck check clean
 
 install:            ## Install production dependencies
 	uv sync
 
 run:                ## Start the app (opens browser at localhost:5002)
-	uv run python -m src.ss_dcl.app
+	uv run python -m ss_dcl.app
 
 dev:                ## Install all dependencies including dev tools
 	uv sync --group dev
@@ -12,13 +12,16 @@ dev:                ## Install all dependencies including dev tools
 test:               ## Run tests
 	uv run pytest
 
+js-test:            ## Run frontend unit tests (node:test)
+	node --test "tests/js/**/*.test.js"
+
 lint:               ## Lint with Ruff
 	uv run ruff check .
 
 typecheck:          ## Type-check with Pyright
 	uv run pyright
 
-check: lint typecheck test   ## Run lint + typecheck + tests
+check: lint typecheck test js-test   ## Run lint + typecheck + tests
 
 clean:              ## Remove caches and build artifacts
 	find . -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true

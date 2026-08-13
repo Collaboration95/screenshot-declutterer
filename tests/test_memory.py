@@ -13,9 +13,11 @@ Covers:
 
 import json
 from datetime import datetime, timezone
+from typing import Any
 
 import pytest
-from src.ss_dcl.memory import (
+
+from ss_dcl.memory import (
     FileRecord,
     MemoryStore,
     atomic_write,
@@ -62,8 +64,8 @@ class TestComputeFingerprint:
 
 
 class TestFileRecord:
-    def _make_record(self, **overrides):
-        defaults = dict(
+    def _make_record(self, **overrides: Any) -> FileRecord:
+        defaults: dict[str, Any] = dict(
             fingerprint="test|100",
             original_name="test",
             last_known_name="test",
@@ -246,14 +248,13 @@ class TestMemoryStoreCRUD:
         names = {r.original_name for r in records}
         assert names == {"Screenshot A.png", "Screenshot B.png"}
 
-    def test_lookup_by_name_returns_first_match(self, tmp_path):
-        """When two records share last_known_name, the first found is returned."""
+    def test_lookup_by_name_returns_any_match(self, tmp_path):
+        """Duplicate last_known_name across records: resolves to one of them."""
         store = self._store(tmp_path)
         rec1 = store.record_file("Screenshot A.png", 100)
+        store.record_rename(rec1.fingerprint, "duplicate.png")
         rec2 = store.record_file("Screenshot B.png", 200)
-        # Manually set both to the same last_known_name (edge case)
-        rec1.last_known_name = "duplicate.png"
-        rec2.last_known_name = "duplicate.png"
+        store.record_rename(rec2.fingerprint, "duplicate.png")
         found = store.lookup_by_name("duplicate.png")
         assert found is not None
         assert found.fingerprint in {rec1.fingerprint, rec2.fingerprint}
@@ -607,6 +608,48 @@ class TestPruneStale:
         # If file reappears, record_file is idempotent and returns the trashed record
         rec2 = store.record_file("Screenshot A.png", 100)
         assert rec2.status == "trashed"
+
+
+# ── Name index (issue #79) ────────────────────────────────────────
+
+
+class TestNameIndex:
+    def test_lookup_by_name_uses_index_after_load(self, tmp_path):
+        """Index is rebuilt from disk on load — both original and last names."""
+        path = tmp_path / "memory.json"
+        store = MemoryStore(path)
+        rec = store.record_file("Screenshot A.png", 100)
+        store.accept_suggestion(rec.fingerprint, "renamed-a.png")
+        store.save()
+
+        store2 = MemoryStore(path)
+        store2.load()
+        assert store2.lookup_by_name("Screenshot A.png") is not None  # original
+        assert store2.lookup_by_name("renamed-a.png") is not None  # last known
+
+    def test_index_tracks_rename(self, tmp_path):
+        """After a rename, the old last-known name no longer resolves."""
+        store = MemoryStore(tmp_path / "memory.json")
+        rec = store.record_file("Screenshot A.png", 100)
+        store.record_rename(rec.fingerprint, "new-name.png")
+        assert store.lookup_by_name("new-name.png") is rec
+        assert store.lookup_by_name("Screenshot A.png") is rec  # original kept
+        assert store.lookup_by_name("old-name.png") is None
+
+    def test_index_removed_with_record(self, tmp_path):
+        """remove() drops the names from the index."""
+        store = MemoryStore(tmp_path / "memory.json")
+        rec = store.record_file("Screenshot A.png", 100)
+        store.remove(rec.fingerprint)
+        assert store.lookup_by_name("Screenshot A.png") is None
+
+    def test_index_survives_prune(self, tmp_path):
+        """prune_stale() unindexes pruned records."""
+        store = MemoryStore(tmp_path / "memory.json")
+        store.record_file("Screenshot A.png", 100)
+        pruned = store.prune_stale(set(), max_age_days=-1)
+        assert pruned == 1
+        assert store.lookup_by_name("Screenshot A.png") is None
 
 
 # ── Edge cases ───────────────────────────────────────────────────

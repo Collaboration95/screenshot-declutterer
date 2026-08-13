@@ -1,10 +1,15 @@
+from collections.abc import Iterator
+from pathlib import Path
+
 import pytest
-import src.ss_dcl.app as flask_app
-import src.ss_dcl.settings as settings_module
+from flask.testing import FlaskClient
+
+import ss_dcl.app as flask_app
+import ss_dcl.settings as settings_module
 
 
 @pytest.fixture()
-def client(tmp_path, monkeypatch):
+def client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[tuple[FlaskClient, Path]]:
     thumb_dir = tmp_path / "thumbs"
     thumb_dir.mkdir()
     monkeypatch.setattr(flask_app, "DESKTOP", tmp_path)
