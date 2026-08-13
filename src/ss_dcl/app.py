@@ -1,4 +1,5 @@
 import contextlib
+import importlib.metadata
 import json
 import logging
 import os
@@ -25,8 +26,10 @@ from flask import (
 from send2trash import send2trash
 
 from ss_dcl import categorize, llm, server, settings, thumbs
+from ss_dcl.logging_config import configure_logging, new_request_id, request_id_var
 from ss_dcl.memory import MemoryStore, atomic_write, compute_fingerprint
 
+configure_logging()
 logger = logging.getLogger(__name__)
 
 
@@ -47,6 +50,29 @@ def _resource_root() -> Path:
 
 _HERE = _resource_root()
 app = Flask(__name__, template_folder=str(_HERE / "templates"), static_folder=str(_HERE / "static"))
+
+
+@app.before_request
+def _set_request_id():
+    request.environ["_ss_dcl_start"] = time.perf_counter()
+    request_id_var.set(new_request_id())
+
+
+@app.after_request
+def _log_request(response: Response) -> Response:
+    request_id = request_id_var.get() or "-"
+    response.headers["X-Request-ID"] = request_id
+    start = request.environ.get("_ss_dcl_start", time.perf_counter())
+    duration_ms = round((time.perf_counter() - start) * 1000, 2)
+    logger.info(
+        "ACCESS %s %s -> %s (%sms)",
+        request.method,
+        request.path,
+        response.status_code,
+        duration_ms,
+    )
+    request_id_var.set("")
+    return response
 
 
 @app.after_request
@@ -193,9 +219,76 @@ def _validate_desktop_path(filename: str) -> Path | None:
     return resolved
 
 
+def _apply_rename(old_name: str, new_name: str, fingerprint: str | None = None) -> dict[str, bool]:
+    """Shared post-rename bookkeeping used by /api/rename and
+    /api/accept-suggestion: move the thumbnail, update the state.json
+    decisions key, record the rename in memory, and log (issue #101).
+
+    *fingerprint* pins the memory record when known (accept-suggestion);
+    otherwise the record is resolved via the name index (rename).
+    Returns which bookkeeping steps actually changed something.
+    """
+    thumb_moved = False
+    old_thumb = THUMB_DIR / old_name
+    new_thumb = THUMB_DIR / new_name
+    with contextlib.suppress(Exception):
+        if old_thumb.exists():
+            old_thumb.rename(new_thumb)
+            thumb_moved = True
+
+    state_updated = False
+    if STATE_FILE.exists():
+        try:
+            state = json.loads(STATE_FILE.read_text())
+            decisions = state.get("decisions", {})
+            if old_name in decisions:
+                decisions[new_name] = decisions.pop(old_name)
+                atomic_write(STATE_FILE, json.dumps(state))
+                state_updated = True
+        except (json.JSONDecodeError, KeyError):
+            logger.warning("State file corruption detected during rename of %s", old_name)
+
+    memory_updated = False
+    try:
+        memory = _get_memory()
+        rec = memory.lookup(fingerprint) if fingerprint else memory.lookup_by_name(old_name)
+        if rec is not None:
+            memory.record_rename(rec.fingerprint, new_name)
+            memory.save()
+            memory_updated = True
+    except Exception as exc:
+        logger.warning("Memory update failed during rename for %s: %s", old_name, exc)
+
+    logger.info("Renamed %s -> %s", old_name, new_name)
+    return {
+        "thumb_moved": thumb_moved,
+        "state_updated": state_updated,
+        "memory_updated": memory_updated,
+    }
+
+
 @app.route("/")
 def index():
     return render_template("index.html")
+
+
+@app.route("/api/health")
+def api_health():
+    """Cheap liveness probe: no disk scan, no LLM calls (issue #86)."""
+    desktop_ok = DESKTOP.is_dir()
+    memory_records = len(_get_memory().all_records())
+    try:
+        version = importlib.metadata.version("screenshot-declutterer")
+    except importlib.metadata.PackageNotFoundError:
+        version = "dev"
+    return jsonify(
+        {
+            "ok": desktop_ok,
+            "version": version,
+            "desktop_scanable": desktop_ok,
+            "memory_records": memory_records,
+        }
+    ), (200 if desktop_ok else 503)
 
 
 @app.route("/api/screenshots")
@@ -379,33 +472,7 @@ def api_rename():
         logger.error("Failed to rename %s to %s: %s", old_name, new_name, exc)
         return jsonify({"ok": False, "error": str(exc)}), 500
 
-    old_thumb = THUMB_DIR / old_name
-    new_thumb = THUMB_DIR / new_name
-    with contextlib.suppress(Exception):
-        if old_thumb.exists():
-            old_thumb.rename(new_thumb)
-
-    if STATE_FILE.exists():
-        try:
-            state = json.loads(STATE_FILE.read_text())
-            decisions = state.get("decisions", {})
-            if old_name in decisions:
-                decisions[new_name] = decisions.pop(old_name)
-                atomic_write(STATE_FILE, json.dumps(state))
-        except (json.JSONDecodeError, KeyError):
-            logger.warning("State file corruption detected during rename")
-
-    # Update memory: record rename (best-effort)
-    try:
-        memory = _get_memory()
-        rec = memory.lookup_by_name(old_name)
-        if rec is not None:
-            memory.record_rename(rec.fingerprint, new_name)
-            memory.save()
-    except Exception as exc:
-        logger.warning("Memory update failed during rename for %s: %s", old_name, exc)
-
-    logger.info("Renamed %s -> %s", old_name, new_name)
+    _apply_rename(old_name, new_name)
     return jsonify({"ok": True, "new_name": new_name})
 
 
@@ -568,29 +635,7 @@ def api_accept_suggestion():
         logger.error("Failed to rename %s to %s: %s", old_name, new_name, exc)
         return jsonify({"ok": False, "error": str(exc)}), 500
 
-    # Move thumbnail
-    old_thumb = THUMB_DIR / old_name
-    new_thumb = THUMB_DIR / new_name
-    with contextlib.suppress(Exception):
-        if old_thumb.exists():
-            old_thumb.rename(new_thumb)
-
-    # Update state.json
-    if STATE_FILE.exists():
-        try:
-            state = json.loads(STATE_FILE.read_text())
-            decisions = state.get("decisions", {})
-            if old_name in decisions:
-                decisions[new_name] = decisions.pop(old_name)
-                atomic_write(STATE_FILE, json.dumps(state))
-        except (json.JSONDecodeError, KeyError):
-            logger.warning("State file corruption during accept-suggestion")
-
-    # Update memory
-    memory.accept_suggestion(fingerprint, new_name)
-    memory.save()
-
-    logger.info("Accepted suggestion: %s → %s", old_name, new_name)
+    _apply_rename(old_name, new_name, fingerprint=fingerprint)
     return jsonify({"ok": True, "old_name": old_name, "new_name": new_name})
 
 
@@ -710,11 +755,6 @@ def _open_browser() -> None:
 
 
 if __name__ == "__main__":
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-        datefmt="%H:%M:%S",
-    )
     threading.Thread(target=_open_browser, daemon=True).start()
     debug = os.environ.get("FLASK_DEBUG", "0") == "1"
     logger.info("Starting server on port %d", SELECTED_PORT)

@@ -43,7 +43,11 @@ include = ["src", "tests", "tools"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src"]
-addopts = "--cov=src --cov-report=term-missing --cov-fail-under=85"
+addopts = "--cov=src --cov-report=term-missing --cov-fail-under=85 -m 'not perf and not integration'"
+markers = [
+    "perf: performance/load benchmarks (run with: uv run pytest -m perf)",
+    "integration: opt-in tests requiring a live LiteRT server (run with: SS_DCL_LITERT_URL=http://... uv run pytest -m integration)",
+]
 
 [tool.coverage.run]
 branch = true
