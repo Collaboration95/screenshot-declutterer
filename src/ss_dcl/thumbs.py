@@ -1,8 +1,7 @@
-"""Thumbnail generation: size parsing, worker pool, and the generator itself."""
+"""Thumbnail generation: size parsing and the generator itself (issue #80)."""
 
 import logging
 import os
-from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from PIL import Image
@@ -19,8 +18,6 @@ def _parse_thumb_size(raw: str) -> tuple[int, int]:
 
 
 THUMB_SIZE: tuple[int, int] = _parse_thumb_size(os.environ.get("THUMB_SIZE", "400x300"))
-
-_THUMB_EXECUTOR = ThreadPoolExecutor(max_workers=2, thread_name_prefix="thumb")
 
 
 def _generate_thumbnail(src: Path, dst: Path) -> None:

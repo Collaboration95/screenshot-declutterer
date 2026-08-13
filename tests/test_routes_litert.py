@@ -10,11 +10,11 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
-import src.ss_dcl.app as flask_app
-import src.ss_dcl.llm as llm
-import src.ss_dcl.server as server
 from PIL import Image
 
+import ss_dcl.app as flask_app
+import ss_dcl.llm as llm
+import ss_dcl.server as server
 from helpers import _make_png
 
 
@@ -323,6 +323,7 @@ def test_suggest_names_with_litert_provider(client, monkeypatch):
 
     memory = flask_app._get_memory()
     rec = memory.lookup(fp)
+    assert rec is not None
     assert rec.status == "suggested"
     assert rec.suggested_name == "budget-review.png"
 

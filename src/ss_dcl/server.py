@@ -15,7 +15,7 @@ import subprocess
 import time
 from pathlib import Path
 
-from src.ss_dcl import llm
+from ss_dcl import llm
 
 logger = logging.getLogger(__name__)
 

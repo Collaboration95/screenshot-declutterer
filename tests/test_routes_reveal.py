@@ -11,7 +11,7 @@ def _screenshot(tmp_path, name="Screenshot 2024-01-01 at 12.00.00 PM.png"):
 def test_reveal_valid_filename(client):
     c, desktop = client
     name = _screenshot(desktop)
-    with patch("src.ss_dcl.app.subprocess.Popen") as mock_popen:
+    with patch("ss_dcl.app.subprocess.Popen") as mock_popen:
         r = c.post("/api/reveal", json={"filename": name})
     assert r.status_code == 200
     assert r.get_json()["ok"] is True
@@ -46,8 +46,8 @@ def test_reveal_rejects_bad_payloads(client):
 def test_reveal_off_macos_returns_clear_error(client, monkeypatch):
     c, desktop = client
     name = _screenshot(desktop)
-    monkeypatch.setattr("src.ss_dcl.app.IS_MACOS", False)
-    with patch("src.ss_dcl.app.subprocess.Popen") as mock_popen:
+    monkeypatch.setattr("ss_dcl.app.IS_MACOS", False)
+    with patch("ss_dcl.app.subprocess.Popen") as mock_popen:
         r = c.post("/api/reveal", json={"filename": name})
     assert r.status_code == 400
     body = r.get_json()

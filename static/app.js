@@ -544,26 +544,10 @@ batchClearBtn.addEventListener("click", clearSelection);
 // the cursor like the macOS Photos app. HTML5 DnD only supports ONE drag
 // image (setDragImage), so we composite the whole fanned stack onto a single
 // canvas. Purely visual — drop/undo/batch logic is untouched.
+// Fan geometry lives in ss_dcl_pure.js (SsDcl.batchFanLayout) — unit-tested.
 const MAX_GHOST_TILES = 6;
-const GHOST_TILE_W = 252; // 4:3, matches the thumbnail ratio (1.5× of 168)
-const GHOST_TILE_H = 189;
-
-// Deterministic fan layout: tiles tilt away from the middle card, which
-// stays straight-on as the "front" of the stack. Pure function → testable.
-// Horizontal/vertical stagger scales with tile size so the fan stays legible
-// at any tile size.
-function batchFanLayout(tileCount) {
-  const layout = [];
-  const mid = (tileCount - 1) / 2;
-  for (let i = 0; i < tileCount; i++) {
-    layout.push({
-      dx: Math.round((i - mid) * (GHOST_TILE_W * 0.112)), // ≈28px @ 252px tiles
-      dy: Math.round(Math.abs(i - mid) * -(GHOST_TILE_H * 0.042)), // ≈ -8px
-      rot: Math.round((i - mid) * 7),
-    });
-  }
-  return layout;
-}
+const GHOST_TILE_W = SsDcl.GHOST_TILE_W;
+const GHOST_TILE_H = SsDcl.GHOST_TILE_H;
 
 function ghostRoundedRect(ctx, x, y, w, h, r) {
   ctx.beginPath();
@@ -598,7 +582,7 @@ function buildBatchDragGhost(cards, total) {
   const drawable = cards.filter(card => card.querySelector("img"));
   if (drawable.length === 0) return null; // nothing usable — native ghost is fine
   const tileCount = Math.min(drawable.length, MAX_GHOST_TILES);
-  const layout = batchFanLayout(tileCount);
+  const layout = SsDcl.batchFanLayout(tileCount);
 
   // Canvas size: fan extent + rotation slack, so rotated corners never clip.
   const maxRot = Math.max(...layout.map(t => Math.abs(t.rot))) * (Math.PI / 180);
@@ -836,7 +820,7 @@ function _confirmLightboxRename() {
     _cancelLightboxRename();
     return;
   }
-  if (newName !== Path_name(newName)) {
+  if (newName !== SsDcl.Path_name(newName)) {
     lightboxRenameInput.classList.add("error");
     lightboxRenameError.textContent = "Filename must not contain path separators.";
     lightboxRenameInput.focus();
@@ -955,7 +939,11 @@ function suggestBatch(fingerprints) {
 
   _suggestCancelled = false;
 
-  const chunkSize = 1;
+  // Chunk requests (issue #81): the backend parallelizes LLM calls per
+  // chunk, so a larger chunk cuts round trips without serializing anything.
+  // Chunking logic lives in ss_dcl_pure.js (SsDcl.chunked) — unit-tested.
+  const chunkSize = 5;
+  const chunks = SsDcl.chunked(fingerprints, chunkSize);
   let completed = 0;
   let firstError = null;
   let failedCount = 0;
@@ -967,13 +955,13 @@ function suggestBatch(fingerprints) {
     setTimeout(() => { suggestProgress.hidden = true; suggestAllBtn.disabled = false; }, 4000);
   }
 
-  function processChunk(startIdx) {
+  function processChunk(chunkIdx) {
     if (_suggestCancelled) {
       suggestProgressText.textContent = `Cancelled (${completed} processed)`;
       setTimeout(() => { suggestProgress.hidden = true; suggestAllBtn.disabled = false; }, 1500);
       return;
     }
-    if (startIdx >= fingerprints.length) {
+    if (chunkIdx >= chunks.length) {
       suggestProgressFill.style.width = "100%";
       if (completed === 0 && firstError) {
         suggestProgressText.textContent = firstError;
@@ -996,7 +984,7 @@ function suggestBatch(fingerprints) {
       return;
     }
 
-    const chunk = fingerprints.slice(startIdx, startIdx + chunkSize);
+    const chunk = chunks[chunkIdx];
 
     fetch("/api/suggest-names", {
       method: "POST",
@@ -1027,15 +1015,15 @@ function suggestBatch(fingerprints) {
           }
           completed++;
         }
-        const nextIdx = startIdx + chunkSize;
-        const pct = Math.round((Math.min(nextIdx, fingerprints.length) / fingerprints.length) * 100);
+        const nextIdx = chunkIdx + 1;
+        const pct = Math.round((Math.min((nextIdx) * chunkSize, fingerprints.length) / fingerprints.length) * 100);
         suggestProgressFill.style.width = pct + "%";
-        suggestProgressText.textContent = `${Math.min(nextIdx, fingerprints.length)} / ${fingerprints.length}`;
+        suggestProgressText.textContent = `${Math.min(nextIdx * chunkSize, fingerprints.length)} / ${fingerprints.length}`;
         processChunk(nextIdx);
       })
       .catch(() => {
         if (!firstError) firstError = providerErrorCopy();
-        const nextIdx = startIdx + chunkSize;
+        const nextIdx = chunkIdx + 1;
         processChunk(nextIdx);
       });
   }
@@ -1256,13 +1244,7 @@ function performUndo() {
 
 // ── Counts & status ──────────────────────────────────────────────────────────
 function updateCounts() {
-  let nKeep = 0, nTrash = 0;
-  for (const v of decisions.values()) {
-    if (v === "keep") nKeep++;
-    else nTrash++;
-  }
-  const nUnsorted = totalCards - nKeep - nTrash;
-  const total     = totalCards;
+  const { keep: nKeep, trash: nTrash, unsorted: nUnsorted, total } = SsDcl.computeCounts(decisions, totalCards);
 
   countUnsorted.textContent = nUnsorted;
   countTrash.textContent    = nTrash;
@@ -1313,7 +1295,7 @@ renameConfirm.addEventListener("click", () => {
     closeRenameModal();
     return;
   }
-  if (newName !== Path_name(newName)) {
+  if (newName !== SsDcl.Path_name(newName)) {
     renameError.textContent = "Filename must not contain path separators.";
     return;
   }
@@ -1369,9 +1351,7 @@ renameInput.addEventListener("keydown", e => {
   if (e.key === "Escape") closeRenameModal();
 });
 
-function Path_name(filename) {
-  return filename.split("/").pop().split("\\").pop();
-}
+// Path_name lives in ss_dcl_pure.js (SsDcl.Path_name) — unit-tested.
 
 // ── Done button / modal ──────────────────────────────────────────────────────
 doneBtn.addEventListener("click", () => {

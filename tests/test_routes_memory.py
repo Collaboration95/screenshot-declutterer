@@ -12,15 +12,16 @@ Tests that:
 
 import json
 import socket
+import time
 import urllib.error
 import urllib.request
+from email.message import Message
 from unittest.mock import patch
 
-import src.ss_dcl.app as flask_app
-import src.ss_dcl.categorize as categorize
-import src.ss_dcl.llm as llm
-import src.ss_dcl.settings as settings_module
-
+import ss_dcl.app as flask_app
+import ss_dcl.categorize as categorize
+import ss_dcl.llm as llm
+import ss_dcl.settings as settings_module
 from helpers import _make_png
 
 # ── /api/screenshots enrichment ────────────────────────────────────────────
@@ -192,6 +193,7 @@ def test_rename_updates_memory_status(client):
     # Check memory updated
     memory = flask_app._get_memory()
     rec = memory.lookup(fp)
+    assert rec is not None
     assert rec is not None, f"Fingerprint {fp} should exist in memory"
     assert rec.status == "renamed"
     assert rec.last_known_name == "Screenshot renamed.png"
@@ -226,7 +228,7 @@ def test_done_updates_memory_to_trashed(client):
     fp = json.loads(r.data)[0]["fingerprint"]
 
     # Trash it
-    with patch("src.ss_dcl.app.send2trash"):
+    with patch("ss_dcl.app.send2trash"):
         r = c.post(
             "/api/done",
             data=json.dumps({"filenames": [f.name]}),
@@ -237,6 +239,7 @@ def test_done_updates_memory_to_trashed(client):
     # Check memory
     memory = flask_app._get_memory()
     rec = memory.lookup(fp)
+    assert rec is not None
     assert rec is not None, f"Fingerprint {fp} should exist in memory"
     assert rec.status == "trashed"
 
@@ -247,7 +250,7 @@ def test_done_handles_files_not_in_memory(client):
     f = desktop / "Screenshot 2024-01-01 at 12.00.00 PM.png"
     f.write_bytes(_make_png(10, 10))
 
-    with patch("src.ss_dcl.app.send2trash"):
+    with patch("ss_dcl.app.send2trash"):
         r = c.post(
             "/api/done",
             data=json.dumps({"filenames": [f.name]}),
@@ -311,7 +314,7 @@ def test_memory_survives_across_scan_cycles(client):
     r = c.get("/api/screenshots")
     fp = json.loads(r.data)[0]["fingerprint"]
 
-    with patch("src.ss_dcl.app.send2trash"):
+    with patch("ss_dcl.app.send2trash"):
         c.post(
             "/api/done",
             data=json.dumps({"filenames": ["Screenshot A.png"]}),
@@ -322,6 +325,7 @@ def test_memory_survives_across_scan_cycles(client):
     # Memory should still have the "trashed" record
     memory = flask_app._get_memory()
     rec = memory.lookup(fp)
+    assert rec is not None
     assert rec is not None
     assert rec.status == "trashed"
 
@@ -442,7 +446,7 @@ def test_done_does_not_mark_ghost_file_as_trashed_in_memory(client):
     memory.save()
 
     # Trash both — ghost.png will fail (not on disk), real.png will succeed
-    with patch("src.ss_dcl.app.send2trash"):
+    with patch("ss_dcl.app.send2trash"):
         r = c.post(
             "/api/done",
             data=json.dumps({"filenames": ["Screenshot ghost.png", "Screenshot real.png"]}),
@@ -521,6 +525,7 @@ def test_suggest_names_with_real_file_and_mock_llm(client, monkeypatch):
     # Memory should be updated
     memory = flask_app._get_memory()
     rec = memory.lookup(fp)
+    assert rec is not None
     assert rec.status == "suggested"
     assert rec.suggested_name == "customer-onboarding.png"
 
@@ -583,7 +588,9 @@ def test_suggest_names_handles_llm_returning_none(client, monkeypatch):
 
     # Status should remain "new" (unchanged)
     memory = flask_app._get_memory()
-    assert memory.lookup(fp).status == "new"
+    rec = memory.lookup(fp)
+    assert rec is not None
+    assert rec.status == "new"
 
 
 def test_suggest_names_unknown_fingerprint_skipped(client, monkeypatch):
@@ -630,6 +637,7 @@ def test_accept_suggestion_renames_file(client):
     # Memory should reflect rename
     memory = flask_app._get_memory()
     rec = memory.lookup(fp)
+    assert rec is not None
     assert rec.status == "renamed"
     assert rec.last_known_name == "accepted-name.png"
 
@@ -709,6 +717,7 @@ def test_accept_suggestion_empty_old_name_rejected(client):
     memory = flask_app._get_memory()
     # Corrupt the record: set last_known_name to empty string
     rec = memory.lookup(fp)
+    assert rec is not None
     rec.last_known_name = ""
     rec.original_name = ""
     rec.suggested_name = "evil.png"
@@ -734,6 +743,7 @@ def test_accept_suggestion_path_traversal_rejected(client):
 
     memory = flask_app._get_memory()
     rec = memory.lookup(fp)
+    assert rec is not None
     rec.last_known_name = "../../../etc/passwd"
     rec.suggested_name = "safe-name.png"
     memory.save()
@@ -793,7 +803,9 @@ def test_reject_suggestion_marks_as_ignored(client):
     assert json.loads(r.data)["ok"] is True
 
     memory = flask_app._get_memory()
-    assert memory.lookup(fp).status == "ignored"
+    rec = memory.lookup(fp)
+    assert rec is not None
+    assert rec.status == "ignored"
 
 
 def test_reject_suggestion_unknown_fingerprint(client):
@@ -1078,6 +1090,7 @@ def test_prune_keeps_active_entries(client):
     r = c.get("/api/screenshots")
     fp = json.loads(r.data)[0]["fingerprint"]
     rec = memory.lookup(fp)
+    assert rec is not None
     from datetime import datetime, timedelta, timezone
 
     rec.last_updated = (datetime.now(tz=timezone.utc) - timedelta(days=200)).isoformat()
@@ -1130,6 +1143,7 @@ def test_prune_keeps_recent_inactive(client):
     r = c.get("/api/screenshots")
     fp = json.loads(r.data)[0]["fingerprint"]
     rec = memory.lookup(fp)
+    assert rec is not None
     from datetime import datetime, timedelta, timezone
 
     rec.status = "trashed"
@@ -1266,6 +1280,44 @@ def test_suggest_category_tie_returns_none(client):
     assert result is None
 
 
+def test_build_keyword_scores_matches_legacy_path(client):
+    """Precomputed scores must yield identical categories to the per-decision scan (issue #79)."""
+    _, _t = client
+    memory = flask_app._get_memory()
+
+    rec1 = memory.record_file("kept-a.png", 100)
+    rec1.meta["keywords"] = ["customer", "onboarding", "shared"]
+    rec2 = memory.record_file("kept-b.png", 200)
+    rec2.meta["keywords"] = ["customer"]
+    rec3 = memory.record_file("trashed.png", 300)
+    rec3.meta["keywords"] = ["meme", "shared"]
+
+    decisions = {
+        "kept-a.png": "keep",
+        "kept-b.png": "keep",
+        "trashed.png": "trash",
+    }
+    scores = categorize.build_keyword_scores(memory, decisions)
+
+    for keywords in (
+        ["customer"],
+        ["customer", "onboarding", "meme"],
+        ["shared"],
+        ["shared", "meme"],
+        ["unrelated"],
+    ):
+        legacy = categorize.suggest_category(keywords, memory, decisions)
+        indexed = categorize.suggest_category(keywords, memory, decisions, scores)
+        assert indexed == legacy, f"mismatch for {keywords}: {indexed} != {legacy}"
+
+    assert scores == {
+        "customer": (2, 0),
+        "onboarding": (1, 0),
+        "shared": (1, 1),
+        "meme": (0, 1),
+    }
+
+
 def test_suggest_names_stores_keywords_in_meta(client, monkeypatch):
     """After LLM suggest, rec.meta.keywords is populated."""
     c, desktop = client
@@ -1288,6 +1340,7 @@ def test_suggest_names_stores_keywords_in_meta(client, monkeypatch):
 
     memory = flask_app._get_memory()
     rec = memory.lookup(fp)
+    assert rec is not None
     assert rec.meta.get("keywords") == ["customer", "onboarding", "discussion"]
 
 
@@ -1330,6 +1383,63 @@ def test_suggest_names_returns_failures_list(client, monkeypatch):
     data = json.loads(r.data)
     assert data["suggestions"] == {}
     assert data["failures"] == [fp]
+
+
+def test_suggest_names_parallelizes_llm_calls(client, monkeypatch):
+    """Wall time must scale with worker count, not N (issue #81)."""
+    c, desktop = client
+    for i in range(4):
+        f = desktop / f"Screenshot 2024-01-0{i + 1} at 12.00.00 PM.png"
+        f.write_bytes(_make_png(10, 10))
+    r = c.get("/api/screenshots")
+    fps = [f["fingerprint"] for f in json.loads(r.data)]
+    assert len(fps) == 4
+
+    def slow_suggest(image_path, model, extension=".png"):
+        time.sleep(0.3)
+        return "suggestion" + extension
+
+    monkeypatch.setattr(llm, "_call_litert_suggest", slow_suggest)
+
+    t0 = time.monotonic()
+    r = c.post(
+        "/api/suggest-names",
+        data=json.dumps({"fingerprints": fps}),
+        content_type="application/json",
+    )
+    elapsed = time.monotonic() - t0
+
+    data = json.loads(r.data)
+    assert len(data["suggestions"]) == 4
+    assert data["failures"] == []
+    # Serial would take 4 * 0.3s = 1.2s; with 4 workers it must finish
+    # well before the serial bound (generous 0.8s budget for CI noise).
+    assert elapsed < 0.8, f"elapsed {elapsed:.2f}s suggests serial LLM calls"
+
+
+def test_suggest_names_parallel_failure_preserved(client, monkeypatch):
+    """Per-fingerprint failure reporting survives parallel execution."""
+    c, desktop = client
+    for i in range(3):
+        f = desktop / f"Screenshot 2024-01-0{i + 1} at 12.00.00 PM.png"
+        f.write_bytes(_make_png(10, 10))
+    r = c.get("/api/screenshots")
+    fps = [f["fingerprint"] for f in json.loads(r.data)]
+
+    def flaky_suggest(image_path, model, extension=".png"):
+        return None if "01-03" in image_path.name else "good" + extension
+
+    monkeypatch.setattr(llm, "_call_litert_suggest", flaky_suggest)
+
+    r = c.post(
+        "/api/suggest-names",
+        data=json.dumps({"fingerprints": fps}),
+        content_type="application/json",
+    )
+    data = json.loads(r.data)
+    assert len(data["suggestions"]) == 2
+    assert len(data["failures"]) == 1
+    assert data["failures"][0] == fps[2]
 
 
 def test_suggest_names_empty_failures_on_success(client, monkeypatch):
@@ -1385,10 +1495,10 @@ def test_is_retryable_llm_error_classifier():
     )
     assert not llm._is_retryable_llm_error(socket.gaierror())
     assert not llm._is_retryable_llm_error(
-        urllib.error.HTTPError("http://x/api/chat", 404, "Not Found", None, None)
+        urllib.error.HTTPError("http://x/api/chat", 404, "Not Found", Message(), None)
     )
     assert not llm._is_retryable_llm_error(
-        urllib.error.HTTPError("http://x/api/chat", 400, "Bad Request", None, None)
+        urllib.error.HTTPError("http://x/api/chat", 400, "Bad Request", Message(), None)
     )
 
     # Retryable: timeouts, resets, broken pipes, 429, 5xx, unknown errors
@@ -1397,10 +1507,10 @@ def test_is_retryable_llm_error_classifier():
     assert llm._is_retryable_llm_error(ConnectionResetError(54, "Connection reset by peer"))
     assert llm._is_retryable_llm_error(BrokenPipeError(32, "Broken pipe"))
     assert llm._is_retryable_llm_error(
-        urllib.error.HTTPError("http://x/api/chat", 429, "Too Many Requests", None, None)
+        urllib.error.HTTPError("http://x/api/chat", 429, "Too Many Requests", Message(), None)
     )
     assert llm._is_retryable_llm_error(
-        urllib.error.HTTPError("http://x/api/chat", 500, "Server Error", None, None)
+        urllib.error.HTTPError("http://x/api/chat", 500, "Server Error", Message(), None)
     )
     assert llm._is_retryable_llm_error(urllib.error.URLError("temporary failure"))
     assert llm._is_retryable_llm_error(OSError("temporary failure"))
@@ -1421,6 +1531,7 @@ def test_accept_clears_suggested_category_in_meta(client):
     # Manually set suggested_category on the record
     memory = flask_app._get_memory()
     rec = memory.lookup(fp)
+    assert rec is not None
     rec.suggested_name = "customer-onboarding.png"
     rec.meta["suggested_category"] = "keep"
 
@@ -1433,6 +1544,7 @@ def test_accept_clears_suggested_category_in_meta(client):
     )
 
     rec = memory.lookup(fp)
+    assert rec is not None
     assert rec.meta.get("suggested_category") is None
 
 
@@ -1447,6 +1559,7 @@ def test_reject_clears_suggested_category_in_meta(client):
 
     memory = flask_app._get_memory()
     rec = memory.lookup(fp)
+    assert rec is not None
     rec.meta["suggested_category"] = "keep"
 
     assert rec.meta.get("suggested_category") == "keep"
@@ -1458,6 +1571,7 @@ def test_reject_clears_suggested_category_in_meta(client):
     )
 
     rec = memory.lookup(fp)
+    assert rec is not None
     assert rec.meta.get("suggested_category") is None
 
 
@@ -1472,6 +1586,7 @@ def test_rename_clears_suggested_category_in_meta(client):
 
     memory = flask_app._get_memory()
     rec = memory.lookup(fp)
+    assert rec is not None
     rec.meta["suggested_category"] = "trash"
 
     assert rec.meta.get("suggested_category") == "trash"
@@ -1488,6 +1603,7 @@ def test_rename_clears_suggested_category_in_meta(client):
     )
 
     rec = memory.lookup(fp)
+    assert rec is not None
     assert rec.meta.get("suggested_category") is None
 
 

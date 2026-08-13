@@ -6,12 +6,12 @@ their canonical modules and that the route module no longer defines them.
 
 import importlib
 
-import src.ss_dcl.app as app
-import src.ss_dcl.categorize as categorize
-import src.ss_dcl.llm as llm
-import src.ss_dcl.server as server
-import src.ss_dcl.settings as settings
-import src.ss_dcl.thumbs as thumbs
+import ss_dcl.app as app
+import ss_dcl.categorize as categorize
+import ss_dcl.llm as llm
+import ss_dcl.server as server
+import ss_dcl.settings as settings
+import ss_dcl.thumbs as thumbs
 
 
 def test_app_module_no_longer_defines_moved_helpers():
@@ -62,7 +62,8 @@ def test_server_module_exposes_process_lifecycle():
 def test_thumbs_module_exposes_generator_and_size():
     assert callable(thumbs._generate_thumbnail)
     assert thumbs.THUMB_SIZE == (400, 300)
-    assert thumbs._THUMB_EXECUTOR is not None
+    # Issue #80: no executor — generation is synchronous in the request thread.
+    assert not hasattr(thumbs, "_THUMB_EXECUTOR")
 
 
 def test_settings_module_exposes_persistence():
@@ -83,10 +84,21 @@ def test_app_module_keeps_route_facing_helpers():
 def test_modules_import_independently():
     """Each split module must import standalone (no circular deps)."""
     for mod in (
-        "src.ss_dcl.llm",
-        "src.ss_dcl.server",
-        "src.ss_dcl.thumbs",
-        "src.ss_dcl.settings",
-        "src.ss_dcl.categorize",
+        "ss_dcl.llm",
+        "ss_dcl.server",
+        "ss_dcl.thumbs",
+        "ss_dcl.settings",
+        "ss_dcl.categorize",
     ):
         importlib.import_module(mod)
+
+
+def test_resource_root_resolves_assets():
+    """_HERE must point at a dir containing templates/ and static/ (issue #97).
+
+    Holds both when running from the repo and when installed as a wheel
+    (where hatchling force-includes the assets at the site-packages root).
+    """
+    root = app._HERE
+    assert (root / "templates" / "index.html").is_file()
+    assert (root / "static" / "app.js").is_file()

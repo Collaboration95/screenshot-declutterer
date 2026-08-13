@@ -9,7 +9,7 @@ import logging
 from pathlib import Path
 from typing import Any
 
-from src.ss_dcl.memory import atomic_write
+from ss_dcl.memory import atomic_write
 
 logger = logging.getLogger(__name__)
 

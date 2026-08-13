@@ -1,7 +1,7 @@
 """LiteRT-LM client: health probing, retry classification, name suggestion, PNG normalization.
 
 All LiteRT network interaction lives here. The server process lifecycle
-(start/stop/pidfile ownership) is managed by :mod:`src.ss_dcl.server`.
+(start/stop/pidfile ownership) is managed by :mod:`ss_dcl.server`.
 """
 
 import base64
