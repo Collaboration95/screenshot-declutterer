@@ -13,9 +13,13 @@ Tests that:
 import json
 import socket
 import urllib.error
+import urllib.request
 from unittest.mock import patch
 
 import src.ss_dcl.app as flask_app
+import src.ss_dcl.categorize as categorize
+import src.ss_dcl.llm as llm
+import src.ss_dcl.settings as settings_module
 
 from helpers import _make_png
 
@@ -502,7 +506,7 @@ def test_suggest_names_with_real_file_and_mock_llm(client, monkeypatch):
     def mock_suggest(image_path, model, extension=".png"):
         return "customer-onboarding" + extension
 
-    monkeypatch.setattr(flask_app, "_call_litert_suggest", mock_suggest)
+    monkeypatch.setattr(llm, "_call_litert_suggest", mock_suggest)
 
     # Now suggest names
     r = c.post(
@@ -543,7 +547,7 @@ def test_suggest_names_skips_already_processed(client, monkeypatch):
         call_count += 1
         return "should-not-be-called" + extension
 
-    monkeypatch.setattr(flask_app, "_call_litert_suggest", mock_suggest)
+    monkeypatch.setattr(llm, "_call_litert_suggest", mock_suggest)
 
     r = c.post(
         "/api/suggest-names",
@@ -567,7 +571,7 @@ def test_suggest_names_handles_llm_returning_none(client, monkeypatch):
     def mock_suggest(image_path, model, extension=".png"):
         return None
 
-    monkeypatch.setattr(flask_app, "_call_litert_suggest", mock_suggest)
+    monkeypatch.setattr(llm, "_call_litert_suggest", mock_suggest)
 
     r = c.post(
         "/api/suggest-names",
@@ -850,7 +854,7 @@ def test_settings_persists_to_disk(client):
         content_type="application/json",
     )
 
-    settings_file = flask_app.SETTINGS_FILE
+    settings_file = settings_module.SETTINGS_FILE
     assert settings_file.exists()
     raw = json.loads(settings_file.read_text())
     assert raw["llm_model"] == "persist-test"
@@ -893,15 +897,63 @@ def test_settings_put_rejects_wrong_types(client):
     assert r.status_code == 400
 
 
+def test_settings_put_rejects_out_of_range_prune_age(client):
+    """prune_max_age_days must be within 1..730 (issue #83)."""
+    c, _ = client
+    for bad in (-1, 0, 731, 1000):
+        r = c.put(
+            "/api/settings",
+            data=json.dumps({"prune_max_age_days": bad}),
+            content_type="application/json",
+        )
+        assert r.status_code == 400, f"{bad} should be rejected"
+        body = json.loads(r.data)
+        assert "prune_max_age_days" in body["error"]
+
+    # Rejected values must not persist
+    r = c.get("/api/settings")
+    assert json.loads(r.data)["prune_max_age_days"] == 90
+
+
+def test_settings_put_accepts_prune_age_boundaries(client):
+    """Both ends of the valid range are accepted and persisted (issue #83)."""
+    c, _ = client
+    for good in (1, 90, 730):
+        r = c.put(
+            "/api/settings",
+            data=json.dumps({"prune_max_age_days": good}),
+            content_type="application/json",
+        )
+        assert r.status_code == 200, f"{good} should be accepted"
+        assert json.loads(c.get("/api/settings").data)["prune_max_age_days"] == good
+
+
+def test_settings_put_rejects_negative_prune_before_persist(client):
+    """A rejected prune value must leave any previously saved value intact."""
+    c, _ = client
+    c.put(
+        "/api/settings",
+        data=json.dumps({"prune_max_age_days": 45}),
+        content_type="application/json",
+    )
+    r = c.put(
+        "/api/settings",
+        data=json.dumps({"prune_max_age_days": -5}),
+        content_type="application/json",
+    )
+    assert r.status_code == 400
+    assert json.loads(c.get("/api/settings").data)["prune_max_age_days"] == 45
+
+
 def test_sanitize_suggestion_basic(tmp_path):
     """Verify the sanitization logic produces safe filenames."""
-    result = flask_app._sanitize_suggestion("  Hello World! This is GREAT  ")
+    result = llm._sanitize_suggestion("  Hello World! This is GREAT  ")
     assert result == "hello-world-this-is-great.png"
 
 
 def test_sanitize_suggestion_collapses_repeated_hyphens(tmp_path):
     """Multi-space / punctuation gaps should not produce '--'."""
-    result = flask_app._sanitize_suggestion("foo   bar!!!baz")
+    result = llm._sanitize_suggestion("foo   bar!!!baz")
     # "foo   bar!!!baz" → "foo---barbaz" → collapsed to "foo-barbaz"
     assert result == "foo-barbaz.png"
     assert "--" not in result
@@ -911,7 +963,7 @@ def test_sanitize_suggestion_strips_trailing_hyphen_after_truncation(tmp_path):
     """Truncation must not leave a trailing hyphen."""
     # A long string where the 120-char slice cuts right after a hyphen
     long_text = "a" * 119 + "-b"
-    result = flask_app._sanitize_suggestion(long_text)
+    result = llm._sanitize_suggestion(long_text)
     assert result is not None
     assert not result.startswith("-")
     assert not result.rstrip(".png").endswith("-")
@@ -919,7 +971,7 @@ def test_sanitize_suggestion_strips_trailing_hyphen_after_truncation(tmp_path):
 
 def test_sanitize_suggestion_preserves_extension(tmp_path):
     """The extension parameter is used, not hardcoded .png."""
-    result = flask_app._sanitize_suggestion("sunny beach", extension=".jpg")
+    result = llm._sanitize_suggestion("sunny beach", extension=".jpg")
     assert result == "sunny-beach.jpg"
 
 
@@ -937,7 +989,7 @@ def test_suggest_names_preserves_non_png_extension(client, monkeypatch):
         assert extension == ".jpg"
         return "beach-photo" + extension
 
-    monkeypatch.setattr(flask_app, "_call_litert_suggest", mock_suggest)
+    monkeypatch.setattr(llm, "_call_litert_suggest", mock_suggest)
 
     r = c.post(
         "/api/suggest-names",
@@ -1141,19 +1193,19 @@ def test_settings_prune_age_type_validation(client):
 
 def test_extract_keywords_from_suggested_name():
     """extract_keywords parses kebab-case filename stems."""
-    assert flask_app.extract_keywords("foo-bar-baz.png") == ["foo", "bar", "baz"]
+    assert categorize.extract_keywords("foo-bar-baz.png") == ["foo", "bar", "baz"]
 
 
 def test_extract_keywords_filters_short_words():
     """Words with length <= 2 are filtered out."""
-    assert flask_app.extract_keywords("a-b-cat.png") == ["cat"]
+    assert categorize.extract_keywords("a-b-cat.png") == ["cat"]
 
 
 def test_suggest_category_no_decisions_returns_none(client):
     """Empty decisions → no categorization."""
     _, _t = client
     memory = flask_app._get_memory()
-    result = flask_app.suggest_category(["foo", "bar"], memory, {})
+    result = categorize.suggest_category(["foo", "bar"], memory, {})
     assert result is None
 
 
@@ -1167,7 +1219,7 @@ def test_suggest_category_keep_when_keywords_match_kept(client):
     rec.meta["keywords"] = ["customer", "onboarding"]
 
     decisions = {"kept-file.png": "keep"}
-    result = flask_app.suggest_category(["customer", "discussion"], memory, decisions)
+    result = categorize.suggest_category(["customer", "discussion"], memory, decisions)
     assert result == "keep"
 
 
@@ -1180,7 +1232,7 @@ def test_suggest_category_trash_when_keywords_match_trashed(client):
     rec.meta["keywords"] = ["meme", "funny"]
 
     decisions = {"trashed-file.png": "trash"}
-    result = flask_app.suggest_category(["funny", "joke"], memory, decisions)
+    result = categorize.suggest_category(["funny", "joke"], memory, decisions)
     assert result == "trash"
 
 
@@ -1195,7 +1247,7 @@ def test_suggest_category_ignores_renamed_but_undecided(client):
     rec.status = "renamed"
 
     decisions = {}  # Not decided → should not contribute
-    result = flask_app.suggest_category(["work"], memory, decisions)
+    result = categorize.suggest_category(["work"], memory, decisions)
     assert result is None
 
 
@@ -1210,7 +1262,7 @@ def test_suggest_category_tie_returns_none(client):
     rec2.meta["keywords"] = ["shared"]
 
     decisions = {"kept.png": "keep", "trashed.png": "trash"}
-    result = flask_app.suggest_category(["shared"], memory, decisions)
+    result = categorize.suggest_category(["shared"], memory, decisions)
     assert result is None
 
 
@@ -1226,7 +1278,7 @@ def test_suggest_names_stores_keywords_in_meta(client, monkeypatch):
     def mock_suggest(image_path, model, extension=".png"):
         return "customer-onboarding-discussion" + extension
 
-    monkeypatch.setattr(flask_app, "_call_litert_suggest", mock_suggest)
+    monkeypatch.setattr(llm, "_call_litert_suggest", mock_suggest)
 
     c.post(
         "/api/suggest-names",
@@ -1268,7 +1320,7 @@ def test_suggest_names_returns_failures_list(client, monkeypatch):
     def mock_suggest(image_path, model, extension=".png"):
         return None
 
-    monkeypatch.setattr(flask_app, "_call_litert_suggest", mock_suggest)
+    monkeypatch.setattr(llm, "_call_litert_suggest", mock_suggest)
 
     r = c.post(
         "/api/suggest-names",
@@ -1292,7 +1344,7 @@ def test_suggest_names_empty_failures_on_success(client, monkeypatch):
     def mock_suggest(image_path, model, extension=".png"):
         return "good-suggestion" + extension
 
-    monkeypatch.setattr(flask_app, "_call_litert_suggest", mock_suggest)
+    monkeypatch.setattr(llm, "_call_litert_suggest", mock_suggest)
 
     r = c.post(
         "/api/suggest-names",
@@ -1316,10 +1368,10 @@ def test_call_litert_suggest_retries_on_transient_error(tmp_path, monkeypatch):
         call_count += 1
         raise urllib.error.URLError("temporary failure")
 
-    monkeypatch.setattr(flask_app.urllib.request, "urlopen", mock_urlopen)
+    monkeypatch.setattr(urllib.request, "urlopen", mock_urlopen)
     monkeypatch.setattr(flask_app.time, "sleep", lambda s: None)
 
-    result = flask_app._call_litert_suggest(img, "test-model")
+    result = llm._call_litert_suggest(img, "test-model")
     assert result is None
     assert call_count == 3  # initial + 2 retries = 3 attempts
 
@@ -1327,31 +1379,31 @@ def test_call_litert_suggest_retries_on_transient_error(tmp_path, monkeypatch):
 def test_is_retryable_llm_error_classifier():
     """_is_retryable_llm_error classifies transient vs permanent errors."""
     # Not retryable: connection refused, DNS failure, 4xx (except 429)
-    assert not flask_app._is_retryable_llm_error(ConnectionRefusedError(61, "Connection refused"))
-    assert not flask_app._is_retryable_llm_error(
+    assert not llm._is_retryable_llm_error(ConnectionRefusedError(61, "Connection refused"))
+    assert not llm._is_retryable_llm_error(
         urllib.error.URLError(ConnectionRefusedError(61, "Connection refused"))
     )
-    assert not flask_app._is_retryable_llm_error(socket.gaierror())
-    assert not flask_app._is_retryable_llm_error(
+    assert not llm._is_retryable_llm_error(socket.gaierror())
+    assert not llm._is_retryable_llm_error(
         urllib.error.HTTPError("http://x/api/chat", 404, "Not Found", None, None)
     )
-    assert not flask_app._is_retryable_llm_error(
+    assert not llm._is_retryable_llm_error(
         urllib.error.HTTPError("http://x/api/chat", 400, "Bad Request", None, None)
     )
 
     # Retryable: timeouts, resets, broken pipes, 429, 5xx, unknown errors
-    assert flask_app._is_retryable_llm_error(TimeoutError())
-    assert flask_app._is_retryable_llm_error(TimeoutError())
-    assert flask_app._is_retryable_llm_error(ConnectionResetError(54, "Connection reset by peer"))
-    assert flask_app._is_retryable_llm_error(BrokenPipeError(32, "Broken pipe"))
-    assert flask_app._is_retryable_llm_error(
+    assert llm._is_retryable_llm_error(TimeoutError())
+    assert llm._is_retryable_llm_error(TimeoutError())
+    assert llm._is_retryable_llm_error(ConnectionResetError(54, "Connection reset by peer"))
+    assert llm._is_retryable_llm_error(BrokenPipeError(32, "Broken pipe"))
+    assert llm._is_retryable_llm_error(
         urllib.error.HTTPError("http://x/api/chat", 429, "Too Many Requests", None, None)
     )
-    assert flask_app._is_retryable_llm_error(
+    assert llm._is_retryable_llm_error(
         urllib.error.HTTPError("http://x/api/chat", 500, "Server Error", None, None)
     )
-    assert flask_app._is_retryable_llm_error(urllib.error.URLError("temporary failure"))
-    assert flask_app._is_retryable_llm_error(OSError("temporary failure"))
+    assert llm._is_retryable_llm_error(urllib.error.URLError("temporary failure"))
+    assert llm._is_retryable_llm_error(OSError("temporary failure"))
 
 
 # ── Bug fix: category hint clearing ─────────────────────────────────────────

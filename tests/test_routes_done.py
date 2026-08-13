@@ -144,6 +144,59 @@ def test_api_done_cleans_up_state(client):
     assert "Screenshot other.png" in saved["decisions"]
 
 
+def test_api_done_keeps_decision_for_failed_file_on_partial_failure(client):
+    """207 partial failure: decisions drop for trashed files only (issue #82)."""
+    c, desktop = client
+    trashed = desktop / "Screenshot 2024-01-01 at 10.00.00 AM.png"
+    failed = desktop / "Screenshot 2024-01-02 at 10.00.00 AM.png"
+    trashed.write_bytes(b"")
+    failed.write_bytes(b"")
+
+    state = {"decisions": {trashed.name: "trash", failed.name: "trash"}}
+    c.put("/api/state", data=json.dumps(state), content_type="application/json")
+
+    def _trash(path):
+        if str(path).endswith(failed.name):
+            raise OSError("locked")
+
+    with patch("src.ss_dcl.app.send2trash", side_effect=_trash):
+        r = c.post(
+            "/api/done",
+            data=json.dumps({"filenames": [trashed.name, failed.name]}),
+            content_type="application/json",
+        )
+
+    assert r.status_code == 207
+    body = json.loads(r.data)
+    assert body["ok"] is False
+    assert len(body["errors"]) == 1
+
+    saved = json.loads(c.get("/api/state").data)
+    # Failed file keeps its decision; trashed file's decision is removed
+    assert saved["decisions"] == {failed.name: "trash"}
+
+
+def test_api_done_keeps_decision_for_invalid_file_on_partial_failure(client):
+    """207 partial failure (invalid filename): decision preserved (issue #82)."""
+    c, desktop = client
+    valid = desktop / "Screenshot 2024-01-01 at 10.00.00 AM.png"
+    valid.write_bytes(b"")
+
+    state = {"decisions": {valid.name: "trash", "ghost.png": "trash"}}
+    c.put("/api/state", data=json.dumps(state), content_type="application/json")
+
+    with patch("src.ss_dcl.app.send2trash"):
+        r = c.post(
+            "/api/done",
+            data=json.dumps({"filenames": [valid.name, "ghost.png"]}),
+            content_type="application/json",
+        )
+
+    assert r.status_code == 207
+    saved = json.loads(c.get("/api/state").data)
+    assert saved["decisions"] == {"ghost.png": "trash"}
+
+
 def test_api_done_cleans_up_thumbnail(client):
     c, desktop = client
     f = desktop / "Screenshot 2024-01-01 at 10.00.00 AM.png"

@@ -1,21 +1,13 @@
-import base64
 import contextlib
-import errno
-import io
 import json
 import logging
 import os
-import shutil
-import signal
 import socket
 import subprocess
 import sys
 import threading
 import time
-import urllib.error
-import urllib.request
 import webbrowser
-from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any
 
@@ -29,8 +21,8 @@ from flask import (
     request,
     send_file,
 )
-from PIL import Image
 from send2trash import send2trash
+from src.ss_dcl import categorize, llm, server, settings, thumbs
 from src.ss_dcl.memory import MemoryStore, atomic_write, compute_fingerprint
 
 logger = logging.getLogger(__name__)
@@ -57,34 +49,9 @@ DESKTOP = Path(os.environ.get("SS_DCL_DESKTOP", str(Path.home() / "Desktop")))
 THUMB_DIR = Path.home() / ".cache" / "ss-dcl" / "thumbs"
 STATE_FILE = Path.home() / ".ss-dcl" / "state.json"
 MEMORY_FILE = Path.home() / ".ss-dcl" / "memory.json"
-SETTINGS_FILE = Path.home() / ".ss-dcl" / "settings.json"
-DEFAULT_LLM_MODEL = "gemma4-e2b"
 IS_MACOS = sys.platform == "darwin"
-LITERT_BASE_URL = os.environ.get("LITERT_BASE_URL", "http://localhost:9379")
-LITERT_HEALTH_TIMEOUT = 3  # seconds
-_LITERT_HEALTH_TTL = 5.0  # seconds
-_litert_health_cache: tuple[float, bool] | None = None
-# Managed LiteRT server process (Phase C): command resolution, pidfile
-# ownership, readiness polling. Logs go to the app state dir.
-LITERT_SERVE_CMD = os.environ.get("LITERT_SERVE_CMD", "litert-lm serve")
-LITERT_SERVE_READY_TIMEOUT = 30  # seconds to wait for /v1/models after spawn
-LITERT_PIDFILE = str(Path.home() / ".ss-dcl" / "litert.pid")
-LITERT_LOG_FILE = str(Path.home() / ".ss-dcl" / "litert.log")
-# Fallback binary: the sample venv used in the verified workflow.
-LITERT_VENV_FALLBACK = str(Path.home() / "litert-lm" / ".venv" / "bin" / "litert-lm")
 # TODO Need to check if rendering changes for .tiff or .bmp needs to be handled seperately
 SUPPORTED_IMAGE_EXTENSION = (".png", ".jpg", ".jpeg", ".tiff", ".bmp")
-
-
-def _parse_thumb_size(raw: str) -> tuple[int, int]:
-    try:
-        parts = raw.split("x")
-        return (int(parts[0]), int(parts[1]))
-    except (ValueError, IndexError):
-        return (400, 300)
-
-
-THUMB_SIZE: tuple[int, int] = _parse_thumb_size(os.environ.get("THUMB_SIZE", "400x300"))
 
 SORT_OPTIONS = {
     "name": ("name", False),
@@ -112,23 +79,9 @@ def _get_memory() -> MemoryStore:
 
 def _reset_memory() -> None:
     global _memory_store
-    global _prune_max_age_cache
     with _memory_lock:
         _memory_store = None
-    _prune_max_age_cache = None
-
-
-# ── Settings cache (prune age) ──────────────────────────────────────────────
-_prune_max_age_cache: int | None = None
-
-
-def _prune_max_age() -> int:
-    global _prune_max_age_cache
-    if _prune_max_age_cache is None:
-        _prune_max_age_cache = _load_settings().get("prune_max_age_days", 90)
-    # Global could be None in theory, but we just ensured it's set above
-    age: int = _prune_max_age_cache  # type: ignore[assignment]
-    return age
+    settings.reset_prune_cache()
 
 
 _dirs_initialized = False
@@ -148,6 +101,7 @@ def get_screenshots(sort: str = "name") -> list[dict[str, Any]]:
     files: list[dict[str, Any]] = []
     any_new = False
     active_fps: set[str] = set()
+    decisions = _read_decisions()
     for p in DESKTOP.glob("Screenshot*.*"):
         if not p.is_file() or (p.suffix.lower() not in SUPPORTED_IMAGE_EXTENSION):
             continue
@@ -172,8 +126,8 @@ def get_screenshots(sort: str = "name") -> list[dict[str, Any]]:
         # Recompute suggested_category from keywords + current decisions
         # (refreshes hints as user history accumulates)
         if existing and existing.meta.get("keywords"):
-            suggested_category = suggest_category(
-                existing.meta["keywords"], memory, _read_decisions()
+            suggested_category = categorize.suggest_category(
+                existing.meta["keywords"], memory, decisions
             )
             if suggested_category != existing.meta.get("suggested_category"):
                 existing.meta["suggested_category"] = suggested_category
@@ -194,23 +148,17 @@ def get_screenshots(sort: str = "name") -> list[dict[str, Any]]:
         memory.save()
 
     # ── Memory pruning (4A) ──────────────────────────────────────────
-    pruned = memory.prune_stale(active_fps, max_age_days=_prune_max_age())
+    pruned = memory.prune_stale(active_fps, max_age_days=settings._prune_max_age())
     if pruned > 0:
-        logger.info("Pruned %d stale memory entries (max age: %d days)", pruned, _prune_max_age())
+        logger.info(
+            "Pruned %d stale memory entries (max age: %d days)",
+            pruned,
+            settings._prune_max_age(),
+        )
         memory.save()
 
     key, reverse = SORT_OPTIONS.get(sort, ("name", False))
     return sorted(files, key=lambda f: f[key], reverse=reverse)
-
-
-_THUMB_EXECUTOR = ThreadPoolExecutor(max_workers=2, thread_name_prefix="thumb")
-
-
-def _generate_thumbnail(src: Path, dst: Path) -> None:
-    dst.parent.mkdir(parents=True, exist_ok=True)
-    with Image.open(src) as img:
-        img.thumbnail(THUMB_SIZE)
-        img.save(dst, "PNG")
 
 
 def _validate_desktop_path(filename: str) -> Path | None:
@@ -257,7 +205,9 @@ def api_thumb(filename: str):
     thumb_path = THUMB_DIR / filename
     if not thumb_path.exists() or image_path.stat().st_mtime > thumb_path.stat().st_mtime:
         try:
-            future = _THUMB_EXECUTOR.submit(_generate_thumbnail, image_path, thumb_path)
+            future = thumbs._THUMB_EXECUTOR.submit(
+                thumbs._generate_thumbnail, image_path, thumb_path
+            )
             future.result(timeout=5)
         except Exception:
             logger.warning("Thumbnail generation failed for %s, serving full image", filename)
@@ -354,7 +304,7 @@ def api_done():
         try:
             state = json.loads(STATE_FILE.read_text())
             decisions = state.get("decisions", {})
-            for fn in filenames:
+            for fn in trashed_ok:
                 decisions.pop(fn, None)
             atomic_write(STATE_FILE, json.dumps(state))
         except (json.JSONDecodeError, KeyError):
@@ -453,385 +403,6 @@ def api_memory():
     return jsonify({"files": result})
 
 
-def _is_retryable_llm_error(exc: BaseException) -> bool:
-    """Return True if *exc* is transient and worth retrying.
-
-    Unwraps ``urllib.error.URLError`` (whose ``.reason`` may itself be an
-    exception) and classifies the underlying cause.  Connection refused and
-    DNS lookup failures mean the server is down — retrying is futile — while
-    timeouts, resets, broken pipes, HTTP 429 and HTTP 5xx are transient.
-    Unrecognized errors default to retryable to stay conservative.
-    """
-    if isinstance(exc, urllib.error.HTTPError):
-        # HTTPError is a URLError subclass carrying an HTTP status code.
-        return exc.code == 429 or exc.code >= 500
-
-    if isinstance(exc, urllib.error.URLError):
-        reason = exc.reason
-        if isinstance(reason, BaseException):
-            return _is_retryable_llm_error(reason)
-        # Non-exception reason (e.g. plain string) — unknown, stay conservative.
-        return True
-
-    # socket.timeout is an alias of TimeoutError since Python 3.10.
-    if isinstance(exc, TimeoutError):
-        return True
-    if isinstance(exc, (ConnectionResetError | BrokenPipeError)):
-        return True
-    if isinstance(exc, socket.gaierror):
-        return False
-    if isinstance(exc, ConnectionRefusedError):
-        return False
-    if isinstance(exc, OSError):
-        if exc.errno == errno.ECONNREFUSED:
-            return False
-        if exc.errno in (errno.EPIPE, errno.ECONNRESET):
-            return True
-        # Unknown OSError (possibly no errno) — conservative default.
-        return True
-    return True
-
-
-def _sanitize_suggestion(raw: str, extension: str = ".png") -> str | None:
-    """Turn a raw LLM reply into a safe kebab-case filename.
-
-    Lowercases, replaces spaces with hyphens, strips punctuation, collapses
-    repeated hyphens, truncates to 120 chars, and appends *extension*
-    (leading dot included, e.g. ".jpg").
-    """
-    sanitized = raw.lower().replace(" ", "-")
-    sanitized = "".join(c for c in sanitized if c.isalnum() or c in "-_")
-    # Collapse repeated hyphens (from multi-space / punctuation gaps)
-    while "--" in sanitized:
-        sanitized = sanitized.replace("--", "-")
-    # Truncate then strip so trailing hyphen after slice is removed
-    sanitized = sanitized[:120].strip("-_")
-    if not sanitized:
-        return None
-    return sanitized + extension
-
-
-def _image_to_png_data_uri(image_path: Path) -> str:
-    """Normalize any supported image to a PNG base64 data URI.
-
-    PNG/JPG pass through a Pillow re-encode; BMP/TIFF (whose raw base64 can be
-    tens of MB) collapse to a few KB. Also strips alpha (convert("RGB")), which
-    some vision encoders reject.
-    """
-    with Image.open(image_path) as im:
-        buf = io.BytesIO()
-        im.convert("RGB").save(buf, "PNG")
-    return "data:image/png;base64," + base64.b64encode(buf.getvalue()).decode("ascii")
-
-
-def _call_litert_suggest(image_path: Path, model: str, extension: str = ".png") -> str | None:
-    """Call the LiteRT-LM OpenAI-compatible server with an image.
-
-    Returns a sanitized suggested filename (extension included), or None on
-    failure. Retries up to 2 times on transient errors with 1s/2s backoff,
-    fails fast on permanent ones.
-    """
-    max_retries = 2
-    data_uri = _image_to_png_data_uri(image_path)
-
-    prompt = (
-        "Describe this screenshot in 3-5 words as a filename. "
-        "Return only the filename, no explanation, no quotes."
-    )
-
-    payload = json.dumps(
-        {
-            "model": model,
-            "messages": [
-                {
-                    "role": "user",
-                    "content": [
-                        {"type": "text", "text": prompt},
-                        {"type": "image_url", "image_url": {"url": data_uri}},
-                    ],
-                }
-            ],
-            "max_tokens": 40,
-            "stream": False,
-        }
-    ).encode("utf-8")
-
-    req = urllib.request.Request(
-        f"{LITERT_BASE_URL}/v1/chat/completions",
-        data=payload,
-        headers={"Content-Type": "application/json"},
-    )
-
-    for attempt in range(max_retries + 1):
-        try:
-            with urllib.request.urlopen(req, timeout=30) as resp:
-                result = json.loads(resp.read())
-                choices = result.get("choices") or []
-                raw = choices[0].get("message", {}).get("content", "").strip() if choices else ""
-                break
-        except json.JSONDecodeError as exc:
-            logger.warning("LiteRT returned malformed JSON for %s: %s", image_path.name, exc)
-            return None
-        except (urllib.error.URLError, OSError) as exc:
-            if not _is_retryable_llm_error(exc):
-                logger.warning(
-                    "LiteRT unreachable for %s, not retrying: %s",
-                    image_path.name,
-                    exc,
-                )
-                return None
-            if attempt < max_retries:
-                wait = 2**attempt
-                logger.warning(
-                    "LiteRT attempt %d/%d failed for %s, retrying in %ds: %s",
-                    attempt + 1,
-                    max_retries + 1,
-                    image_path.name,
-                    wait,
-                    exc,
-                )
-                time.sleep(wait)
-            else:
-                logger.warning(
-                    "LiteRT suggest failed after %d attempts for %s: %s",
-                    max_retries + 1,
-                    image_path.name,
-                    exc,
-                )
-                return None
-
-    if not raw:
-        return None
-    return _sanitize_suggestion(raw, extension)
-
-
-def _litert_healthy() -> bool:
-    """Cheap reachability probe for the LiteRT-LM server (GET /v1/models).
-
-    Negative AND positive verdicts are cached for ``_LITERT_HEALTH_TTL``
-    seconds so a down server is probed at most once per batch instead of
-    once per file.
-    """
-    global _litert_health_cache
-    now = time.monotonic()
-    if _litert_health_cache is not None and now - _litert_health_cache[0] < _LITERT_HEALTH_TTL:
-        return _litert_health_cache[1]
-
-    ok = False
-    try:
-        with urllib.request.urlopen(
-            f"{LITERT_BASE_URL}/v1/models", timeout=LITERT_HEALTH_TIMEOUT
-        ) as resp:
-            ok = resp.status == 200
-    except (urllib.error.URLError, OSError):
-        ok = False
-
-    _litert_health_cache = (time.monotonic(), ok)
-    return ok
-
-
-# ── Managed LiteRT server process (Option B: one-click start/stop) ──────────
-
-
-def _litert_serve_cmd() -> list[str]:
-    """Resolve the serve command: env override, then PATH, then the sample venv."""
-    parts = LITERT_SERVE_CMD.split()
-    if not parts:
-        raise ValueError("LITERT_SERVE_CMD is empty")
-    resolved = shutil.which(parts[0])
-    if resolved:
-        return [resolved, *parts[1:]]
-    if os.path.exists(LITERT_VENV_FALLBACK):
-        return [LITERT_VENV_FALLBACK, *parts[1:]]
-    return parts  # let Popen fail with a clear FileNotFoundError
-
-
-def _read_litert_pid() -> int | None:
-    """Read the pidfile; returns None when absent or malformed."""
-    try:
-        return int(Path(LITERT_PIDFILE).read_text().strip())
-    except (FileNotFoundError, ValueError, OSError):
-        return None
-
-
-def _pid_alive(pid: int) -> bool:
-    """True when a process with this pid exists (any owner)."""
-    if pid <= 0:
-        return False
-    try:
-        os.kill(pid, 0)
-        return True
-    except ProcessLookupError:
-        return False
-    except PermissionError:
-        return True  # exists, owned by another user
-
-
-def _spawn_litert_server() -> tuple[bool, str]:
-    """Start the LiteRT server unless one is already running.
-
-    Ownership rule: this only ever records and later kills the PID it spawned
-    itself (``LITERT_PIDFILE``). A live PID that isn't responding is left
-    alone — it may be the user's own server booting or a foreign process.
-    """
-    if _litert_healthy():
-        return True, "LiteRT server is already running."
-
-    pid = _read_litert_pid()
-    if pid is not None and _pid_alive(pid):
-        return (
-            False,
-            f"Process {pid} is already running and not responding — won't double-spawn. "
-            f"Check {LITERT_LOG_FILE} or stop it manually.",
-        )
-    if pid is not None:  # stale pidfile
-        Path(LITERT_PIDFILE).unlink(missing_ok=True)
-
-    try:
-        cmd = _litert_serve_cmd()
-    except ValueError as exc:
-        return False, str(exc)
-
-    with open(LITERT_LOG_FILE, "ab") as log_handle:
-        try:
-            proc = subprocess.Popen(
-                cmd,
-                stdin=subprocess.DEVNULL,
-                stdout=log_handle,
-                stderr=subprocess.STDOUT,
-                start_new_session=True,
-                cwd=str(Path.home()),
-            )
-        except FileNotFoundError:
-            return (
-                False,
-                f"litert-lm not found — install it or set LITERT_SERVE_CMD. Tried: {cmd}",
-            )
-
-    Path(LITERT_PIDFILE).write_text(str(proc.pid))
-
-    global _litert_health_cache
-    deadline = time.monotonic() + LITERT_SERVE_READY_TIMEOUT
-    while time.monotonic() < deadline:
-        # Bust the TTL-cached negative verdict so each poll is a real probe.
-        _litert_health_cache = None
-        if _litert_healthy():
-            return True, f"LiteRT server started (pid {proc.pid}) and is ready."
-        time.sleep(0.5)
-    return (
-        False,
-        f"LiteRT server started (pid {proc.pid}) but not ready within "
-        f"{LITERT_SERVE_READY_TIMEOUT}s. See {LITERT_LOG_FILE}.",
-    )
-
-
-@app.route("/api/llm/start", methods=["POST"])
-def api_llm_start():
-    """Start the LiteRT server as a detached subprocess."""
-    ok, message = _spawn_litert_server()
-    return jsonify({"ok": ok, "message": message}), 200 if ok else 502
-
-
-@app.route("/api/llm/stop", methods=["POST"])
-def api_llm_stop():
-    """Stop a LiteRT server this app started. Never touches foreign PIDs."""
-    pid = _read_litert_pid()
-    if pid is None:
-        return jsonify({"ok": False, "error": "No LiteRT server was started from this app."}), 409
-    if not _pid_alive(pid):
-        Path(LITERT_PIDFILE).unlink(missing_ok=True)
-        _litert_health_cache = None
-        msg = "Server was already stopped; stale pidfile cleaned up."
-        return jsonify({"ok": True, "message": msg})
-    try:
-        os.kill(pid, signal.SIGTERM)
-    except ProcessLookupError:
-        Path(LITERT_PIDFILE).unlink(missing_ok=True)
-        _litert_health_cache = None
-        return jsonify({"ok": True, "message": "Server was already stopped."})
-    except PermissionError:
-        msg = f"Process {pid} isn't yours — refusing to kill it."
-        return jsonify({"ok": False, "error": msg}), 403
-
-    deadline = time.monotonic() + 5
-    while time.monotonic() < deadline and _pid_alive(pid):
-        time.sleep(0.2)
-    Path(LITERT_PIDFILE).unlink(missing_ok=True)
-    _litert_health_cache = None
-    return jsonify({"ok": True, "message": f"LiteRT server (pid {pid}) stopped."})
-
-
-def _load_settings() -> dict[str, Any]:
-    if SETTINGS_FILE.exists():
-        try:
-            data = json.loads(SETTINGS_FILE.read_text())
-        except (json.JSONDecodeError, OSError):
-            return {}
-        # LiteRT is the only provider; normalize any legacy/stale value.
-        if data.get("llm_provider") != "litert":
-            data["llm_provider"] = "litert"
-        return data
-    return {}
-
-
-def _save_settings(settings: dict[str, Any]) -> None:
-    SETTINGS_FILE.parent.mkdir(parents=True, exist_ok=True)
-    atomic_write(SETTINGS_FILE, json.dumps(settings, indent=2))
-
-
-# ── Auto-categorization helpers (4C) ──────────────────────────────────────────
-
-
-def extract_keywords(suggested_name: str) -> list[str]:
-    """Extract keywords from a kebab-case filename stem.
-
-    >>> extract_keywords("customer-onboarding-discussion.png")
-    ['customer', 'onboarding', 'discussion']
-    """
-    stem = Path(suggested_name).stem
-    return [w.lower() for w in stem.split("-") if len(w) > 2]
-
-
-def _read_decisions() -> dict[str, str]:
-    """Read state.json decisions, returning {} on miss/corruption."""
-    if STATE_FILE.exists():
-        try:
-            state = json.loads(STATE_FILE.read_text())
-            return state.get("decisions", {})
-        except (json.JSONDecodeError, OSError):
-            return {}
-    return {}
-
-
-def suggest_category(
-    keywords: list[str],
-    memory: MemoryStore,
-    decisions: dict[str, str],
-) -> str | None:
-    """Return 'keep', 'trash', or None based on the user's past decisions."""
-    kw = set(keywords)
-    keep_score = 0
-    trash_score = 0
-
-    for filename, decision in decisions.items():
-        if decision not in ("keep", "trash"):
-            continue
-        rec = memory.lookup_by_name(filename)
-        if rec is None:
-            continue
-        overlap = len(kw & set(rec.meta.get("keywords", [])))
-        if decision == "keep":
-            keep_score += overlap
-        else:
-            trash_score += overlap
-
-    if keep_score > trash_score:
-        return "keep"
-    if trash_score > keep_score:
-        return "trash"
-    return None
-
-
 @app.route("/api/suggest-names", methods=["POST"])
 def api_suggest_names():
     """Generate AI filename suggestions for unprocessed screenshots."""
@@ -842,8 +413,8 @@ def api_suggest_names():
     if not isinstance(fingerprints, list):
         abort(400)
 
-    settings = _load_settings()
-    model = settings.get("llm_model", DEFAULT_LLM_MODEL)
+    settings_dict = settings._load_settings()
+    model = settings_dict.get("llm_model", settings.DEFAULT_LLM_MODEL)
 
     memory = _get_memory()
     suggestions: dict[str, str] = {}
@@ -870,12 +441,12 @@ def api_suggest_names():
         if file_path is None:
             continue
 
-        suggested = _call_litert_suggest(file_path, model, rec.extension)
+        suggested = llm._call_litert_suggest(file_path, model, rec.extension)
         if suggested:
-            keywords = extract_keywords(suggested)
+            keywords = categorize.extract_keywords(suggested)
             rec.meta["keywords"] = keywords
             memory.update_suggestion(fp, suggested)
-            category = suggest_category(keywords, memory, decisions)
+            category = categorize.suggest_category(keywords, memory, decisions)
             if category:
                 rec.meta["suggested_category"] = category
             suggestions[fp] = suggested
@@ -891,11 +462,25 @@ def api_suggest_names():
 @app.route("/api/llm/health")
 def api_llm_health():
     """LiteRT reachability check used by the frontend before a suggest batch."""
-    ok = _litert_healthy()
+    ok = llm._litert_healthy()
     message = (
         "" if ok else "LiteRT server is not running — use the Start button above and try again."
     )
     return jsonify({"ok": ok, "provider": "litert", "error": message}), 200 if ok else 503
+
+
+@app.route("/api/llm/start", methods=["POST"])
+def api_llm_start():
+    """Start the LiteRT server as a detached subprocess."""
+    ok, message = server.start_server()
+    return jsonify({"ok": ok, "message": message}), 200 if ok else 502
+
+
+@app.route("/api/llm/stop", methods=["POST"])
+def api_llm_stop():
+    """Stop a LiteRT server this app started. Never touches foreign PIDs."""
+    payload, status = server.stop_server()
+    return jsonify(payload), status
 
 
 @app.route("/api/accept-suggestion", methods=["POST"])
@@ -995,11 +580,11 @@ def api_reject_suggestion():
 @app.route("/api/settings", methods=["GET"])
 def api_get_settings():
     """Return current LLM/settings configuration."""
-    s = _load_settings()
+    s = settings._load_settings()
     return jsonify(
         {
             "llm_provider": s.get("llm_provider", "litert"),
-            "llm_model": s.get("llm_model", DEFAULT_LLM_MODEL),
+            "llm_model": s.get("llm_model", settings.DEFAULT_LLM_MODEL),
             "auto_suggest": s.get("auto_suggest", False),
             "prune_max_age_days": s.get("prune_max_age_days", 90),
         }
@@ -1009,14 +594,13 @@ def api_get_settings():
 @app.route("/api/settings", methods=["PUT"])
 def api_save_settings():
     """Save LLM/settings configuration."""
-    global _prune_max_age_cache
     if not request.is_json:
         abort(400)
     data = request.get_json(silent=True) or {}
     if not isinstance(data, dict):
         abort(400)
 
-    current = _load_settings()
+    current = settings._load_settings()
     type_checks = {
         "llm_provider": str,
         "llm_model": str,
@@ -1035,10 +619,36 @@ def api_save_settings():
                     ),
                     400,
                 )
+            if key == "prune_max_age_days" and not (
+                settings.PRUNE_MIN_DAYS <= data[key] <= settings.PRUNE_MAX_DAYS
+            ):
+                return (
+                    jsonify(
+                        {
+                            "ok": False,
+                            "error": (
+                                f"prune_max_age_days must be between "
+                                f"{settings.PRUNE_MIN_DAYS} and {settings.PRUNE_MAX_DAYS}"
+                            ),
+                        }
+                    ),
+                    400,
+                )
             current[key] = data[key]
-    _save_settings(current)
-    _prune_max_age_cache = None
+    settings._save_settings(current)
+    settings.reset_prune_cache()
     return jsonify({"ok": True})
+
+
+def _read_decisions() -> dict[str, str]:
+    """Read state.json decisions, returning {} on miss/corruption."""
+    if STATE_FILE.exists():
+        try:
+            state = json.loads(STATE_FILE.read_text())
+            return state.get("decisions", {})
+        except (json.JSONDecodeError, OSError):
+            return {}
+    return {}
 
 
 def _find_free_port(start: int, max_tries: int = 100) -> int:

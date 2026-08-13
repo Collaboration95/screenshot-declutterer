@@ -221,6 +221,25 @@ def test_app_js_uses_generalized_health_endpoint(client):
     assert b"/api/ollama/health" not in r.data
 
 
+def test_app_js_assigns_raw_alt_text(client):
+    """Alt text must be the raw filename — no HTML escaping (issue #84)."""
+    c, _ = client
+    r = c.get("/static/app.js")
+    assert r.status_code == 200
+    assert b"img.alt = filename;" in r.data
+    assert b"lightboxImg.alt = card.dataset.filename;" in r.data
+    assert b"lightboxImg.alt = nextName;" in r.data
+
+
+def test_app_js_no_longer_uses_sanitise(client):
+    """The HTML-escape helper must be gone — all insertion is property/textContent."""
+    c, _ = client
+    r = c.get("/static/app.js")
+    assert r.status_code == 200
+    assert b"sanitise" not in r.data
+    assert b"alt = sanitise" not in r.data
+
+
 def test_index_has_llm_server_button(client):
     """Header hosts the managed LiteRT start/stop button (hidden until litert)."""
     c, _ = client

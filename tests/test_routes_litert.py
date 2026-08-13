@@ -7,9 +7,12 @@ data URIs. All tests run offline — the network layer is monkeypatched.
 
 import json
 import urllib.error
+import urllib.request
 from pathlib import Path
 
 import src.ss_dcl.app as flask_app
+import src.ss_dcl.llm as llm
+import src.ss_dcl.server as server
 from PIL import Image
 
 from helpers import _make_png
@@ -50,7 +53,7 @@ def test_image_to_png_data_uri_has_png_prefix(tmp_path):
     img = tmp_path / "shot.png"
     img.write_bytes(_make_png(20, 20))
 
-    uri = flask_app._image_to_png_data_uri(img)
+    uri = llm._image_to_png_data_uri(img)
     assert uri.startswith("data:image/png;base64,")
     # PNG base64 of a 20x20 image should be small (well under 1 KB)
     assert len(uri) < 1024
@@ -63,7 +66,7 @@ def test_image_to_png_data_uri_normalizes_bmp(tmp_path):
         im.save(img, "BMP")
 
     raw_b64 = len(__import__("base64").b64encode(img.read_bytes()))
-    uri = flask_app._image_to_png_data_uri(img)
+    uri = llm._image_to_png_data_uri(img)
 
     assert uri.startswith("data:image/png;base64,")
     # 200x200 BMP ≈ 120 KB raw; PNG re-encode should be a fraction of that
@@ -76,7 +79,7 @@ def test_image_to_png_data_uri_strips_alpha(tmp_path):
     with Image.new("RGBA", (10, 10), (255, 0, 0, 128)) as im:
         im.save(img, "PNG")
 
-    uri = flask_app._image_to_png_data_uri(img)
+    uri = llm._image_to_png_data_uri(img)
     assert uri.startswith("data:image/png;base64,")
 
 
@@ -89,12 +92,12 @@ def test_call_litert_suggest_parses_openai_response(tmp_path, monkeypatch):
     img.write_bytes(_make_png(10, 10))
 
     monkeypatch.setattr(
-        flask_app.urllib.request,
+        urllib.request,
         "urlopen",
         lambda req, timeout=None: _FakeResponse(_openai_response("Q3 Budget Planning")),
     )
 
-    result = flask_app._call_litert_suggest(img, "gemma4-e2b")
+    result = llm._call_litert_suggest(img, "gemma4-e2b")
     assert result == "q3-budget-planning.png"
 
 
@@ -104,12 +107,12 @@ def test_call_litert_suggest_empty_choices_returns_none(tmp_path, monkeypatch):
     img.write_bytes(_make_png(10, 10))
 
     monkeypatch.setattr(
-        flask_app.urllib.request,
+        urllib.request,
         "urlopen",
         lambda req, timeout=None: _FakeResponse(json.dumps({"choices": []}).encode()),
     )
 
-    assert flask_app._call_litert_suggest(img, "gemma4-e2b") is None
+    assert llm._call_litert_suggest(img, "gemma4-e2b") is None
 
 
 def test_call_litert_suggest_missing_message_returns_none(tmp_path, monkeypatch):
@@ -118,11 +121,9 @@ def test_call_litert_suggest_missing_message_returns_none(tmp_path, monkeypatch)
     img.write_bytes(_make_png(10, 10))
 
     body = json.dumps({"choices": [{"message": {}}]}).encode()
-    monkeypatch.setattr(
-        flask_app.urllib.request, "urlopen", lambda req, timeout=None: _FakeResponse(body)
-    )
+    monkeypatch.setattr(urllib.request, "urlopen", lambda req, timeout=None: _FakeResponse(body))
 
-    assert flask_app._call_litert_suggest(img, "gemma4-e2b") is None
+    assert llm._call_litert_suggest(img, "gemma4-e2b") is None
 
 
 def test_call_litert_suggest_fails_fast_on_connection_refused(tmp_path, monkeypatch):
@@ -133,9 +134,9 @@ def test_call_litert_suggest_fails_fast_on_connection_refused(tmp_path, monkeypa
     def mock_urlopen(req, timeout=None):
         raise urllib.error.URLError(ConnectionRefusedError(61, "Connection refused"))
 
-    monkeypatch.setattr(flask_app.urllib.request, "urlopen", mock_urlopen)
+    monkeypatch.setattr(urllib.request, "urlopen", mock_urlopen)
 
-    assert flask_app._call_litert_suggest(img, "gemma4-e2b") is None
+    assert llm._call_litert_suggest(img, "gemma4-e2b") is None
 
 
 def test_call_litert_suggest_succeeds_on_retry(tmp_path, monkeypatch):
@@ -152,10 +153,10 @@ def test_call_litert_suggest_succeeds_on_retry(tmp_path, monkeypatch):
             raise OSError("temporary failure")
         return _FakeResponse(_openai_response("retry-success"))
 
-    monkeypatch.setattr(flask_app.urllib.request, "urlopen", mock_urlopen)
+    monkeypatch.setattr(urllib.request, "urlopen", mock_urlopen)
     monkeypatch.setattr(flask_app.time, "sleep", lambda s: None)
 
-    result = flask_app._call_litert_suggest(img, "gemma4-e2b")
+    result = llm._call_litert_suggest(img, "gemma4-e2b")
     assert result == "retry-success.png"
     assert call_count == 2
 
@@ -172,10 +173,10 @@ def test_call_litert_suggest_no_retry_on_bad_json(tmp_path, monkeypatch):
         call_count += 1
         return _FakeResponse(b"not json at all")
 
-    monkeypatch.setattr(flask_app.urllib.request, "urlopen", mock_urlopen)
+    monkeypatch.setattr(urllib.request, "urlopen", mock_urlopen)
     monkeypatch.setattr(flask_app.time, "sleep", lambda s: None)
 
-    assert flask_app._call_litert_suggest(img, "gemma4-e2b") is None
+    assert llm._call_litert_suggest(img, "gemma4-e2b") is None
     assert call_count == 1
 
 
@@ -191,9 +192,9 @@ def test_call_litert_suggest_sends_openai_payload(tmp_path, monkeypatch):
         captured["body"] = json.loads(req.data)
         return _FakeResponse(_openai_response("name"))
 
-    monkeypatch.setattr(flask_app.urllib.request, "urlopen", mock_urlopen)
+    monkeypatch.setattr(urllib.request, "urlopen", mock_urlopen)
 
-    flask_app._call_litert_suggest(img, "gemma4-e2b", ".jpg")
+    llm._call_litert_suggest(img, "gemma4-e2b", ".jpg")
 
     assert captured["url"].endswith("/v1/chat/completions")
     body = captured["body"]
@@ -209,23 +210,23 @@ def test_call_litert_suggest_sends_openai_payload(tmp_path, monkeypatch):
 
 
 def test_litert_healthy_true_on_200(monkeypatch):
-    monkeypatch.setattr(flask_app, "_litert_health_cache", None)
+    monkeypatch.setattr(llm, "_litert_health_cache", None)
     monkeypatch.setattr(
-        flask_app.urllib.request,
+        urllib.request,
         "urlopen",
         lambda url, timeout=None: _FakeHealthResponse(200),
     )
-    assert flask_app._litert_healthy() is True
+    assert llm._litert_healthy() is True
 
 
 def test_litert_healthy_false_on_connection_refused(monkeypatch):
     def mock_urlopen(url, timeout=None):
         raise urllib.error.URLError(ConnectionRefusedError(61, "Connection refused"))
 
-    monkeypatch.setattr(flask_app, "_litert_health_cache", None)
-    monkeypatch.setattr(flask_app.urllib.request, "urlopen", mock_urlopen)
+    monkeypatch.setattr(llm, "_litert_health_cache", None)
+    monkeypatch.setattr(urllib.request, "urlopen", mock_urlopen)
 
-    assert flask_app._litert_healthy() is False
+    assert llm._litert_healthy() is False
 
 
 def test_litert_healthy_caches_negative_verdict(monkeypatch):
@@ -236,18 +237,18 @@ def test_litert_healthy_caches_negative_verdict(monkeypatch):
         calls.append(1)
         raise urllib.error.URLError(ConnectionRefusedError(61, "Connection refused"))
 
-    monkeypatch.setattr(flask_app, "_litert_health_cache", None)
-    monkeypatch.setattr(flask_app.urllib.request, "urlopen", mock_urlopen)
+    monkeypatch.setattr(llm, "_litert_health_cache", None)
+    monkeypatch.setattr(urllib.request, "urlopen", mock_urlopen)
 
-    assert flask_app._litert_healthy() is False
+    assert llm._litert_healthy() is False
     assert len(calls) == 1
 
     monkeypatch.setattr(
-        flask_app.urllib.request,
+        urllib.request,
         "urlopen",
         lambda url, timeout=None: _FakeHealthResponse(200),
     )
-    assert flask_app._litert_healthy() is False  # served from cache
+    assert llm._litert_healthy() is False  # served from cache
 
 
 # ── /api/llm/health ───────────────────────────────────────────────────────
@@ -261,7 +262,7 @@ def test_api_llm_health_litert_ok(client, monkeypatch):
         content_type="application/json",
     )
 
-    monkeypatch.setattr(flask_app, "_litert_healthy", lambda: True)
+    monkeypatch.setattr(llm, "_litert_healthy", lambda: True)
     r = c.get("/api/llm/health")
     assert r.status_code == 200
     data = json.loads(r.data)
@@ -278,7 +279,7 @@ def test_api_llm_health_litert_down(client, monkeypatch):
         content_type="application/json",
     )
 
-    monkeypatch.setattr(flask_app, "_litert_healthy", lambda: False)
+    monkeypatch.setattr(llm, "_litert_healthy", lambda: False)
     r = c.get("/api/llm/health")
     assert r.status_code == 503
     data = json.loads(r.data)
@@ -309,7 +310,7 @@ def test_suggest_names_with_litert_provider(client, monkeypatch):
         assert model == "gemma4-e2b"
         return "budget-review" + extension
 
-    monkeypatch.setattr(flask_app, "_call_litert_suggest", mock_litert)
+    monkeypatch.setattr(llm, "_call_litert_suggest", mock_litert)
 
     r = c.post(
         "/api/suggest-names",
@@ -336,28 +337,28 @@ class _FakeProc:
 
 def _isolate_server_files(monkeypatch, tmp_path):
     """Point pidfile + log at temp paths so tests never touch ~/.ss-dcl."""
-    monkeypatch.setattr(flask_app, "LITERT_PIDFILE", str(tmp_path / "litert.pid"))
-    monkeypatch.setattr(flask_app, "LITERT_LOG_FILE", str(tmp_path / "litert.log"))
+    monkeypatch.setattr(server, "LITERT_PIDFILE", str(tmp_path / "litert.pid"))
+    monkeypatch.setattr(server, "LITERT_LOG_FILE", str(tmp_path / "litert.log"))
 
 
 def test_litert_serve_cmd_resolves_via_path(monkeypatch):
-    monkeypatch.setattr(flask_app.shutil, "which", lambda name: "/usr/local/bin/litert-lm")
-    assert flask_app._litert_serve_cmd() == ["/usr/local/bin/litert-lm", "serve"]
+    monkeypatch.setattr(server.shutil, "which", lambda name: "/usr/local/bin/litert-lm")
+    assert server._litert_serve_cmd() == ["/usr/local/bin/litert-lm", "serve"]
 
 
 def test_litert_serve_cmd_falls_back_to_venv(monkeypatch, tmp_path):
     venv_bin = tmp_path / "litert-lm" / ".venv" / "bin" / "litert-lm"
     venv_bin.parent.mkdir(parents=True)
     venv_bin.write_text("#!/bin/sh\n")
-    monkeypatch.setattr(flask_app.shutil, "which", lambda name: None)
-    monkeypatch.setattr(flask_app, "LITERT_VENV_FALLBACK", str(venv_bin))
-    assert flask_app._litert_serve_cmd() == [str(venv_bin), "serve"]
+    monkeypatch.setattr(server.shutil, "which", lambda name: None)
+    monkeypatch.setattr(server, "LITERT_VENV_FALLBACK", str(venv_bin))
+    assert server._litert_serve_cmd() == [str(venv_bin), "serve"]
 
 
 def test_litert_serve_cmd_unresolved_keeps_tokens(monkeypatch, tmp_path):
-    monkeypatch.setattr(flask_app.shutil, "which", lambda name: None)
-    monkeypatch.setattr(flask_app, "LITERT_VENV_FALLBACK", str(tmp_path / "nope" / "litert-lm"))
-    assert flask_app._litert_serve_cmd() == ["litert-lm", "serve"]
+    monkeypatch.setattr(server.shutil, "which", lambda name: None)
+    monkeypatch.setattr(server, "LITERT_VENV_FALLBACK", str(tmp_path / "nope" / "litert-lm"))
+    assert server._litert_serve_cmd() == ["litert-lm", "serve"]
 
 
 def test_start_when_already_healthy_skips_spawn(client, monkeypatch, tmp_path):
@@ -368,12 +369,12 @@ def test_start_when_already_healthy_skips_spawn(client, monkeypatch, tmp_path):
         data=json.dumps({"llm_provider": "litert"}),
         content_type="application/json",
     )
-    monkeypatch.setattr(flask_app, "_litert_healthy", lambda: True)
+    monkeypatch.setattr(llm, "_litert_healthy", lambda: True)
 
     def boom(*a, **k):
         raise AssertionError("must not spawn when healthy")
 
-    monkeypatch.setattr(flask_app.subprocess, "Popen", boom)
+    monkeypatch.setattr(server.subprocess, "Popen", boom)
     r = c.post("/api/llm/start")
     assert r.status_code == 200
     assert json.loads(r.data)["ok"] is True
@@ -393,8 +394,8 @@ def test_start_spawns_and_writes_pidfile(client, monkeypatch, tmp_path):
     def fake_healthy():
         return next(healths, True)
 
-    monkeypatch.setattr(flask_app, "_litert_healthy", fake_healthy)
-    monkeypatch.setattr(flask_app.subprocess, "Popen", lambda *a, **k: _FakeProc(4242))
+    monkeypatch.setattr(llm, "_litert_healthy", fake_healthy)
+    monkeypatch.setattr(server.subprocess, "Popen", lambda *a, **k: _FakeProc(4242))
     monkeypatch.setattr(flask_app.time, "sleep", lambda s: None)
 
     r = c.post("/api/llm/start")
@@ -413,10 +414,10 @@ def test_start_not_ready_within_timeout(client, monkeypatch, tmp_path):
         data=json.dumps({"llm_provider": "litert"}),
         content_type="application/json",
     )
-    monkeypatch.setattr(flask_app, "_litert_healthy", lambda: False)
-    monkeypatch.setattr(flask_app.subprocess, "Popen", lambda *a, **k: _FakeProc(777))
+    monkeypatch.setattr(llm, "_litert_healthy", lambda: False)
+    monkeypatch.setattr(server.subprocess, "Popen", lambda *a, **k: _FakeProc(777))
     monkeypatch.setattr(flask_app.time, "sleep", lambda s: None)
-    monkeypatch.setattr(flask_app, "LITERT_SERVE_READY_TIMEOUT", 0)  # deadline passes immediately
+    monkeypatch.setattr(server, "LITERT_SERVE_READY_TIMEOUT", 0)  # deadline passes immediately
 
     r = c.post("/api/llm/start")
     assert r.status_code == 502
@@ -435,13 +436,13 @@ def test_start_refuses_when_live_pid_present(client, monkeypatch, tmp_path):
         data=json.dumps({"llm_provider": "litert"}),
         content_type="application/json",
     )
-    monkeypatch.setattr(flask_app, "_litert_healthy", lambda: False)
-    monkeypatch.setattr(flask_app, "_pid_alive", lambda pid: True)
+    monkeypatch.setattr(llm, "_litert_healthy", lambda: False)
+    monkeypatch.setattr(server, "_pid_alive", lambda pid: True)
 
     def boom(*a, **k):
         raise AssertionError("must not spawn when a live pid is recorded")
 
-    monkeypatch.setattr(flask_app.subprocess, "Popen", boom)
+    monkeypatch.setattr(server.subprocess, "Popen", boom)
     monkeypatch.setattr(flask_app.time, "sleep", lambda s: None)
 
     r = c.post("/api/llm/start")
@@ -461,7 +462,7 @@ def test_stop_cleans_stale_pidfile(client, monkeypatch, tmp_path):
     _isolate_server_files(monkeypatch, tmp_path)
     pidfile = tmp_path / "litert.pid"
     pidfile.write_text("4242")
-    monkeypatch.setattr(flask_app, "_pid_alive", lambda pid: False)
+    monkeypatch.setattr(server, "_pid_alive", lambda pid: False)
 
     r = c.post("/api/llm/stop")
     assert r.status_code == 200
@@ -476,7 +477,7 @@ def test_stop_terminates_recorded_pid(client, monkeypatch, tmp_path):
     pidfile.write_text("4242")
     # Alive on the first check, dead once the signal lands.
     alive = iter([True, False])
-    monkeypatch.setattr(flask_app, "_pid_alive", lambda pid: next(alive))
+    monkeypatch.setattr(server, "_pid_alive", lambda pid: next(alive))
 
     killed = []
 
@@ -487,7 +488,7 @@ def test_stop_terminates_recorded_pid(client, monkeypatch, tmp_path):
 
     r = c.post("/api/llm/stop")
     assert r.status_code == 200
-    assert killed == [(4242, flask_app.signal.SIGTERM)]
+    assert killed == [(4242, server.signal.SIGTERM)]
     assert not pidfile.exists()
 
 
@@ -495,7 +496,7 @@ def test_stop_refuses_foreign_pid(client, monkeypatch, tmp_path):
     c, _ = client
     _isolate_server_files(monkeypatch, tmp_path)
     (tmp_path / "litert.pid").write_text("4242")
-    monkeypatch.setattr(flask_app, "_pid_alive", lambda pid: True)
+    monkeypatch.setattr(server, "_pid_alive", lambda pid: True)
 
     def fake_kill(pid, sig):
         raise PermissionError("not yours")
