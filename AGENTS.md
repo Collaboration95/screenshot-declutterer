@@ -108,9 +108,11 @@ All in `static/app.js`:
 
 ## Tooling Config
 
-- **Ruff**: target py39, line-length 100, rules: E, F, W, I, UP, B, SIM, RUF
-- **Pyright**: pythonVersion 3.9, typeCheckingMode basic
-- **pytest**: testpaths `["tests"]`, pythonpath `["src", "."]`
+`pyproject.toml` is the single source of truth for tooling config; the summary below mirrors it (checked at 0.5.0).
+
+- **Ruff**: target py310, line-length 100, rules: E, F, W, I, UP, B, SIM, RUF
+- **Pyright**: pythonVersion 3.10, typeCheckingMode basic, include src/tests/tools
+- **pytest**: testpaths `["tests"]`, pythonpath `["src"]`, coverage gate `--cov-fail-under=85`
 - **Pre-commit**: Ruff (lint+format), Pyright, pytest
 
 ## Key Gotchas

@@ -24,3 +24,13 @@ def test_index_has_sort_select(client):
     c, _ = client
     r = c.get("/")
     assert b'id="sort-select"' in r.data
+
+
+def test_index_sets_security_headers(client):
+    c, _ = client
+    r = c.get("/")
+    assert r.headers.get("X-Content-Type-Options") == "nosniff"
+    assert r.headers.get("X-Frame-Options") == "DENY"
+    assert r.headers.get("Referrer-Policy") == "no-referrer"
+    assert r.headers.get("Permissions-Policy") == "camera=(), microphone=(), geolocation=()"
+    assert "default-src 'self'" in r.headers.get("Content-Security-Policy", "")
