@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "screenshot-declutterer"
 
-version = "0.5.0"
+version = "0.6.0"
 
 description = "A simple macOS tool to quickly sort and trash Desktop screenshots"
 readme = "README.md"
