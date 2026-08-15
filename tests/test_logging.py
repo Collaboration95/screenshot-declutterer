@@ -17,7 +17,7 @@ def _find_file_handler():
 
 def test_access_log_record_shape(client, caplog):
     c, _ = client
-    with caplog.at_level(logging.INFO, logger="ss_dcl.app"):
+    with caplog.at_level(logging.INFO, logger="ss_dcl.http"):
         r = c.get("/api/health")
     assert r.status_code == 200
     assert "X-Request-ID" in r.headers

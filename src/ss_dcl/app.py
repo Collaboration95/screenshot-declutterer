@@ -24,13 +24,24 @@ from flask import (
     send_file,
 )
 from send2trash import send2trash
+from werkzeug.serving import WSGIRequestHandler
 
 from ss_dcl import categorize, llm, server, settings, thumbs
 from ss_dcl.logging_config import configure_logging, new_request_id, request_id_var
 from ss_dcl.memory import MemoryStore, atomic_write, compute_fingerprint
 
 configure_logging()
-logger = logging.getLogger(__name__)
+# Named loggers (not __name__: app.py runs as __main__ when launched directly,
+# which would hide every route behind an anonymous "__main__" label). Split by
+# subsystem so a log line is attributable at a glance:
+#   ss_dcl.http   — request middleware ACCESS lines
+#   ss_dcl.files  — Desktop scan/refresh, pruning, thumbnails
+#   ss_dcl.llm    — LLM suggest/accept/reject + /api/llm/* routes
+#   ss_dcl.app    — lifecycle, trash, rename, state, reveal
+logger = logging.getLogger("ss_dcl.app")
+http_logger = logging.getLogger("ss_dcl.http")
+files_logger = logging.getLogger("ss_dcl.files")
+llm_logger = logging.getLogger("ss_dcl.llm")
 
 
 def _resource_root() -> Path:
@@ -64,10 +75,13 @@ def _log_request(response: Response) -> Response:
     response.headers["X-Request-ID"] = request_id
     start = request.environ.get("_ss_dcl_start", time.perf_counter())
     duration_ms = round((time.perf_counter() - start) * 1000, 2)
-    logger.info(
+    path = request.path
+    if request.query_string:
+        path = f"{path}?{request.query_string.decode()}"
+    http_logger.info(
         "ACCESS %s %s -> %s (%sms)",
         request.method,
-        request.path,
+        path,
         response.status_code,
         duration_ms,
     )
@@ -199,7 +213,7 @@ def get_screenshots(sort: str = "name") -> list[dict[str, Any]]:
     # ── Memory pruning (4A) ──────────────────────────────────────────
     pruned = memory.prune_stale(active_fps, max_age_days=settings._prune_max_age())
     if pruned > 0:
-        logger.info(
+        files_logger.info(
             "Pruned %d stale memory entries (max age: %d days)",
             pruned,
             settings._prune_max_age(),
@@ -323,7 +337,7 @@ def api_thumb(filename: str):
         try:
             thumbs._generate_thumbnail(image_path, thumb_path)
         except Exception:
-            logger.warning("Thumbnail generation failed for %s, serving full image", filename)
+            files_logger.warning("Thumbnail generation failed for %s, serving full image", filename)
             return api_image(filename)
     response = make_response(send_file(thumb_path))
     response.headers["Cache-Control"] = "private, max-age=86400"
@@ -538,7 +552,7 @@ def api_suggest_names():
                 try:
                     suggested = future.result()
                 except Exception as exc:
-                    logger.warning("Suggestion failed for %s: %s", fp, exc)
+                    llm_logger.warning("Suggestion failed for %s: %s", fp, exc)
                     failures.append(fp)
                     continue
                 if not suggested:
@@ -632,7 +646,7 @@ def api_accept_suggestion():
     try:
         old_path.rename(new_path)
     except OSError as exc:
-        logger.error("Failed to rename %s to %s: %s", old_name, new_name, exc)
+        llm_logger.error("Failed to rename %s to %s: %s", old_name, new_name, exc)
         return jsonify({"ok": False, "error": str(exc)}), 500
 
     _apply_rename(old_name, new_name, fingerprint=fingerprint)
@@ -754,8 +768,21 @@ def _open_browser() -> None:
             webbrowser.open_new_tab(f"http://localhost:{SELECTED_PORT}")
 
 
+class _QuietRequestHandler(WSGIRequestHandler):
+    """werkzeug dev-server access logger: suppress per-request INFO lines.
+
+    The app emits its own richer ACCESS line via ``ss_dcl.http`` (request id +
+    duration + query string); werkzeug's copy is redundant noise that embeds
+    its own timestamp. Only ``log_request`` is silenced — error/exception
+    lines still flow through the ``werkzeug`` logger.
+    """
+
+    def log_request(self, code="-", size="-"):
+        pass
+
+
 if __name__ == "__main__":
     threading.Thread(target=_open_browser, daemon=True).start()
     debug = os.environ.get("FLASK_DEBUG", "0") == "1"
     logger.info("Starting server on port %d", SELECTED_PORT)
-    app.run(debug=debug, port=SELECTED_PORT)
+    app.run(debug=debug, port=SELECTED_PORT, request_handler=_QuietRequestHandler)

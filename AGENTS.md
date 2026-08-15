@@ -103,6 +103,8 @@ All in `static/app.js`:
 
 - Configured at import time in `ss_dcl/logging_config.py` (console + rotating file handler) — `__main__` has no `basicConfig` anymore
 - Every log record carries a `request_id` (12-hex contextvar, also returned as `X-Request-ID` header); access log line per request: `ACCESS <METHOD> <path> -> <status> (<ms>)`
+- Named subsystem loggers (app.py never uses `__name__`, which is `__main__` when run directly): `ss_dcl.http` (ACCESS middleware), `ss_dcl.files` (scan/refresh/prune/thumbs), `ss_dcl.llm` (LLM routes + llm.py), `ss_dcl.app` (lifecycle/trash/rename/state), plus `ss_dcl.memory/server/settings/thumbs/categorize`
+- werkzeug per-request access lines are suppressed (`_QuietRequestHandler` in app.py — it embeds its own timestamp and duplicates the `ss_dcl.http` ACCESS line); werkzeug errors still log
 
 ## Dependencies
 
