@@ -50,7 +50,7 @@ def test_generate_thumbnail_unit(client):
     _c, desktop = client
 
     src = desktop / "Screenshot 2024-01-01 at 12.00.00 PM.png"
-    src.write_bytes(_make_png(500, 500))
+    src.write_bytes(_make_png(1000, 1000))
     dst = desktop / "thumbs" / src.name
     thumbs._generate_thumbnail(src, dst)
     assert dst.exists()

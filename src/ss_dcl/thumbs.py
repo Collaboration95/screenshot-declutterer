@@ -14,10 +14,10 @@ def _parse_thumb_size(raw: str) -> tuple[int, int]:
         parts = raw.split("x")
         return (int(parts[0]), int(parts[1]))
     except (ValueError, IndexError):
-        return (400, 300)
+        return (800, 600)
 
 
-THUMB_SIZE: tuple[int, int] = _parse_thumb_size(os.environ.get("THUMB_SIZE", "400x300"))
+THUMB_SIZE: tuple[int, int] = _parse_thumb_size(os.environ.get("THUMB_SIZE", "800x600"))
 
 
 def _generate_thumbnail(src: Path, dst: Path) -> None:

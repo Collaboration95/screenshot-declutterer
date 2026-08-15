@@ -40,7 +40,7 @@ Run `make` or `make help` to see all available targets.
 | Method | Path | Purpose |
 |--------|------|---------|
 | GET | `/` | Serve SPA |
-| GET | `/api/screenshots?sort=<mode>` | List screenshots (sort: name, name_desc, date, date_desc, size, size_desc) |
+| GET | `/api/screenshots?sort=<mode>` | List screenshots (sort: name, name_desc, date, date_desc) |
 | GET | `/api/image/<filename>` | Serve full-size image (cache: 1h) |
 | GET | `/api/thumb/<filename>` | Serve thumbnail (cache: 24h), falls back to full image |
 | GET | `/api/state` | Get persisted decisions |

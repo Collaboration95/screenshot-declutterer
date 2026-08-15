@@ -7,28 +7,28 @@
   --bg-card:              #fff;
   --bg-modal:             #fff;
   --bg-modal-overlay:     rgba(0, 0, 0, 0.45);
-  --bg-progress:          #f0e6ff;
-  --bg-badge:             #f3e8ff;
+  --bg-progress:          #f2f2f7;
+  --bg-badge:             #f2f2f7;
   --bg-btn-cancel:        #f0f0f0;
   --bg-btn-cancel-hover:  #e4e4e4;
   --bg-settings-btn:      #f0f0f0;
   --bg-settings-btn-hover:#e0e0e0;
   --bg-cancel-suggest:    #fff;
-  --bg-cancel-suggest-hover: #f0e6ff;
+  --bg-cancel-suggest-hover: #f0f0f0;
 
   --text-primary:         #1a1a1a;
   --text-secondary:       #666;
   --text-muted:           #888;
   --text-header:          inherit;
-  --text-badge:           #6b21a8;
-  --text-progress:        #6b21a8;
+  --text-badge:           #007aff;
+  --text-progress:        #007aff;
   --text-btn-cancel:      #333;
   --text-settings-btn:    #333;
 
   --border-col:           #e5e5e5;
   --border-header:        #e0e0e0;
-  --border-badge:         #e0d0f0;
-  --border-progress:      #e0d0f0;
+  --border-badge:         #e0e0e0;
+  --border-progress:      #e0e0e0;
   --border-select:        #ddd;
   --border-select-hover:  #bbb;
 
@@ -66,28 +66,28 @@
   --bg-card:              #2c2c2e;
   --bg-modal:             #2c2c2e;
   --bg-modal-overlay:     rgba(0, 0, 0, 0.7);
-  --bg-progress:          #2d1f3a;
-  --bg-badge:             #2d1f3a;
+  --bg-progress:          #3a3a3c;
+  --bg-badge:             #3a3a3c;
   --bg-btn-cancel:        #3a3a3c;
   --bg-btn-cancel-hover:  #48484a;
   --bg-settings-btn:      #3a3a3c;
   --bg-settings-btn-hover:#48484a;
   --bg-cancel-suggest:    #3a3a3c;
-  --bg-cancel-suggest-hover: #2d1f3a;
+  --bg-cancel-suggest-hover: #48484a;
 
   --text-primary:         #f5f5f7;
   --text-secondary:       #aeaeb2;
   --text-muted:           #8e8e93;
   --text-header:          #f5f5f7;
-  --text-badge:           #d4a0f0;
-  --text-progress:        #d4a0f0;
+  --text-badge:           #4aa3ff;
+  --text-progress:        #4aa3ff;
   --text-btn-cancel:      #f5f5f7;
   --text-settings-btn:    #f5f5f7;
 
   --border-col:           #38383a;
   --border-header:        #38383a;
-  --border-badge:         #4a305a;
-  --border-progress:      #4a305a;
+  --border-badge:         #48484a;
+  --border-progress:      #48484a;
   --border-select:        #48484a;
   --border-select-hover:  #636366;
 
@@ -138,9 +138,9 @@ header {
   position: sticky;
   top: 0;
   z-index: 100;
-  display: flex;
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
   align-items: center;
-  justify-content: space-between;
   padding: 12px 24px;
   background: var(--bg-header);
   border-bottom: 1px solid var(--border-header);
@@ -154,17 +154,36 @@ header h1 {
   color: var(--text-header);
 }
 
+.header-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  justify-self: start;
+  min-width: 0;
+}
+
+.header-center {
+  justify-self: center;
+  min-width: 0;
+  max-width: 45vw;
+  padding: 0 12px;
+  text-align: center;
+}
+
 .header-right {
   display: flex;
   align-items: center;
   gap: 14px;
+  justify-self: end;
+  min-width: 0;
 }
 
-.header-suggest-btn {
+.menu-suggest-all-btn {
+  width: 100%;
   padding: 8px 18px;
   border: none;
   border-radius: 8px;
-  background: linear-gradient(135deg, #af52de, #5856d6);
+  background: #007aff;
   color: #fff;
   font-size: 0.85rem;
   font-weight: 600;
@@ -172,18 +191,17 @@ header h1 {
   transition: opacity 0.15s, transform 0.1s;
 }
 
-.header-suggest-btn:hover {
+.menu-suggest-all-btn:hover {
   opacity: 0.9;
   transform: scale(1.02);
 }
 
-.header-suggest-btn:disabled {
+.menu-suggest-all-btn:disabled {
   opacity: 0.35;
   cursor: not-allowed;
   transform: none;
 }
 
-.header-settings-btn,
 .header-theme-btn,
 .header-llm-btn {
   padding: 8px 12px;
@@ -197,15 +215,33 @@ header h1 {
   transition: background 0.15s;
 }
 
-.header-settings-btn:hover,
 .header-theme-btn:hover,
 .header-llm-btn:hover {
+  background: var(--bg-settings-btn-hover);
+}
+
+.header-settings-btn {
+  padding: 6px 11px;
+  border: none;
+  border-radius: 8px;
+  background: var(--bg-settings-btn);
+  color: var(--text-settings-btn);
+  font-size: 1.2rem;
+  line-height: 1;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.header-settings-btn:hover {
   background: var(--bg-settings-btn-hover);
 }
 
 #status-msg {
   font-size: 0.85rem;
   color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 #undo-btn {
@@ -492,6 +528,22 @@ header h1 {
   padding: 8px;
 }
 
+/* Unsorted cards use a stable three-row layout instead of letting flex-wrap
+   place buttons based on the card width. */
+.card-actions-triage {
+  flex-direction: column;
+  flex-wrap: nowrap;
+  gap: 25px;
+}
+
+.card-action-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  width: 100%;
+}
+
 .card:hover .card-actions {
   opacity: 1;
   pointer-events: auto;
@@ -576,11 +628,11 @@ header h1 {
 }
 
 .btn-suggest {
-  background: rgba(175, 82, 222, 0.9);
+  background: rgba(0, 122, 255, 0.85);
 }
 
 .btn-suggest:hover {
-  background: #8b3fba;
+  background: #0062cc;
 }
 
 .btn-accept {
@@ -747,7 +799,7 @@ header h1 {
 .suggest-progress-fill {
   height: 100%;
   width: 0%;
-  background: linear-gradient(135deg, #af52de, #5856d6);
+  background: #007aff;
   border-radius: 3px;
   transition: width 0.3s ease;
 }
@@ -776,10 +828,36 @@ header h1 {
   background: var(--bg-cancel-suggest-hover);
 }
 
-/* ── Settings modal ─────────────────────────────────────── */
+/* ── Settings dropdown ─────────────────────────────────────── */
+.settings-menu {
+  position: fixed;
+  top: 60px;
+  right: 24px;
+  z-index: 600;
+  width: 320px;
+  max-width: calc(100vw - 32px);
+  background: var(--bg-modal);
+  border: 1px solid var(--border-col);
+  border-radius: 14px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.2);
+  padding: 20px 22px 16px;
+  text-align: left;
+}
+
+.settings-menu[hidden] {
+  display: none !important;
+}
+
+.settings-menu-title {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 14px;
+}
+
 .settings-form {
   text-align: left;
-  margin-bottom: 20px;
+  margin-bottom: 16px;
 }
 
 .settings-field {
@@ -832,6 +910,24 @@ header h1 {
   height: 18px;
   cursor: pointer;
   accent-color: #007aff;
+}
+
+.settings-field-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.settings-field-row label {
+  margin-bottom: 0;
+}
+
+.settings-actions {
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+  margin-top: 16px;
 }
 
 .settings-save-btn {
@@ -1150,6 +1246,38 @@ header h1 {
 [data-theme="dark"] .theme-icon-light { display: none; }
 [data-theme="dark"] .theme-icon-dark  { display: inline; }
 
+/* ── Hover tooltips ─────────────────────────────────────── */
+[data-tooltip] {
+  position: relative;
+}
+
+[data-tooltip]::after {
+  content: attr(data-tooltip);
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 6px 10px;
+  border-radius: 6px;
+  background: rgba(28, 28, 30, 0.95);
+  color: #fff;
+  font-size: 0.75rem;
+  font-weight: 500;
+  line-height: 1.25;
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.12s ease, visibility 0.12s ease;
+  z-index: 700;
+}
+
+[data-tooltip]:hover::after,
+[data-tooltip]:focus-visible::after {
+  opacity: 1;
+  visibility: visible;
+}
+
 .sr-only {
   position: absolute;
   width: 1px;
@@ -1164,9 +1292,18 @@ header h1 {
 
 @media (max-width: 768px) {
   header {
+    display: flex;
     flex-wrap: wrap;
     gap: 8px;
     padding: 8px 12px;
+  }
+
+  .header-center {
+    order: 5;
+    width: 100%;
+    max-width: none;
+    justify-self: auto;
+    padding: 0;
   }
 
   .header-right {
@@ -1192,5 +1329,9 @@ header h1 {
 
   .column-unsorted .column-cards {
     grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  }
+
+  .card-actions-triage .card-action-row {
+    gap: 6px;
   }
 }

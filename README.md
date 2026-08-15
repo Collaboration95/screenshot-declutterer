@@ -49,7 +49,7 @@ Your browser opens automatically at `http://localhost:<port>` (default 5002, aut
 |----------|---------|-------------|
 | `SS_DCL_PORT` | `5002` (auto) | Override the server port. Set `0` to auto-detect. |
 | `SS_DCL_DESKTOP` | `~/Desktop` | Override the directory to scan for screenshots |
-| `THUMB_SIZE` | `400x300` | Thumbnail dimensions in `WxH` format |
+| `THUMB_SIZE` | `800x600` | Thumbnail dimensions in `WxH` format |
 | `FLASK_DEBUG` | `0` | Enable Flask debug mode (`1` to enable) |
 
 ## Keyboard Shortcuts
