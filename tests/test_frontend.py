@@ -154,10 +154,10 @@ def test_index_has_suggest_progress_bar(client):
     assert 'id="suggest-progress-text"' in html
 
 
-def test_index_has_settings_modal(client):
+def test_index_has_settings_menu(client):
     c, _ = client
     html = c.get("/").data.decode()
-    assert 'id="settings-modal"' in html
+    assert 'id="settings-menu"' in html
     assert 'id="settings-provider"' in html
     assert 'id="settings-model"' in html
     assert 'id="settings-auto"' in html
@@ -204,12 +204,12 @@ def test_app_js_defines_reject_suggestion(client):
     assert b"function rejectSuggestion(" in r.data
 
 
-def test_app_js_defines_settings_modal(client):
-    """JS must handle settings modal."""
+def test_app_js_defines_settings_menu(client):
+    """JS must handle settings dropdown."""
     c, _ = client
     r = c.get("/static/app.js")
     assert r.status_code == 200
-    assert b"settingsModal" in r.data
+    assert b"settingsMenu" in r.data
 
 
 def test_app_js_uses_generalized_health_endpoint(client):
@@ -241,11 +241,11 @@ def test_app_js_no_longer_uses_sanitise(client):
 
 
 def test_index_has_llm_server_button(client):
-    """Header hosts the managed LiteRT start/stop button (hidden until litert)."""
+    """Header hosts the managed LLM start/stop button (hidden until litert)."""
     c, _ = client
     html = c.get("/").data.decode()
     assert 'id="llm-server-btn"' in html
-    assert 'aria-label="Manage the LiteRT server"' in html
+    assert 'aria-label="Manage the LLM server"' in html
 
 
 def test_app_js_binds_llm_server_button(client):
@@ -274,7 +274,7 @@ def test_app_js_refreshes_server_button_on_init_and_save(client):
     assert r.status_code == 200
     assert b"refreshLLMServerButton();" in r.data
     assert b"loadSettings().then(() => {\n    refreshLLMServerButton();" in r.data
-    assert b"closeSettingsModal();\n        refreshLLMServerButton();" in r.data
+    assert b"closeSettingsMenu();\n        refreshLLMServerButton();" in r.data
 
 
 def test_css_has_llm_server_button_style(client):

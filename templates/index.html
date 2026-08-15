@@ -4,11 +4,14 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Screenshot Declutterer</title>
-  <link rel="stylesheet" href="/static/style.css" />
+  <link rel="stylesheet" href="/static/style.css?v=2" />
 </head>
 <body>
   <header>
-    <h1>Screenshot Declutterer</h1>
+    <div class="header-left">
+      <h1>Screenshot Declutterer</h1>
+      <button id="llm-server-btn" class="header-llm-btn" hidden aria-label="Manage the LLM server"></button>
+    </div>
     <div class="header-right">
       <span id="status-msg" role="status" aria-live="polite"></span>
       <label for="sort-select" class="sr-only">Sort order</label>
@@ -20,8 +23,6 @@
         <option value="size">Smallest first</option>
         <option value="size_desc">Largest first</option>
       </select>
-      <button id="suggest-all-btn" class="header-suggest-btn" aria-label="Suggest names for all new screenshots">✨ Suggest All</button>
-      <button id="llm-server-btn" class="header-llm-btn" hidden aria-label="Manage the LiteRT server"></button>
       <button id="theme-toggle" class="header-theme-btn" aria-label="Toggle dark mode">
         <span class="theme-icon-light">☀</span>
         <span class="theme-icon-dark">☾</span>
@@ -126,38 +127,37 @@
     </div>
   </div>
 
-  <!-- Settings modal -->
-  <div id="settings-modal" class="modal-overlay" hidden role="dialog" aria-labelledby="settings-title">
-    <div class="modal">
-      <p class="modal-title" id="settings-title">Settings</p>
-      <div class="settings-form">
-        <div class="settings-field">
-          <label for="settings-provider">LLM Provider</label>
-          <select id="settings-provider">
-            <option value="litert">LiteRT-LM (local)</option>
-          </select>
-        </div>
-        <div class="settings-field">
-          <label for="settings-model">Model</label>
-          <input id="settings-model" type="text" class="rename-input" autocomplete="off" spellcheck="false" placeholder="gemma4-e2b" />
-        </div>
-        <div class="settings-field settings-field-toggle">
-          <label for="settings-auto">Auto-suggest on scan</label>
-          <input id="settings-auto" type="checkbox" />
-        </div>
-        <div class="settings-field">
-          <label for="settings-prune-age">Prune memory after (days)</label>
-          <input id="settings-prune-age" type="number" min="1" max="730" class="rename-input" />
-        </div>
+  <!-- Settings dropdown -->
+  <div id="settings-menu" class="settings-menu" hidden role="dialog" aria-labelledby="settings-title">
+    <p class="settings-menu-title" id="settings-title">Settings</p>
+    <div class="settings-form">
+      <div class="settings-field">
+        <label for="settings-provider">LLM Provider</label>
+        <select id="settings-provider">
+          <option value="litert">LiteRT-LM (local)</option>
+        </select>
       </div>
-      <div class="modal-actions">
-        <button class="modal-btn modal-cancel" id="settings-cancel">Cancel</button>
-        <button class="modal-btn modal-confirm settings-save-btn" id="settings-save">Save</button>
+      <div class="settings-field">
+        <label for="settings-model">Model</label>
+        <input id="settings-model" type="text" class="rename-input" autocomplete="off" spellcheck="false" placeholder="gemma4-e2b" />
       </div>
+      <div class="settings-field settings-field-toggle">
+        <label for="settings-auto">Auto-suggest on scan</label>
+        <input id="settings-auto" type="checkbox" />
+      </div>
+      <div class="settings-field">
+        <label for="settings-prune-age">Prune memory after (days)</label>
+        <input id="settings-prune-age" type="number" min="1" max="730" class="rename-input" />
+      </div>
+    </div>
+    <button id="suggest-all-btn" class="menu-suggest-all-btn" aria-label="Suggest names for all new screenshots">✨ Suggest All</button>
+    <div class="settings-actions">
+      <button class="modal-btn modal-cancel" id="settings-cancel">Close</button>
+      <button class="modal-btn modal-confirm settings-save-btn" id="settings-save">Save</button>
     </div>
   </div>
 
-  <script src="/static/ss_dcl_pure.js"></script>
-  <script src="/static/app.js"></script>
+  <script src="/static/ss_dcl_pure.js?v=2"></script>
+  <script src="/static/app.js?v=2"></script>
 </body>
 </html>

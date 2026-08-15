@@ -47,7 +47,7 @@ const modalTitle   = document.getElementById("modal-title");
 const modalCancel  = document.getElementById("modal-cancel");
 const modalConfirm = document.getElementById("modal-confirm");
 
-const settingsModal   = document.getElementById("settings-modal");
+const settingsMenu   = document.getElementById("settings-menu");
 const settingsProvider = document.getElementById("settings-provider");
 const settingsModel   = document.getElementById("settings-model");
 const settingsAuto    = document.getElementById("settings-auto");
@@ -146,11 +146,11 @@ function refreshLLMServerButton() {
   fetch("/api/llm/health")
     .then(r => r.json())
     .then(h => {
-      llmServerBtn.textContent = h.ok ? "■ Stop LiteRT" : "▶ Start LiteRT";
+      llmServerBtn.textContent = h.ok ? "■ Stop LLM" : "▶ Start LLM";
       llmServerBtn.disabled = false;
     })
     .catch(() => {
-      llmServerBtn.textContent = "▶ Start LiteRT";
+      llmServerBtn.textContent = "▶ Start LLM";
       llmServerBtn.disabled = false;
     });
 }
@@ -926,7 +926,7 @@ document.addEventListener("keydown", e => {
     if (!lightbox.hidden) { closeLightbox(); return; }
     if (!confirmModal.hidden) { closeModal(); return; }
     if (!renameModal.hidden) { closeRenameModal(); return; }
-    if (!settingsModal.hidden) { closeSettingsModal(); return; }
+    if (!settingsMenu.hidden) { closeSettingsMenu(); return; }
     if (selectedCards.size > 0) { clearSelection(); return; }
   }
 
@@ -1131,7 +1131,7 @@ suggestCancelBtn.addEventListener("click", () => {
   _suggestCancelled = true;
 });
 
-// ── Suggest All button ───────────────────────────────────────────────────────
+// ── Suggest All button (inside the settings menu) ─────────────────────────────
 suggestAllBtn.addEventListener("click", () => {
   const newFps = [...document.querySelectorAll(".card")]
     .filter(c => c.dataset.memoryStatus === "new")
@@ -1141,11 +1141,13 @@ suggestAllBtn.addEventListener("click", () => {
     statusMsg.textContent = "No new screenshots to suggest names for.";
     return;
   }
+  closeSettingsMenu();
   suggestBatch(newFps);
 });
 
-// ── Settings modal ────────────────────────────────────────────────────────────
+// ── Settings dropdown ──────────────────────────────────────────────────────────
 settingsBtn.addEventListener("click", () => {
+  if (!settingsMenu.hidden) { closeSettingsMenu(); return; }
   // Load current settings into form
   settingsProvider.value = llmSettings.llm_provider || "litert";
   settingsModel.value = llmSettings.llm_model || "gemma4-e2b";
@@ -1153,7 +1155,7 @@ settingsBtn.addEventListener("click", () => {
   settingsAuto.checked = llmSettings.auto_suggest || false;
   const pruneAge = document.getElementById("settings-prune-age");
   if (pruneAge) pruneAge.value = llmSettings.prune_max_age_days || 90;
-  settingsModal.hidden = false;
+  settingsMenu.hidden = false;
 });
 
 // When the model field holds a legacy/default id, snap it to the LiteRT form.
@@ -1165,13 +1167,16 @@ settingsProvider.addEventListener("change", () => {
   }
 });
 
-function closeSettingsModal() {
-  settingsModal.hidden = true;
+function closeSettingsMenu() {
+  settingsMenu.hidden = true;
 }
 
-settingsCancel.addEventListener("click", closeSettingsModal);
-settingsModal.addEventListener("click", e => {
-  if (e.target === settingsModal) closeSettingsModal();
+settingsCancel.addEventListener("click", closeSettingsMenu);
+// Dropdown behavior: clicking outside the menu (or the ⚙ button) closes it.
+document.addEventListener("click", e => {
+  if (settingsMenu.hidden) return;
+  if (settingsMenu.contains(e.target) || settingsBtn.contains(e.target)) return;
+  closeSettingsMenu();
 });
 
 settingsSave.addEventListener("click", () => {
@@ -1192,7 +1197,7 @@ settingsSave.addEventListener("click", () => {
     .then(data => {
       if (data.ok) {
         llmSettings = newSettings;
-        closeSettingsModal();
+        closeSettingsMenu();
         refreshLLMServerButton();
       }
     })

@@ -61,6 +61,10 @@ def _resource_root() -> Path:
 
 _HERE = _resource_root()
 app = Flask(__name__, template_folder=str(_HERE / "templates"), static_folder=str(_HERE / "static"))
+# Local tool: never let the browser serve stale static assets. Flask's default
+# 12h SEND_FILE_MAX_AGE_DEFAULT caused a broken UI after frontend changes — the
+# browser ran old JS/CSS against new HTML (issue: settings dropdown dead).
+app.config["SEND_FILE_MAX_AGE_DEFAULT"] = 0
 
 
 @app.before_request
