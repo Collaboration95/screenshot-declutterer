@@ -106,6 +106,21 @@ def test_static_css_served(client):
     assert b"kanban" in r.data
 
 
+def test_unsorted_card_actions_use_ordered_rows(client):
+    """Triage controls must have dedicated rows for the reference layout."""
+    c, _ = client
+    js = c.get("/static/app.js").data
+    css = c.get("/static/style.css").data
+    assert b"card-actions-triage" in js
+    assert b"makeActionRow(renameBtn, revealBtn, previewBtn)" in js
+    assert b"makeActionRow(suggestBtn)" in js
+    assert b"makeActionRow(keepBtn, trashBtn)" in js
+    assert b".card-actions-triage" in css
+    assert b".card-action-row" in css
+    assert b"gap: 25px" in css
+    assert b"gap: 12px" in css
+
+
 def test_app_js_sets_fingerprint_dataset(client):
     """Cards must carry data-fingerprint from /api/screenshots response."""
     c, _ = client

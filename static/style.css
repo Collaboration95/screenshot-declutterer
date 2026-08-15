@@ -528,6 +528,22 @@ header h1 {
   padding: 8px;
 }
 
+/* Unsorted cards use a stable three-row layout instead of letting flex-wrap
+   place buttons based on the card width. */
+.card-actions-triage {
+  flex-direction: column;
+  flex-wrap: nowrap;
+  gap: 25px;
+}
+
+.card-action-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  width: 100%;
+}
+
 .card:hover .card-actions {
   opacity: 1;
   pointer-events: auto;
@@ -1313,5 +1329,9 @@ header h1 {
 
   .column-unsorted .column-cards {
     grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  }
+
+  .card-actions-triage .card-action-row {
+    gap: 6px;
   }
 }

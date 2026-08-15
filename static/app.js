@@ -355,6 +355,7 @@ function _makeSuggestionBadge(card) {
 function setCardActions(card, column) {
   const actions = card.querySelector(".card-actions");
   actions.innerHTML = "";
+  actions.classList.toggle("card-actions-triage", column === "unsorted");
 
   const renameBtn = makeActionBtn("Rename", "btn-rename", () => openRenameModal(card));
   const previewBtn = makeActionBtn("Preview", "btn-preview", () => openLightbox(card));
@@ -363,19 +364,18 @@ function setCardActions(card, column) {
   if (column === "unsorted") {
     const keepBtn = makeActionBtn("\u2190 Keep", "btn-keep", () => moveCard(card, "keep"));
     const trashBtn = makeActionBtn("Trash \u2192", "btn-trash", () => moveCard(card, "trash"));
-    actions.appendChild(keepBtn);
-    actions.appendChild(previewBtn);
-    actions.appendChild(renameBtn);
-    actions.appendChild(revealBtn);
-    actions.appendChild(trashBtn);
+
+    // Keep the triage controls in three predictable rows so the overlay is
+    // easy to scan: file actions, optional suggestion, then the decision.
+    actions.appendChild(makeActionRow(renameBtn, revealBtn, previewBtn));
 
     // Show "✨ AI Suggest" for unprocessed files
     if (card.dataset.memoryStatus === "new") {
       const suggestBtn = makeActionBtn("✨ Suggest", "btn-suggest", () => suggestSingle(card));
-      // Insert after rename, before trash
-      const trashRef = actions.querySelector(".btn-trash");
-      if (trashRef) actions.insertBefore(suggestBtn, trashRef);
+      actions.appendChild(makeActionRow(suggestBtn));
     }
+
+    actions.appendChild(makeActionRow(keepBtn, trashBtn));
   } else {
     const undoBtn = makeActionBtn("\u21A9 Undo", "btn-undo", () => moveCard(card, "unsorted"));
     actions.appendChild(previewBtn);
@@ -383,6 +383,13 @@ function setCardActions(card, column) {
     actions.appendChild(revealBtn);
     actions.appendChild(undoBtn);
   }
+}
+
+function makeActionRow(...buttons) {
+  const row = document.createElement("div");
+  row.className = "card-action-row";
+  buttons.forEach(button => row.appendChild(button));
+  return row;
 }
 
 function makeActionBtn(label, cls, onClick) {
