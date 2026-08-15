@@ -7,6 +7,46 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-08-14
+
+### Added
+
+- LiteRT-LM on-device LLM provider — runs a local vision-language model for screenshot rename suggestions, replacing the cloud Ollama backend entirely; model selected in Settings (default `gemma4-e2b`) (#78)
+- Managed LiteRT server lifecycle — `/api/llm/start` spawns `litert-lm serve` as a detached subprocess with PID ownership tracking, `/api/llm/stop` kills only owned servers, `/api/llm/health` liveness probe (#78)
+- LiteRT evaluation tooling — screenshot-rename and OCR-to-filename prompts plus an evaluation framework and FE-018 benchmark in `tools/` (#78)
+- Structured logging — import-time config, rotating app log file (`~/.ss-dcl/app.log`, 1MB × 3), request correlation IDs (`X-Request-ID`) and per-request access lines (#85)
+- `GET /api/health` — liveness probe returning version, desktop scanability, and memory record count; 503 when Desktop is unavailable (#86)
+- Security hardening headers — `Referrer-Policy` and `Permissions-Policy` (#96)
+- Python 3.12/3.13 added to the CI matrix; platform-independent steps moved to a Linux job (#89, #90)
+- `ruff format --check` gate in CI alongside lint (#87)
+- pytest coverage gate in CI — `--cov-fail-under=85` (#88)
+- JS unit tests — node:test coverage for `batchFanLayout`, `pathName`, `computeCounts`, `chunked` (A-14 / #92)
+- Performance benchmarks — `@pytest.mark.perf` for scan/thumbnail/suggest paths (A-16 / #94)
+- LiteRT HTTP contract tests against an in-process stub server (A-17 / #95)
+
+### Changed
+
+- Python package is now pip-installable — proper `[build-system]` and import layout, no more `src.`-prefixed imports (#97)
+- `app.py` monolith split into focused modules — `server.py`, `llm.py`, `settings.py`, `thumbs.py`, `logging_config.py`, `categorize.py` (#98)
+- `get_screenshots()` hoists the state read out of the per-file loop and indexes memory records — O(F×D×R) category scoring eliminated (#79)
+- Thumbnail generation no longer blocks request threads on the 2-worker executor (#80)
+- Suggest pipeline now runs with bounded backend parallelism and larger chunks instead of fully serial (`chunkSize=1`) (#81)
+- Pyright scope widened to include `tests/` and `tools/` (#91)
+- `test_routes_memory.py` (1474 lines) split into records/suggest/prune/persistence test files (#93)
+- Dead code removed from `MemoryStore` (`get_unprocessed`/`remove`/`get_status`/`count`) (#99)
+- Duplicated rename/state/thumbnail logic across `/api/rename` and `/api/accept-suggestion` consolidated (#101)
+
+### Removed
+
+- Ollama provider — LiteRT-LM is now the only LLM backend; `GET /api/ollama/health` replaced by `/api/llm/health` (breaking) (#78)
+
+### Fixed
+
+- `/api/done` no longer wipes state decisions for files that failed to trash — 207 partial-failure now preserves the surviving decisions (#82)
+- Negative `prune_max_age_days` rejected server-side (validated 1–730) — no more mass memory pruning from a bad setting (#83)
+- Card thumbnail `alt` text no longer double-escaped (#84)
+- AGENTS.md tooling config synced to pyproject.toml (py310) (#100)
+
 ## [0.5.0] - 2026-08-11
 
 ### Added

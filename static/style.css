@@ -497,6 +497,14 @@ header h1 {
   pointer-events: auto;
 }
 
+/* The suggestion badge must stay interactive on hover: the card-actions
+   overlay covers the whole card, so raise the badge above it and suppress
+   the overlay while the badge itself is hovered. */
+.card:has(.suggestion-badge:hover) .card-actions {
+  opacity: 0;
+  pointer-events: none;
+}
+
 .action-btn {
   padding: 6px 14px;
   border: none;
@@ -669,6 +677,8 @@ header h1 {
   background: var(--bg-badge);
   border-top: 1px solid var(--border-badge);
   font-size: 0.72rem;
+  position: relative;
+  z-index: 2;
 }
 
 .suggestion-badge-name {

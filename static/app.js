@@ -737,7 +737,11 @@ function attachTooltip(card) {
       const rect = card.getBoundingClientRect();
       const tooltipRect = cardTooltip.getBoundingClientRect();
       let left = rect.left + rect.width / 2 - tooltipRect.width / 2;
-      let top = rect.bottom - tooltipRect.height - 10;
+      // Anchor above the card image, not the card's bottom edge, so the
+      // tooltip never overlaps the suggestion badge below the image.
+      const img = card.querySelector("img");
+      const anchor = img ? img.getBoundingClientRect() : rect;
+      let top = anchor.bottom - tooltipRect.height - 10;
       if (left < 4) left = 4;
       if (left + tooltipRect.width > window.innerWidth - 4) {
         left = window.innerWidth - tooltipRect.width - 4;
