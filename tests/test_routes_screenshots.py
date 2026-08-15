@@ -63,17 +63,6 @@ def test_api_screenshots_sort_by_date(client):
     assert names_desc[0] == f2.name
 
 
-def test_api_screenshots_sort_by_size(client):
-    c, desktop = client
-    (desktop / "Screenshot 2024-01-01 at 10.00.00 AM.png").write_bytes(b"aa")
-    (desktop / "Screenshot 2024-06-01 at 10.00.00 AM.png").write_bytes(b"bbbbbb")
-
-    names_asc = [f["name"] for f in json.loads(c.get("/api/screenshots?sort=size").data)]
-    names_desc = [f["name"] for f in json.loads(c.get("/api/screenshots?sort=size_desc").data)]
-    assert names_asc[0] == "Screenshot 2024-01-01 at 10.00.00 AM.png"
-    assert names_desc[0] == "Screenshot 2024-06-01 at 10.00.00 AM.png"
-
-
 def test_api_screenshots_default_sort_is_name(client):
     c, desktop = client
     (desktop / "Screenshot B.png").write_bytes(b"")

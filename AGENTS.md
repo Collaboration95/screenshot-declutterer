@@ -36,7 +36,7 @@ tests/test_performance.py     Perf benchmarks, @pytest.mark.perf (scan/thumbs/su
 - **Port 5002 with auto-fallback** — avoids conflict with macOS AirPlay Receiver on port 5000; `_find_free_port()` auto-increments if occupied; override via `SS_DCL_PORT` env var
 - **send2trash** — files go to native macOS Trash (recoverable), never permanently deleted
 - **State as JSON file** (`~/.ss-dcl/state.json`) — no database needed; single-user tool with no concurrent access
-- **Thumbnail caching** — generated on-demand with Pillow, cached at `~/.cache/ss-dcl/thumbs/`, staleness checked via `st_mtime`
+- **Thumbnail caching** — generated on-demand with Pillow, cached at `~/.cache/ss-dcl/thumbs/<WxH>/` (size-keyed), staleness checked via `st_mtime`
 - **Thumbnail fallback** — if Pillow fails to generate, falls back to serving the full image
 - **No auth/CORS/CSRF** — localhost-only tool, single user
 
@@ -45,9 +45,9 @@ tests/test_performance.py     Perf benchmarks, @pytest.mark.perf (scan/thumbs/su
 | Method | Path | Purpose |
 |--------|------|---------|
 | GET | `/` | Serve SPA |
-| GET | `/api/screenshots?sort=<mode>` | List screenshots with fingerprint, memory_status, suggested_name, suggested_category enrichment (sort: name, name_desc, date, date_desc, size, size_desc) |
+| GET | `/api/screenshots?sort=<mode>` | List screenshots with fingerprint, memory_status, suggested_name, suggested_category enrichment (sort: name, name_desc, date, date_desc) |
 | GET | `/api/image/<filename>` | Serve full-size image (cache: 1h) |
-| GET | `/api/thumb/<filename>` | Serve thumbnail 400x300 max (cache: 24h), falls back to full image |
+| GET | `/api/thumb/<filename>` | Serve thumbnail 800x600 max (cache: 24h), falls back to full image |
 | GET | `/api/state` | Get persisted decisions `{decisions: {filename: "keep"|"trash"}}` |
 | PUT | `/api/state` | Save decisions state |
 | POST | `/api/done` | Trash files — body `{filenames: [...]}`. Updates memory with `trashed` status. Returns 207 on partial failure with per-file errors |
@@ -88,12 +88,12 @@ All in `static/app.js`:
 |----------|-------|
 | DESKTOP | `~/Desktop` |
 | SCREENSHOT_GLOB | `Screenshot*.*` (filtered by SUPPORTED_IMAGE_EXTENSION) |
-| THUMB_DIR | `~/.cache/ss-dcl/thumbs/` |
+| THUMB_DIR | `~/.cache/ss-dcl/thumbs/<WxH>/` (keyed by current THUMB_SIZE) |
 | STATE_FILE | `~/.ss-dcl/state.json` |
 | MEMORY_FILE | `~/.ss-dcl/memory.json` |
 | SETTINGS_FILE | `~/.ss-dcl/settings.json` |
 | APP_LOG_FILE | `~/.ss-dcl/app.log` (env `SS_DCL_LOG_FILE`; rotating, 1MB × 3) |
-| THUMB_SIZE | `(400, 300)` |
+| THUMB_SIZE | `(800, 600)` |
 | LITERT_BASE_URL | `http://localhost:9379` (env `LITERT_BASE_URL`) |
 | LITERT_SERVE_CMD | `litert-lm serve` (env `LITERT_SERVE_CMD`; PATH → venv fallback) |
 | LITERT_PIDFILE | `~/.ss-dcl/litert.pid` |

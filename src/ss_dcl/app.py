@@ -110,7 +110,11 @@ def set_security_headers(response: Response) -> Response:
 
 
 DESKTOP = Path(os.environ.get("SS_DCL_DESKTOP", str(Path.home() / "Desktop")))
-THUMB_DIR = Path.home() / ".cache" / "ss-dcl" / "thumbs"
+# Cache dir is keyed by thumbnail size so a THUMB_SIZE change gets a fresh
+# cache instead of reusing old-resolution thumbs (mtime-based staleness check
+# would otherwise keep serving them).
+_thumb_size_key = f"{thumbs.THUMB_SIZE[0]}x{thumbs.THUMB_SIZE[1]}"
+THUMB_DIR = Path.home() / ".cache" / "ss-dcl" / "thumbs" / _thumb_size_key
 STATE_FILE = Path.home() / ".ss-dcl" / "state.json"
 MEMORY_FILE = Path.home() / ".ss-dcl" / "memory.json"
 IS_MACOS = sys.platform == "darwin"
@@ -122,8 +126,6 @@ SORT_OPTIONS = {
     "name_desc": ("name", True),
     "date": ("mtime", False),
     "date_desc": ("mtime", True),
-    "size": ("size", False),
-    "size_desc": ("size", True),
 }
 
 

@@ -61,7 +61,7 @@ def test_server_module_exposes_process_lifecycle():
 
 def test_thumbs_module_exposes_generator_and_size():
     assert callable(thumbs._generate_thumbnail)
-    assert thumbs.THUMB_SIZE == (400, 300)
+    assert thumbs.THUMB_SIZE == (800, 600)
     # Issue #80: no executor — generation is synchronous in the request thread.
     assert not hasattr(thumbs, "_THUMB_EXECUTOR")
 
