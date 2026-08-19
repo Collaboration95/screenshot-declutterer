@@ -101,6 +101,54 @@ def test_call_litert_suggest_parses_openai_response(tmp_path, monkeypatch):
     assert result == "q3-budget-planning.png"
 
 
+def test_call_litert_suggest_parses_json_filename(tmp_path, monkeypatch):
+    """Structured ``{"filename": ...}`` reply → sanitized name + extension."""
+    img = tmp_path / "shot.png"
+    img.write_bytes(_make_png(10, 10))
+
+    reply = '{"filename": "Manoj Chandra Update"}'
+    monkeypatch.setattr(
+        urllib.request,
+        "urlopen",
+        lambda req, timeout=None: _FakeResponse(_openai_response(reply)),
+    )
+
+    result = llm._call_litert_suggest(img, "gemma4-e2b")
+    assert result == "manoj-chandra-update.png"
+
+
+def test_call_litert_suggest_parses_json_with_newline_after_key(tmp_path, monkeypatch):
+    """The model occasionally emits ``{"filename":\n"..."}`` — still valid JSON."""
+    img = tmp_path / "shot.png"
+    img.write_bytes(_make_png(10, 10))
+
+    reply = '{"filename":\n"Two men on video call"}'
+    monkeypatch.setattr(
+        urllib.request,
+        "urlopen",
+        lambda req, timeout=None: _FakeResponse(_openai_response(reply)),
+    )
+
+    result = llm._call_litert_suggest(img, "gemma4-e2b")
+    assert result == "two-men-on-video-call.png"
+
+
+def test_call_litert_suggest_json_non_string_filename_falls_back(tmp_path, monkeypatch):
+    """A JSON object whose filename isn't a usable string → whole reply sanitized."""
+    img = tmp_path / "shot.png"
+    img.write_bytes(_make_png(10, 10))
+
+    reply = '{"filename": 42, "note": "budget review"}'
+    monkeypatch.setattr(
+        urllib.request,
+        "urlopen",
+        lambda req, timeout=None: _FakeResponse(_openai_response(reply)),
+    )
+
+    result = llm._call_litert_suggest(img, "gemma4-e2b")
+    assert result == "filename-42-note-budget-review.png"
+
+
 def test_call_litert_suggest_empty_choices_returns_none(tmp_path, monkeypatch):
     """A response with no choices is treated as a failure, not a crash."""
     img = tmp_path / "shot.png"
@@ -199,6 +247,7 @@ def test_call_litert_suggest_sends_openai_payload(tmp_path, monkeypatch):
     assert captured["url"].endswith("/v1/chat/completions")
     body = captured["body"]
     assert body["model"] == "gemma4-e2b"
+    assert body["response_format"] == {"type": "json_object"}
     content = body["messages"][0]["content"]
     assert content[0]["type"] == "text"
     assert content[0]["text"]

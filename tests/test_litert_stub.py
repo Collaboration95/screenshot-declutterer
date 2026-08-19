@@ -35,9 +35,8 @@ def stub_completions():
         return flask.jsonify({"error": "boom"}), 500
     if stub_state["malformed"]:
         return "this is not json", 200
-    return flask.jsonify(
-        {"choices": [{"message": {"role": "assistant", "content": "Monthly Report"}}]}
-    )
+    reply = '{"filename": "Monthly Report"}'
+    return flask.jsonify({"choices": [{"message": {"role": "assistant", "content": reply}}]})
 
 
 class _StubServer:
@@ -109,7 +108,8 @@ def test_suggest_route_contract_against_stub(stub_client):
     post = stub_state["posts"][0]
     assert post["model"] == settings.DEFAULT_LLM_MODEL
     assert post["stream"] is False
-    assert post["max_tokens"] == 40
+    assert post["max_tokens"] == 60
+    assert post["response_format"] == {"type": "json_object"}
     content = post["messages"][0]["content"]
     assert content[0]["type"] == "text"
     assert content[1]["type"] == "image_url"

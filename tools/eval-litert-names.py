@@ -39,11 +39,10 @@ SCREENSHOT_GLOB = "Screenshot*.*"
 
 LITERT_BASE_URL = "http://localhost:9379"
 LITERT_MODEL = "gemma4-e2b"
-# The exact prompt the production client ships to LiteRT-LM (src/ss_dcl/app.py).
-LITERT_PRODUCTION_PROMPT = (
-    "Describe this screenshot in 3-5 words as a filename. "
-    "Return only the filename, no explanation, no quotes."
-)
+# The exact prompt the production client ships to LiteRT-LM (src/ss_dcl/llm.py).
+from ss_dcl.llm import _SUGGEST_PROMPT  # noqa: E402
+
+LITERT_PRODUCTION_PROMPT = _SUGGEST_PROMPT
 
 
 # ── Data model ─────────────────────────────────────────────────────────────

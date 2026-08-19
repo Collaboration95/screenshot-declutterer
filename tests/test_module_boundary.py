@@ -41,6 +41,7 @@ def test_llm_module_exposes_client_helpers():
         "_call_litert_suggest",
         "_is_retryable_llm_error",
         "_sanitize_suggestion",
+        "_parse_suggestion_reply",
         "_image_to_png_data_uri",
         "_litert_healthy",
         "reset_health_cache",
