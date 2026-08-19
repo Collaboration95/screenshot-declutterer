@@ -103,6 +103,64 @@ def _image_to_png_data_uri(image_path: Path) -> str:
     return "data:image/png;base64," + base64.b64encode(buf.getvalue()).decode("ascii")
 
 
+_SUGGEST_PROMPT_FALLBACK = (
+    'Return a JSON object with key "filename" (string) describing this '
+    "screenshot in 3-5 words. Output ONLY valid JSON, no markdown."
+)
+
+
+def _suggest_prompt_file() -> Path:
+    """Path to the suggestion prompt asset.
+
+    Mirrors :func:`ss_dcl.app._resource_root`: ``assets/prompts`` lives at
+    the repo root when running from source and at the ``site-packages`` root
+    (hatchling ``force-include``) when installed as a wheel.
+    """
+    pkg_dir = Path(__file__).resolve().parent
+    for base in (pkg_dir.parent.parent, pkg_dir.parent):
+        candidate = base / "assets" / "prompts" / "suggest-filename.txt"
+        if candidate.is_file():
+            return candidate
+    return pkg_dir.parent.parent / "assets" / "prompts" / "suggest-filename.txt"
+
+
+def _load_suggest_prompt(prompt_file: Path | None = None) -> str:
+    """Load the suggestion prompt from disk, falling back to the inline default.
+
+    *prompt_file* defaults to the packaged asset. A missing, unreadable, or
+    empty file degrades to :data:`_SUGGEST_PROMPT_FALLBACK` so the app never
+    ships without a prompt.
+    """
+    path = prompt_file or _suggest_prompt_file()
+    try:
+        text = path.read_text(encoding="utf-8").strip()
+    except OSError:
+        return _SUGGEST_PROMPT_FALLBACK
+    return text or _SUGGEST_PROMPT_FALLBACK
+
+
+_SUGGEST_PROMPT = _load_suggest_prompt()
+
+
+def _parse_suggestion_reply(raw: str, extension: str = ".png") -> str | None:
+    """Extract a sanitized filename from the model reply.
+
+    Prefers a structured ``{"filename": "..."}`` object; falls back to
+    treating the whole reply as the name when it isn't valid JSON so a
+    rare non-JSON reply still degrades to a suggestion instead of dropping
+    it.
+    """
+    try:
+        data = json.loads(raw)
+        if isinstance(data, dict):
+            name = data.get("filename")
+            if isinstance(name, str) and name.strip():
+                return _sanitize_suggestion(name, extension)
+    except json.JSONDecodeError:
+        pass
+    return _sanitize_suggestion(raw, extension)
+
+
 def _call_litert_suggest(image_path: Path, model: str, extension: str = ".png") -> str | None:
     """Call the LiteRT-LM OpenAI-compatible server with an image.
 
@@ -113,11 +171,6 @@ def _call_litert_suggest(image_path: Path, model: str, extension: str = ".png") 
     max_retries = 2
     data_uri = _image_to_png_data_uri(image_path)
 
-    prompt = (
-        "Describe this screenshot in 3-5 words as a filename. "
-        "Return only the filename, no explanation, no quotes."
-    )
-
     payload = json.dumps(
         {
             "model": model,
@@ -125,13 +178,14 @@ def _call_litert_suggest(image_path: Path, model: str, extension: str = ".png") 
                 {
                     "role": "user",
                     "content": [
-                        {"type": "text", "text": prompt},
+                        {"type": "text", "text": _SUGGEST_PROMPT},
                         {"type": "image_url", "image_url": {"url": data_uri}},
                     ],
                 }
             ],
-            "max_tokens": 40,
+            "max_tokens": 60,
             "stream": False,
+            "response_format": {"type": "json_object"},
         }
     ).encode("utf-8")
 
@@ -182,7 +236,7 @@ def _call_litert_suggest(image_path: Path, model: str, extension: str = ".png") 
 
     if not raw:
         return None
-    return _sanitize_suggestion(raw, extension)
+    return _parse_suggestion_reply(raw, extension)
 
 
 def _litert_healthy() -> bool:
