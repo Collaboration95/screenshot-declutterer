@@ -103,6 +103,31 @@ def _image_to_png_data_uri(image_path: Path) -> str:
     return "data:image/png;base64," + base64.b64encode(buf.getvalue()).decode("ascii")
 
 
+_SUGGEST_PROMPT = (
+    'Return a JSON object with key "filename" (string) describing this '
+    "screenshot in 3-5 words. Output ONLY valid JSON, no markdown."
+)
+
+
+def _parse_suggestion_reply(raw: str, extension: str = ".png") -> str | None:
+    """Extract a sanitized filename from the model reply.
+
+    Prefers a structured ``{"filename": "..."}`` object; falls back to
+    treating the whole reply as the name when it isn't valid JSON so a
+    rare non-JSON reply still degrades to a suggestion instead of dropping
+    it.
+    """
+    try:
+        data = json.loads(raw)
+        if isinstance(data, dict):
+            name = data.get("filename")
+            if isinstance(name, str) and name.strip():
+                return _sanitize_suggestion(name, extension)
+    except json.JSONDecodeError:
+        pass
+    return _sanitize_suggestion(raw, extension)
+
+
 def _call_litert_suggest(image_path: Path, model: str, extension: str = ".png") -> str | None:
     """Call the LiteRT-LM OpenAI-compatible server with an image.
 
@@ -113,11 +138,6 @@ def _call_litert_suggest(image_path: Path, model: str, extension: str = ".png") 
     max_retries = 2
     data_uri = _image_to_png_data_uri(image_path)
 
-    prompt = (
-        "Describe this screenshot in 3-5 words as a filename. "
-        "Return only the filename, no explanation, no quotes."
-    )
-
     payload = json.dumps(
         {
             "model": model,
@@ -125,13 +145,14 @@ def _call_litert_suggest(image_path: Path, model: str, extension: str = ".png") 
                 {
                     "role": "user",
                     "content": [
-                        {"type": "text", "text": prompt},
+                        {"type": "text", "text": _SUGGEST_PROMPT},
                         {"type": "image_url", "image_url": {"url": data_uri}},
                     ],
                 }
             ],
-            "max_tokens": 40,
+            "max_tokens": 60,
             "stream": False,
+            "response_format": {"type": "json_object"},
         }
     ).encode("utf-8")
 
@@ -182,7 +203,7 @@ def _call_litert_suggest(image_path: Path, model: str, extension: str = ".png") 
 
     if not raw:
         return None
-    return _sanitize_suggestion(raw, extension)
+    return _parse_suggestion_reply(raw, extension)
 
 
 def _litert_healthy() -> bool:
