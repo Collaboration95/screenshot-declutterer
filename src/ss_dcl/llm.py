@@ -103,10 +103,43 @@ def _image_to_png_data_uri(image_path: Path) -> str:
     return "data:image/png;base64," + base64.b64encode(buf.getvalue()).decode("ascii")
 
 
-_SUGGEST_PROMPT = (
+_SUGGEST_PROMPT_FALLBACK = (
     'Return a JSON object with key "filename" (string) describing this '
     "screenshot in 3-5 words. Output ONLY valid JSON, no markdown."
 )
+
+
+def _suggest_prompt_file() -> Path:
+    """Path to the suggestion prompt asset.
+
+    Mirrors :func:`ss_dcl.app._resource_root`: ``assets/prompts`` lives at
+    the repo root when running from source and at the ``site-packages`` root
+    (hatchling ``force-include``) when installed as a wheel.
+    """
+    pkg_dir = Path(__file__).resolve().parent
+    for base in (pkg_dir.parent.parent, pkg_dir.parent):
+        candidate = base / "assets" / "prompts" / "suggest-filename.txt"
+        if candidate.is_file():
+            return candidate
+    return pkg_dir.parent.parent / "assets" / "prompts" / "suggest-filename.txt"
+
+
+def _load_suggest_prompt(prompt_file: Path | None = None) -> str:
+    """Load the suggestion prompt from disk, falling back to the inline default.
+
+    *prompt_file* defaults to the packaged asset. A missing, unreadable, or
+    empty file degrades to :data:`_SUGGEST_PROMPT_FALLBACK` so the app never
+    ships without a prompt.
+    """
+    path = prompt_file or _suggest_prompt_file()
+    try:
+        text = path.read_text(encoding="utf-8").strip()
+    except OSError:
+        return _SUGGEST_PROMPT_FALLBACK
+    return text or _SUGGEST_PROMPT_FALLBACK
+
+
+_SUGGEST_PROMPT = _load_suggest_prompt()
 
 
 def _parse_suggestion_reply(raw: str, extension: str = ".png") -> str | None:

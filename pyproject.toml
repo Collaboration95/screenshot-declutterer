@@ -54,4 +54,4 @@ branch = true
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/ss_dcl"]
-force-include = { templates = "templates", static = "static" }
+force-include = { templates = "templates", static = "static", "assets/prompts" = "assets/prompts" }
