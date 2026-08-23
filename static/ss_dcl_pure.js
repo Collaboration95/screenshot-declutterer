@@ -64,26 +64,39 @@
 
   // ── Tracking folders helpers ──────────────────────────────────────
   const DEFAULT_SOURCE = "Desktop";
+  function _enc(s) {
+    return s.replace(/\|/g, "%7C");
+  }
+  function _dec(s) {
+    return s.replace(/%7C/g, "|");
+  }
   function decisionKey(source, name) {
-    if (!source || source === DEFAULT_SOURCE) return name;
-    return `${source}|${name}`;
+    if (!source || source === DEFAULT_SOURCE) {
+      if (name.includes("|")) return _enc(name);
+      return name;
+    }
+    return `${_enc(source)}|${_enc(name)}`;
   }
   function parseDecisionKey(key) {
     if (key.startsWith(`${DEFAULT_SOURCE}|`)) {
-      return { source: DEFAULT_SOURCE, name: key.slice(DEFAULT_SOURCE.length + 1) };
+      return { source: DEFAULT_SOURCE, name: _dec(key.slice(DEFAULT_SOURCE.length + 1)) };
+    }
+    if (key.indexOf("|") === -1) {
+      if (key.indexOf("%7C") !== -1) {
+        return { source: DEFAULT_SOURCE, name: _dec(key) };
+      }
+      return { source: DEFAULT_SOURCE, name: key };
     }
     const idx = key.indexOf("|");
-    if (idx !== -1) {
-      const source = key.slice(0, idx);
-      const name = key.slice(idx + 1);
-      // If source looks like an absolute path, treat as tracked source
-      if (source.startsWith("/")) {
-        return { source, name };
-      }
-      // Fallback: if source is Desktop-like but not exact, treat as Desktop bare containing '|'
-      // but screenshot names don't contain '|', so rare.
+    const sourceEnc = key.slice(0, idx);
+    const nameEnc = key.slice(idx + 1);
+    const source = _dec(sourceEnc);
+    const name = _dec(nameEnc);
+    if (!source) return { source: DEFAULT_SOURCE, name: _dec(key) };
+    if (source !== DEFAULT_SOURCE && !source.startsWith("/")) {
+      return { source: DEFAULT_SOURCE, name: _dec(key) };
     }
-    return { source: DEFAULT_SOURCE, name: key };
+    return { source, name };
   }
   function fileKey(file) {
     return decisionKey(file.source || DEFAULT_SOURCE, file.name);

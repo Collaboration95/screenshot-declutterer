@@ -478,12 +478,16 @@ def api_reveal():
     """Reveal a screenshot in Finder (macOS) via `open -R`."""
     data = request.get_json(silent=True) or {}
     # Support both new {source, name} and legacy {filename}
-    source = data.get("source", DEFAULT_SOURCE)
+    if "source" in data:
+        src_raw = data.get("source")
+        if not isinstance(src_raw, str) or not src_raw.strip():
+            abort(400)
+        source = src_raw
+    else:
+        source = DEFAULT_SOURCE
     filename = data.get("name") or data.get("filename")
     if not isinstance(filename, str) or not filename:
         abort(400)
-    if not isinstance(source, str) or not source:
-        source = DEFAULT_SOURCE
     reveal_path = _validate_source_path(source, filename)
     if reveal_path is None:
         abort(400)
@@ -532,29 +536,59 @@ def api_done():
         abort(400)
     data = request.get_json(silent=True) or {}
     # New contract: {files: [{source, name}, ...]} ; legacy: {filenames: [...] } => Desktop
-    files_raw = data.get("files")
-    filenames = data.get("filenames", [])
-    # Normalize to list of (source, name)
+    # If `files` key is present, it takes precedence and is validated strictly;
+    # legacy `filenames` is only used when `files` is absent.
     targets: list[tuple[str, str]] = []
-    if isinstance(files_raw, list) and files_raw:
-        for entry in files_raw:
+    errors: list[str] = []
+    errors_detail: list[dict[str, str]] = []
+    if "files" in data:
+        files_raw = data["files"]
+        if not isinstance(files_raw, list):
+            return jsonify({"ok": False, "error": "files must be a list"}), 400
+        for idx, entry in enumerate(files_raw):
             if not isinstance(entry, dict):
+                msg = f"files[{idx}]: invalid entry"
+                errors.append(msg)
+                errors_detail.append({"source": "", "name": "", "error": "invalid entry"})
                 continue
-            src = entry.get("source", DEFAULT_SOURCE)
+            # Source: missing → Desktop, explicit present but invalid → error
+            if "source" not in entry:
+                src = DEFAULT_SOURCE
+            else:
+                src_raw = entry.get("source")
+                if not isinstance(src_raw, str) or not src_raw.strip():
+                    msg = f"files[{idx}]: invalid source"
+                    errors.append(msg)
+                    # Try to capture name for detail if available
+                    n = entry.get("name") or entry.get("filename") or ""
+                    errors_detail.append(
+                        {"source": str(src_raw), "name": str(n), "error": "invalid source"}
+                    )
+                    continue
+                src = src_raw
             name = entry.get("name") or entry.get("filename")
             if not isinstance(name, str) or not name:
+                msg = f"files[{idx}]: invalid name"
+                errors.append(msg)
+                errors_detail.append({"source": src, "name": str(name), "error": "invalid name"})
                 continue
-            if not isinstance(src, str) or not src:
-                src = DEFAULT_SOURCE
             targets.append((src, name))
-    # Legacy fallback
-    if not targets and isinstance(filenames, list):
-        for fn in filenames:
-            if isinstance(fn, str) and fn:
-                targets.append((DEFAULT_SOURCE, fn))
+        # `files` was explicitly provided: do not fall back to `filenames`
+        # (empty `targets` with errors will result in 207 below)
+    else:
+        filenames = data.get("filenames", [])
+        if isinstance(filenames, list):
+            for fn in filenames:
+                if isinstance(fn, str) and fn:
+                    targets.append((DEFAULT_SOURCE, fn))
+                elif fn is not None:
+                    # Invalid filename entry in legacy payload → error
+                    msg = f"{fn}: invalid entry"
+                    errors.append(msg)
+                    errors_detail.append(
+                        {"source": DEFAULT_SOURCE, "name": str(fn), "error": "invalid entry"}
+                    )
 
-    errors = []
-    errors_detail: list[dict[str, str]] = []
     trashed_ok: list[tuple[str, str]] = []
     logger.info("Starting trash batch: %d files", len(targets))
     for source, filename in targets:
@@ -657,8 +691,12 @@ def api_rename():
     data = request.get_json(silent=True) or {}
     old_name = data.get("old_name", "")
     new_name = data.get("new_name", "")
-    source = data.get("source", DEFAULT_SOURCE)
-    if not isinstance(source, str) or not source:
+    if "source" in data:
+        src_raw = data.get("source")
+        if not isinstance(src_raw, str) or not src_raw.strip():
+            return jsonify({"ok": False, "error": "invalid source"}), 400
+        source = src_raw
+    else:
         source = DEFAULT_SOURCE
 
     if not old_name or not new_name:

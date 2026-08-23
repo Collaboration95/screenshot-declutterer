@@ -66,6 +66,16 @@ def _is_subpath(child: Path, parent: Path) -> bool:
         return False
 
 
+def _enc(s: str) -> str:
+    """Encode `|` so `|` can be used as an unambiguous delimiter."""
+    return s.replace("|", "%7C")
+
+
+def _dec(s: str) -> str:
+    """Decode the encoding applied by `_enc`."""
+    return s.replace("%7C", "|")
+
+
 def sanitize_source_dir(source: str) -> str:
     """Return a collision-proof directory name for *source*.
 
@@ -91,52 +101,61 @@ def decision_key(source: str, name: str) -> str:
 
     Desktop stays as bare filename for backward compatibility (existing
     tests and state files use bare keys). Tracked folders use
-    ``source|name`` to guarantee uniqueness. Parsing handles both
-    bare and ``Desktop|name`` forms for forward compatibility.
+    ``source|name`` to guarantee uniqueness, with ``|`` encoded
+    so valid paths/names containing ``|`` cannot collide. Parsing handles
+    both bare and ``Desktop|name`` forms for forward compatibility.
     """
     if source == DEFAULT_SOURCE:
+        # Encode `|` in Desktop names so a name containing `|` does not
+        # look like a tracked key; bare names without `|` remain unchanged.
+        if "|" in name:
+            return _enc(name)
         return name
-    return f"{source}|{name}"
+    return f"{_enc(source)}|{_enc(name)}"
 
 
 def parse_decision_key(key: str) -> tuple[str, str]:
     """Parse a decision key into (source, name). Legacy keys without '|' map to Desktop."""
     if key.startswith(f"{DEFAULT_SOURCE}|"):
-        return (DEFAULT_SOURCE, key[len(DEFAULT_SOURCE) + 1 :])
+        return (DEFAULT_SOURCE, _dec(key[len(DEFAULT_SOURCE) + 1 :]))
     if "|" not in key:
+        # No delimiter: Desktop key. Decode if it was encoded (`%7C`).
+        if "%7C" in key:
+            return (DEFAULT_SOURCE, _dec(key))
         return (DEFAULT_SOURCE, key)
-    # Split on first '|' — source may be absolute path containing '/', but not '|'
-    source, name = key.split("|", 1)
+    # Split on first '|' — source part is encoded, so a literal `|` inside
+    # the original source/name cannot appear as a delimiter.
+    source_enc, name_enc = key.split("|", 1)
+    source = _dec(source_enc)
+    name = _dec(name_enc)
     if not source:
         return (DEFAULT_SOURCE, key)
     # If source is not an absolute path and not Desktop, treat as Desktop legacy
     # This handles rare case where bare filename contains '|' (unlikely for screenshots)
     if source != DEFAULT_SOURCE and not source.startswith("/"):
         # Ambiguous: treat as Desktop bare key containing '|'
-        return (DEFAULT_SOURCE, key)
+        return (DEFAULT_SOURCE, _dec(key) if "%7C" in key else key)
     return (source, name)
 
 
 def legacy_fingerprint_to_source(fingerprint: str) -> str:
     """Extract source from a fingerprint string (legacy fallback)."""
     # Legacy fingerprints are "name|size" — no source
-    # Source-aware are "source|name|size" — three parts
-    # We can't reliably distinguish if name contains '|', but screenshot names don't.
-    # Heuristic: if fingerprint has 2 pipes, treat first segment as source
+    # Source-aware are "source|name|size" — three parts with encoded components
     parts = fingerprint.split("|")
     if len(parts) >= 3:
-        # source + name + size (name may contain '|'? assume not)
-        # Take first as source, last as size, middle as name (join middle parts)
-        return parts[0]
+        # Encoded source does not contain `|` (it is %7C), so split is unambiguous
+        return _dec(parts[0])
     return DEFAULT_SOURCE
 
 
 def compute_source_fingerprint(source: str, name: str, size: int) -> str:
     """Compute source-aware fingerprint. Desktop stays legacy 'name|size'."""
     if source == DEFAULT_SOURCE:
-        return f"{name}|{size}"
-    # For non-Desktop, use source prefix to guarantee uniqueness
-    return f"{source}|{name}|{size}"
+        # Encode `|` in the name so the `|` before size remains unambiguous
+        return f"{_enc(name)}|{size}"
+    # For non-Desktop, use source prefix to guarantee uniqueness, encoded
+    return f"{_enc(source)}|{_enc(name)}|{size}"
 
 
 def resolve_source_root(source: str, desktop: Path, tracked_folders: list[str]) -> Path | None:

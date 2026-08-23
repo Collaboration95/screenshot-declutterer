@@ -606,3 +606,235 @@ class TestSourcesHelpers:
         assert p1 == base / "a.png"
         assert p2 != p1
         assert p2.parent != base
+
+    def test_non_recursive_scan_tracked(self, client, tmp_path):
+        c, _ = client
+        extra = tmp_path / "extra"
+        extra.mkdir()
+        sub = extra / "subdir"
+        sub.mkdir()
+        (extra / "Screenshot 2024-01-01 at 12.00.00 PM.png").write_bytes(b"top")
+        (sub / "Screenshot 2024-01-02 at 12.00.00 PM.png").write_bytes(b"nested")
+        c.put(
+            "/api/settings",
+            data=json.dumps({"tracked_folders": [str(extra)]}),
+            content_type="application/json",
+        )
+        r = c.get("/api/screenshots")
+        files = json.loads(r.data)
+        # Only top-level file should be found, not nested
+        names = [f["name"] for f in files]
+        assert "Screenshot 2024-01-01 at 12.00.00 PM.png" in names
+        assert "Screenshot 2024-01-02 at 12.00.00 PM.png" not in names
+
+    def test_delimiter_collision_encoded(self, tmp_path):
+        # Two different source|name combos that would collide with raw `|` delimiter
+        from ss_dcl.memory import MemoryStore
+        from ss_dcl.sources import compute_source_fingerprint, decision_key
+
+        s1 = "/root/a"
+        n1 = "Screenshot|Screenshot x.png"
+        s2 = "/root/a|Screenshot"
+        n2 = "Screenshot x.png"
+        size = 123
+        fp1 = compute_source_fingerprint(s1, n1, size)
+        fp2 = compute_source_fingerprint(s2, n2, size)
+        assert fp1 != fp2, "Encoded fingerprints must not collide"
+        dk1 = decision_key(s1, n1)
+        dk2 = decision_key(s2, n2)
+        assert dk1 != dk2, "Encoded decision keys must not collide"
+        # Memory must create two distinct records
+        store = MemoryStore(tmp_path / "memory.json")
+        rec1 = store.record_file(n1, size, source=s1)
+        rec2 = store.record_file(n2, size, source=s2)
+        assert rec1.fingerprint == fp1
+        assert rec2.fingerprint == fp2
+        assert len(store._files) == 2
+        assert store.lookup_by_name(n1, source=s1) is rec1
+        assert store.lookup_by_name(n2, source=s2) is rec2
+
+
+class TestDoneValidation:
+    def test_done_rejects_invalid_source_explicit(self, client, tmp_path):
+        c, desktop = client
+        name = "Screenshot 2024-01-01 at 12.00.00 PM.png"
+        (desktop / name).write_bytes(b"data")
+        extra = tmp_path / "extra"
+        extra.mkdir()
+        (extra / name).write_bytes(b"data")
+        c.put(
+            "/api/settings",
+            data=json.dumps({"tracked_folders": [str(extra)]}),
+            content_type="application/json",
+        )
+        # Explicit null source should be rejected, not coerced to Desktop
+        with patch("ss_dcl.app.send2trash"):
+            r = c.post(
+                "/api/done",
+                data=json.dumps({"files": [{"source": None, "name": name}]}),
+                content_type="application/json",
+            )
+            # Should be 207 with error, not 200 success that trashes Desktop file
+            assert r.status_code == 207
+            data = json.loads(r.data)
+            assert data["ok"] is False
+            assert len(data["errors"]) == 1
+            # Ensure Desktop file still exists (not trashed)
+            assert (desktop / name).exists()
+            assert (extra / name).exists()
+
+    def test_done_malformed_entries_reported(self, client):
+        c, _ = client
+        r = c.post(
+            "/api/done",
+            data=json.dumps(
+                {"files": [{"source": "/tmp/extra", "name": ""}, "not-a-dict", {"name": "a.png"}]}
+            ),
+            content_type="application/json",
+        )
+        # Should report errors for each invalid entry, not 200 ok
+        assert r.status_code == 207
+        data = json.loads(r.data)
+        assert data["ok"] is False
+        assert len(data["errors"]) >= 2
+
+    def test_done_only_invalid_returns_207(self, client):
+        c, _ = client
+        r = c.post(
+            "/api/done",
+            data=json.dumps({"files": [{"source": None, "name": ""}]}),
+            content_type="application/json",
+        )
+        assert r.status_code == 207
+        assert json.loads(r.data)["ok"] is False
+
+    def test_done_rejects_non_list_files(self, client):
+        c, _ = client
+        r = c.post(
+            "/api/done",
+            data=json.dumps({"files": "not-a-list"}),
+            content_type="application/json",
+        )
+        assert r.status_code == 400
+
+    def test_done_does_not_fallback_to_filenames_when_files_present(self, client, tmp_path):
+        c, desktop = client
+        name = "Screenshot 2024-01-01 at 12.00.00 PM.png"
+        (desktop / name).write_bytes(b"data")
+        # Valid file in filenames but files payload is invalid (explicit null source)
+        # Should report error for files, not silently trash via filenames
+        with patch("ss_dcl.app.send2trash") as mock:
+            r = c.post(
+                "/api/done",
+                data=json.dumps({"files": [{"source": None, "name": name}], "filenames": [name]}),
+                content_type="application/json",
+            )
+            assert r.status_code == 207
+            assert json.loads(r.data)["ok"] is False
+            mock.assert_not_called()
+            assert (desktop / name).exists()
+
+
+class TestInvalidSourceHandling:
+    def test_rename_rejects_explicit_invalid_source(self, client, tmp_path):
+        c, desktop = client
+        name = "Screenshot 2024-01-01 at 12.00.00 PM.png"
+        (desktop / name).write_bytes(b"data")
+        r = c.post(
+            "/api/rename",
+            data=json.dumps({"old_name": name, "new_name": "Screenshot new.png", "source": None}),
+            content_type="application/json",
+        )
+        assert r.status_code == 400
+        assert "invalid source" in json.loads(r.data)["error"].lower()
+        assert (desktop / name).exists()
+
+    def test_rename_with_missing_source_defaults_to_desktop(self, client, tmp_path):
+        c, desktop = client
+        name = "Screenshot 2024-01-01 at 12.00.00 PM.png"
+        (desktop / name).write_bytes(b"data")
+        r = c.post(
+            "/api/rename",
+            data=json.dumps({"old_name": name, "new_name": "Screenshot new.png"}),
+            content_type="application/json",
+        )
+        assert r.status_code == 200
+
+    def test_reveal_rejects_explicit_invalid_source(self, client):
+        c, _ = client
+        r = c.post(
+            "/api/reveal",
+            data=json.dumps({"source": "", "name": "Screenshot 2024-01-01 at 12.00.00 PM.png"}),
+            content_type="application/json",
+        )
+        assert r.status_code == 400
+
+    def test_reveal_with_missing_source_uses_desktop(self, client, tmp_path):
+        c, desktop = client
+        name = "Screenshot 2024-01-01 at 12.00.00 PM.png"
+        (desktop / name).write_bytes(b"data")
+        with patch("ss_dcl.app.subprocess.Popen"):
+            r = c.post(
+                "/api/reveal",
+                data=json.dumps({"filename": name}),
+                content_type="application/json",
+            )
+            # Desktop file exists but off-macOS returns 400 for reveal not supported
+            assert r.status_code in (200, 400)
+            # Ensure it didn't treat as invalid source
+            if r.status_code == 400:
+                assert "invalid" not in json.loads(r.data).get(
+                    "error", ""
+                ).lower() or "macOS" in json.loads(r.data).get("error", "")
+
+    def test_rename_invalid_source_does_not_affect_other_source(self, client, tmp_path):
+        c, desktop = client
+        name = "Screenshot 2024-01-01 at 12.00.00 PM.png"
+        extra = tmp_path / "extra"
+        extra.mkdir()
+        (desktop / name).write_bytes(b"desktop")
+        (extra / name).write_bytes(b"extra")
+        c.put(
+            "/api/settings",
+            data=json.dumps({"tracked_folders": [str(extra)]}),
+            content_type="application/json",
+        )
+        # Try to rename with invalid source null but name matches Desktop file
+        # Should be rejected, not trash/rename Desktop file
+        r = c.post(
+            "/api/rename",
+            data=json.dumps({"old_name": name, "new_name": "new.png", "source": ""}),
+            content_type="application/json",
+        )
+        assert r.status_code == 400
+        assert (desktop / name).exists()
+        assert (extra / name).exists()
+
+
+class TestFrontendRegressions:
+    def test_app_js_updates_current_file_keys_on_rename(self, client):
+        c, _ = client
+        r = c.get("/static/app.js")
+        assert r.status_code == 200
+        body = r.data.decode()
+        # Rename must keep currentFileKeys in sync (fixes count bug)
+        assert "currentFileKeys.delete(oldKey)" in body
+        assert "currentFileKeys.add(newKey)" in body
+
+    def test_app_js_builds_valid_cache_busting_url(self, client):
+        c, _ = client
+        r = c.get("/static/app.js")
+        body = r.data.decode()
+        # Must construct ?t= vs &t= correctly, not via .replace("?&", "?") for Desktop
+        assert 'thumbBase.includes("?")' in body
+        assert 'imgBase.includes("?")' in body
+        assert "thumbBase + (thumbBase.includes" in body
+        assert "imgBase + (imgBase.includes" in body
+
+    def test_app_js_decision_key_encodes_delimiter(self, client):
+        c, _ = client
+        r = c.get("/static/app.js")
+        body = r.data.decode()
+        # Frontend decisionKey should encode `|`
+        assert "fileKey(" in body
+        assert "SsDcl.decisionKey" in body or "SsDcl.fileKey" in body

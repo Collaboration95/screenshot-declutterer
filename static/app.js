@@ -977,6 +977,11 @@ function applyRenameToCard(card, oldName, newName) {
     decisions.delete(oldKey);
     decisions.set(newKey, col);
   }
+  // Keep currentFileKeys in sync so counts and subsequent triage stay correct
+  if (currentFileKeys.has(oldKey)) {
+    currentFileKeys.delete(oldKey);
+    currentFileKeys.add(newKey);
+  }
   card.dataset.filename = newName;
   // A rename always transitions status to "renamed".
   // fingerprint stays unchanged — it's the stable identity key
@@ -990,7 +995,8 @@ function applyRenameToCard(card, oldName, newName) {
   delete card.dataset.suggestedCategory;
   const cardImg = card.querySelector("img");
   cardImg.alt = newName;
-  cardImg.src = `/api/thumb/${encodeURIComponent(newName)}${SsDcl.sourceQuery(source)}&t=${Date.now()}`.replace("?&", "?");
+  const thumbBase = `/api/thumb/${encodeURIComponent(newName)}${SsDcl.sourceQuery(source)}`;
+  cardImg.src = thumbBase + (thumbBase.includes("?") ? "&" : "?") + `t=${Date.now()}`;
   // Update source tag title remains same source
   setCardActions(card, col);
   updateCounts();
@@ -1046,7 +1052,8 @@ function _confirmLightboxRename() {
         if (fallback) applyRenameToCard(fallback, oldName, newName);
       }
       lightbox.dataset.currentFilename = newName;
-      lightboxImg.src = `/api/image/${encodeURIComponent(newName)}${SsDcl.sourceQuery(source)}&t=${Date.now()}`.replace("?&", "?");
+      const imgBase = `/api/image/${encodeURIComponent(newName)}${SsDcl.sourceQuery(source)}`;
+      lightboxImg.src = imgBase + (imgBase.includes("?") ? "&" : "?") + `t=${Date.now()}`;
       lightboxImg.alt = newName;
       _updateLightboxBar(newName);
     })

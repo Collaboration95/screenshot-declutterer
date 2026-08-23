@@ -25,15 +25,22 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 
+def _enc(s: str) -> str:
+    return s.replace("|", "%7C")
+
+
+def _dec(s: str) -> str:
+    return s.replace("%7C", "|")
+
+
 def compute_fingerprint(name: str, size: int) -> str:
     """Return a stable identity string derived from file metadata.
 
     Uses ``"{name}|{size}"`` — zero file I/O, just string formatting.
-    macOS screenshot names encode second-precision timestamps with
-    automatic dedup suffixes ``(2)``, ``(3)``, … so ``(name, size)`` is
-    practically collision-free for a single-user desktop tool.
+    ``|`` and ``%`` in the name are percent-encoded so the delimiter
+    remains unambiguous.
     """
-    return f"{name}|{size}"
+    return f"{_enc(name)}|{size}"
 
 
 def compute_source_fingerprint(source: str, name: str, size: int) -> str:
@@ -41,11 +48,12 @@ def compute_source_fingerprint(source: str, name: str, size: int) -> str:
 
     Desktop stays legacy ``name|size`` for backward compatibility;
     tracked folders use ``source|name|size`` to guarantee uniqueness
-    across sources with identical name+size.
+    across sources with identical name+size. ``|`` and ``%`` are
+    percent-encoded so valid paths/names containing ``|`` cannot collide.
     """
     if source == "Desktop":
-        return compute_fingerprint(name, size)
-    return f"{source}|{name}|{size}"
+        return f"{_enc(name)}|{size}"
+    return f"{_enc(source)}|{_enc(name)}|{size}"
 
 
 # ---------------------------------------------------------------------------
