@@ -28,7 +28,17 @@ from werkzeug.serving import WSGIRequestHandler
 
 from ss_dcl import categorize, llm, server, settings, thumbs
 from ss_dcl.logging_config import configure_logging, new_request_id, request_id_var
-from ss_dcl.memory import MemoryStore, atomic_write, compute_fingerprint
+from ss_dcl.memory import MemoryStore, atomic_write, compute_source_fingerprint
+from ss_dcl.sources import (
+    DEFAULT_SOURCE,
+    decision_key,
+    get_all_sources,
+    pick_folder_via_panel,
+    resolve_source_root,
+    thumb_path_for_source,
+    validate_file_path,
+    validate_tracked_folders,
+)
 
 configure_logging()
 # Named loggers (not __name__: app.py runs as __main__ when launched directly,
@@ -162,35 +172,68 @@ def _init_dirs():
         _dirs_initialized = True
 
 
-def get_screenshots(sort: str = "name") -> list[dict[str, Any]]:
-    memory = _get_memory()
-    files: list[dict[str, Any]] = []
-    any_new = False
-    active_fps: set[str] = set()
-    decisions = _read_decisions()
-    # Per-request accumulator: one pass over decisions instead of one per file
-    # with keywords (issue #79 — drops the D term from O(F*D*R)).
-    keyword_scores = categorize.build_keyword_scores(memory, decisions)
-    for p in DESKTOP.glob("Screenshot*.*"):
+def _get_tracked_folders() -> list[str]:
+    """Return current tracked folders (canonical strings)."""
+    return settings._get_tracked_folders()
+
+
+def _get_all_sources() -> list[tuple[str, Path]]:
+    """Return ordered list of (source_id, root_path) including Desktop."""
+    desktop = DESKTOP
+    tracked = _get_tracked_folders()
+    # Use sources helper for canonicalization and deduplication
+    return get_all_sources(desktop, tracked)
+
+
+def _thumb_path(source: str, filename: str) -> Path:
+    """Return thumbnail path for a given source."""
+    return thumb_path_for_source(THUMB_DIR, source, filename)
+
+
+def _resolve_source_file(source: str, filename: str) -> Path | None:
+    """Resolve source+filename to an absolute path with two-layer guard."""
+    tracked = _get_tracked_folders()
+    return validate_file_path(source, filename, DESKTOP, tracked)
+
+
+def _scan_source(
+    root: Path,
+    source: str,
+    memory,
+    decisions,
+    keyword_scores,
+    files,
+    active_fps,
+    any_new_flag,
+):
+    """Scan a single source root and append to *files* list."""
+    if not root.is_dir():
+        files_logger.warning("Tracked folder not found or not a directory, skipping: %s", root)
+        return any_new_flag
+    for p in root.glob("Screenshot*.*"):
         if not p.is_file() or (p.suffix.lower() not in SUPPORTED_IMAGE_EXTENSION):
             continue
         name = p.name
         st = p.stat()
         size = st.st_size
-        fp = compute_fingerprint(name, size)
+        fp = compute_source_fingerprint(source, name, size)
         existing = memory.lookup(fp)
         # Fallback: after a rename the fingerprint changes (new name + same size),
         # so try lookup_by_name which scans last_known_name / original_name.
         if existing is None:
-            existing = memory.lookup_by_name(name)
+            existing = memory.lookup_by_name(name, source=source)
+            # For Desktop, also try legacy bare lookup (pre-source records)
+            if existing is None and source == DEFAULT_SOURCE:
+                existing = memory.lookup_by_name(name)
         if existing is not None:
             memory_status = existing.status
             active_fps.add(existing.fingerprint)
         else:
-            rec = memory.record_file(name, size)
+            rec = memory.record_file(name, size, source=source)
             memory_status = "new"
             active_fps.add(rec.fingerprint)
-            any_new = True
+            any_new_flag = True
+            existing = rec
         suggested_name = existing.suggested_name if existing else None
         # Recompute suggested_category from keywords + current decisions
         # (refreshes hints as user history accumulates)
@@ -205,6 +248,7 @@ def get_screenshots(sort: str = "name") -> list[dict[str, Any]]:
         files.append(
             {
                 "name": name,
+                "source": source,
                 "size": size,
                 "mtime": st.st_mtime,
                 "fingerprint": fp,
@@ -212,6 +256,24 @@ def get_screenshots(sort: str = "name") -> list[dict[str, Any]]:
                 "suggested_name": suggested_name,
                 "suggested_category": suggested_category,
             }
+        )
+    return any_new_flag
+
+
+def get_screenshots(sort: str = "name") -> list[dict[str, Any]]:
+    memory = _get_memory()
+    files: list[dict[str, Any]] = []
+    any_new = False
+    active_fps: set[str] = set()
+    decisions = _read_decisions()
+    # Per-request accumulator: one pass over decisions instead of one per file
+    # with keywords (issue #79 — drops the D term from O(F*D*R)).
+    keyword_scores = categorize.build_keyword_scores(memory, decisions)
+    # Build source list: Desktop first, then tracked in order
+    all_sources = _get_all_sources()
+    for source_id, root in all_sources:
+        any_new = _scan_source(
+            root, source_id, memory, decisions, keyword_scores, files, active_fps, any_new
         )
     if any_new:
         memory.save()
@@ -227,19 +289,28 @@ def get_screenshots(sort: str = "name") -> list[dict[str, Any]]:
         memory.save()
 
     key, reverse = SORT_OPTIONS.get(sort, ("name", False))
-    return sorted(files, key=lambda f: f[key], reverse=reverse)
+
+    # Global sorting with deterministic source/name tie-breaker
+    # Sorting by primary key, then source, then name
+    def _sort_key(f):
+        return (f[key], f["source"], f["name"])
+
+    return sorted(files, key=_sort_key, reverse=reverse)
 
 
 def _validate_desktop_path(filename: str) -> Path | None:
-    if filename != Path(filename).name:
-        return None
-    resolved = (DESKTOP / filename).resolve()
-    if not resolved.is_relative_to(DESKTOP.resolve()):
-        return None
-    return resolved
+    """Legacy validator for Desktop-only paths (kept for backward compatibility and tests)."""
+    return _resolve_source_file(DEFAULT_SOURCE, filename)
 
 
-def _apply_rename(old_name: str, new_name: str, fingerprint: str | None = None) -> dict[str, bool]:
+def _validate_source_path(source: str, filename: str) -> Path | None:
+    """Validate source-aware file path."""
+    return _resolve_source_file(source, filename)
+
+
+def _apply_rename(
+    old_name: str, new_name: str, fingerprint: str | None = None, source: str = DEFAULT_SOURCE
+) -> dict[str, bool]:
     """Shared post-rename bookkeeping used by /api/rename and
     /api/accept-suggestion: move the thumbnail, update the state.json
     decisions key, record the rename in memory, and log (issue #101).
@@ -249,10 +320,11 @@ def _apply_rename(old_name: str, new_name: str, fingerprint: str | None = None) 
     Returns which bookkeeping steps actually changed something.
     """
     thumb_moved = False
-    old_thumb = THUMB_DIR / old_name
-    new_thumb = THUMB_DIR / new_name
+    old_thumb = _thumb_path(source, old_name)
+    new_thumb = _thumb_path(source, new_name)
     with contextlib.suppress(Exception):
         if old_thumb.exists():
+            new_thumb.parent.mkdir(parents=True, exist_ok=True)
             old_thumb.rename(new_thumb)
             thumb_moved = True
 
@@ -261,8 +333,34 @@ def _apply_rename(old_name: str, new_name: str, fingerprint: str | None = None) 
         try:
             state = json.loads(STATE_FILE.read_text())
             decisions = state.get("decisions", {})
-            if old_name in decisions:
-                decisions[new_name] = decisions.pop(old_name)
+            # Handle both canonical and legacy Desktop keys
+            old_key = decision_key(source, old_name)
+            new_key = decision_key(source, new_name)
+            moved = False
+            if old_key in decisions:
+                decisions[new_key] = decisions.pop(old_key)
+                moved = True
+            # For Desktop, also handle prefixed "Desktop|name" for forward compat
+            if source == DEFAULT_SOURCE:
+                prefixed_old = f"Desktop|{old_name}"
+                prefixed_new = f"Desktop|{new_name}"
+                if prefixed_old in decisions:
+                    val = decisions.pop(prefixed_old)
+                    # Prefer bare key for backward compat; overwrite if needed
+                    if (
+                        new_key not in decisions and prefixed_new not in decisions
+                    ) or new_key not in decisions:
+                        decisions[new_key] = val
+                    moved = True
+                # Also handle case where old_name is bare but we stored prefixed
+                # Already covered: old_key is bare, so bare handled via old_key check above
+                # For new_name, ensure prefixed not left (if exists, clean)
+                if prefixed_new in decisions and new_key != prefixed_new:
+                    # Keep bare canonical, remove prefixed duplicate if any
+                    with contextlib.suppress(KeyError):
+                        decisions.pop(prefixed_new)
+            # For non-Desktop, ensure we move the prefixed key correctly (already done via old_key)
+            if moved:
                 atomic_write(STATE_FILE, json.dumps(state))
                 state_updated = True
         except (json.JSONDecodeError, KeyError):
@@ -271,7 +369,14 @@ def _apply_rename(old_name: str, new_name: str, fingerprint: str | None = None) 
     memory_updated = False
     try:
         memory = _get_memory()
-        rec = memory.lookup(fingerprint) if fingerprint else memory.lookup_by_name(old_name)
+        rec = None
+        if fingerprint:
+            rec = memory.lookup(fingerprint)
+        if rec is None:
+            # Try source-aware lookup
+            rec = memory.lookup_by_name(old_name, source=source)
+            if rec is None and source == DEFAULT_SOURCE:
+                rec = memory.lookup_by_name(old_name)
         if rec is not None:
             memory.record_rename(rec.fingerprint, new_name)
             memory.save()
@@ -279,7 +384,7 @@ def _apply_rename(old_name: str, new_name: str, fingerprint: str | None = None) 
     except Exception as exc:
         logger.warning("Memory update failed during rename for %s: %s", old_name, exc)
 
-    logger.info("Renamed %s -> %s", old_name, new_name)
+    logger.info("Renamed %s -> %s (source=%s)", old_name, new_name, source)
     return {
         "thumb_moved": thumb_moved,
         "state_updated": state_updated,
@@ -296,6 +401,16 @@ def index():
 def api_health():
     """Cheap liveness probe: no disk scan, no LLM calls (issue #86)."""
     desktop_ok = DESKTOP.is_dir()
+    # Also check tracked folders: desktop_scanable true if any source is scannable
+    tracked_ok = False
+    for _src, root in _get_all_sources():
+        if root.is_dir():
+            tracked_ok = True
+            break
+    # Desktop missing but tracked exists should still be considered ok.
+    # Valid tracked root should not make app look unusable merely because
+    # default is missing.
+    overall_ok = desktop_ok or tracked_ok
     memory_records = len(_get_memory().all_records())
     try:
         version = importlib.metadata.version("screenshot-declutterer")
@@ -303,12 +418,12 @@ def api_health():
         version = "dev"
     return jsonify(
         {
-            "ok": desktop_ok,
+            "ok": overall_ok,
             "version": version,
             "desktop_scanable": desktop_ok,
             "memory_records": memory_records,
         }
-    ), (200 if desktop_ok else 503)
+    ), (200 if overall_ok else 503)
 
 
 @app.route("/api/screenshots")
@@ -321,7 +436,9 @@ def api_screenshots():
 
 @app.route("/api/image/<filename>")
 def api_image(filename: str):
-    image_path = _validate_desktop_path(filename)
+    source = request.args.get("source", DEFAULT_SOURCE)
+    # Handle legacy URL-encoded source param default
+    image_path = _validate_source_path(source, filename)
     if image_path is None:
         abort(400)
     if not image_path.exists():
@@ -333,17 +450,23 @@ def api_image(filename: str):
 
 @app.route("/api/thumb/<filename>")
 def api_thumb(filename: str):
-    image_path = _validate_desktop_path(filename)
+    source = request.args.get("source", DEFAULT_SOURCE)
+    image_path = _validate_source_path(source, filename)
     if image_path is None:
         abort(400)
     if not image_path.exists():
         abort(404)
-    thumb_path = THUMB_DIR / filename
+    thumb_path = _thumb_path(source, filename)
     if not thumb_path.exists() or image_path.stat().st_mtime > thumb_path.stat().st_mtime:
         try:
+            thumb_path.parent.mkdir(parents=True, exist_ok=True)
             thumbs._generate_thumbnail(image_path, thumb_path)
         except Exception:
-            files_logger.warning("Thumbnail generation failed for %s, serving full image", filename)
+            files_logger.warning(
+                "Thumbnail generation failed for %s (source=%s), serving full image",
+                filename,
+                source,
+            )
             return api_image(filename)
     response = make_response(send_file(thumb_path))
     response.headers["Cache-Control"] = "private, max-age=86400"
@@ -354,10 +477,14 @@ def api_thumb(filename: str):
 def api_reveal():
     """Reveal a screenshot in Finder (macOS) via `open -R`."""
     data = request.get_json(silent=True) or {}
-    filename = data.get("filename")
+    # Support both new {source, name} and legacy {filename}
+    source = data.get("source", DEFAULT_SOURCE)
+    filename = data.get("name") or data.get("filename")
     if not isinstance(filename, str) or not filename:
         abort(400)
-    reveal_path = _validate_desktop_path(filename)
+    if not isinstance(source, str) or not source:
+        source = DEFAULT_SOURCE
+    reveal_path = _validate_source_path(source, filename)
     if reveal_path is None:
         abort(400)
     if not reveal_path.exists():
@@ -404,31 +531,80 @@ def api_done():
     if not request.is_json:
         abort(400)
     data = request.get_json(silent=True) or {}
+    # New contract: {files: [{source, name}, ...]} ; legacy: {filenames: [...] } => Desktop
+    files_raw = data.get("files")
     filenames = data.get("filenames", [])
+    # Normalize to list of (source, name)
+    targets: list[tuple[str, str]] = []
+    if isinstance(files_raw, list) and files_raw:
+        for entry in files_raw:
+            if not isinstance(entry, dict):
+                continue
+            src = entry.get("source", DEFAULT_SOURCE)
+            name = entry.get("name") or entry.get("filename")
+            if not isinstance(name, str) or not name:
+                continue
+            if not isinstance(src, str) or not src:
+                src = DEFAULT_SOURCE
+            targets.append((src, name))
+    # Legacy fallback
+    if not targets and isinstance(filenames, list):
+        for fn in filenames:
+            if isinstance(fn, str) and fn:
+                targets.append((DEFAULT_SOURCE, fn))
 
     errors = []
-    trashed_ok: list[str] = []
-    logger.info("Starting trash batch: %d files", len(filenames))
-    for filename in filenames:
-        file_path = _validate_desktop_path(filename)
+    errors_detail: list[dict[str, str]] = []
+    trashed_ok: list[tuple[str, str]] = []
+    logger.info("Starting trash batch: %d files", len(targets))
+    for source, filename in targets:
+        file_path = _validate_source_path(source, filename)
         if file_path is None:
-            errors.append(f"{filename}: invalid path")
+            msg = (
+                f"{source}|{filename}: invalid path"
+                if source != DEFAULT_SOURCE
+                else f"{filename}: invalid path"
+            )
+            errors.append(msg)
+            errors_detail.append({"source": source, "name": filename, "error": "invalid path"})
             continue
         if Path(filename).suffix.lower() not in SUPPORTED_IMAGE_EXTENSION:
-            errors.append(f"{filename}: invalid filename pattern")
+            msg = (
+                f"{source}|{filename}: invalid filename pattern"
+                if source != DEFAULT_SOURCE
+                else f"{filename}: invalid filename pattern"
+            )
+            errors.append(msg)
+            errors_detail.append(
+                {"source": source, "name": filename, "error": "invalid filename pattern"}
+            )
             continue
         if not file_path.exists():
-            errors.append(f"{filename}: not found")
+            msg = (
+                f"{source}|{filename}: not found"
+                if source != DEFAULT_SOURCE
+                else f"{filename}: not found"
+            )
+            errors.append(msg)
+            errors_detail.append({"source": source, "name": filename, "error": "not found"})
             continue
         try:
             send2trash(str(file_path))
-            logger.info("Trashed file: %s", filename)
+            logger.info("Trashed file: %s (source=%s)", filename, source)
         except Exception as exc:
-            logger.error("Failed to trash %s: %s", filename, exc)
-            errors.append(f"{filename}: trash failed ({exc})")
+            logger.error("Failed to trash %s (source=%s): %s", filename, source, exc)
+            msg = (
+                f"{source}|{filename}: trash failed ({exc})"
+                if source != DEFAULT_SOURCE
+                else f"{filename}: trash failed ({exc})"
+            )
+            errors.append(msg)
+            errors_detail.append(
+                {"source": source, "name": filename, "error": f"trash failed ({exc})"}
+            )
             continue
-        trashed_ok.append(filename)
-        thumb = THUMB_DIR / filename
+        trashed_ok.append((source, filename))
+        thumb = _thumb_path(source, filename)
         with contextlib.suppress(Exception):
             if thumb.exists():
                 thumb.unlink()
@@ -437,8 +613,13 @@ def api_done():
         try:
             state = json.loads(STATE_FILE.read_text())
             decisions = state.get("decisions", {})
-            for fn in trashed_ok:
-                decisions.pop(fn, None)
+            for src, fn in trashed_ok:
+                key = decision_key(src, fn)
+                decisions.pop(key, None)
+                # Remove legacy forms for Desktop (bare vs prefixed) as well
+                if src == DEFAULT_SOURCE:
+                    decisions.pop(fn, None)
+                    decisions.pop(f"Desktop|{fn}", None)
             atomic_write(STATE_FILE, json.dumps(state))
         except (json.JSONDecodeError, KeyError):
             logger.warning("State file corruption detected during cleanup")
@@ -446,20 +627,26 @@ def api_done():
     # Best-effort memory update: only mark files that were actually trashed
     try:
         memory = _get_memory()
-        for filename in trashed_ok:
-            rec = memory.lookup_by_name(filename)
+        for src, filename in trashed_ok:
+            rec = memory.lookup_by_name(filename, source=src)
+            if rec is None and src == DEFAULT_SOURCE:
+                rec = memory.lookup_by_name(filename)
             if rec is not None:
                 try:
                     memory.mark_trashed(rec.fingerprint)
                 except KeyError:
-                    logger.debug("Cannot mark %s as trashed: not in memory", filename)
+                    logger.debug(
+                        "Cannot mark %s (source=%s) as trashed: not in memory", filename, src
+                    )
         memory.save()
     except Exception as exc:
         logger.warning("Memory update failed during trash batch: %s", exc)
 
     if errors:
         logger.error("Trash operation had errors: %s", errors)
-        return jsonify({"ok": False, "errors": errors}), 207
+        return jsonify(
+            {"ok": False, "errors": errors, "errors_detail": errors_detail, "failed": errors_detail}
+        ), 207
     return jsonify({"ok": True})
 
 
@@ -470,29 +657,33 @@ def api_rename():
     data = request.get_json(silent=True) or {}
     old_name = data.get("old_name", "")
     new_name = data.get("new_name", "")
+    source = data.get("source", DEFAULT_SOURCE)
+    if not isinstance(source, str) or not source:
+        source = DEFAULT_SOURCE
 
     if not old_name or not new_name:
         return jsonify({"ok": False, "error": "old_name and new_name are required"}), 400
 
-    old_path = _validate_desktop_path(old_name)
+    old_path = _validate_source_path(source, old_name)
     if old_path is None:
         return jsonify({"ok": False, "error": "invalid old_name"}), 400
     if not old_path.exists():
         return jsonify({"ok": False, "error": "file not found"}), 404
 
-    new_path = _validate_desktop_path(new_name)
+    new_path = _validate_source_path(source, new_name)
     if new_path is None:
         return jsonify({"ok": False, "error": "invalid new_name"}), 400
     if new_path.exists() and new_path != old_path:
         return jsonify({"ok": False, "error": "a file with that name already exists"}), 409
 
     try:
+        new_path.parent.mkdir(parents=True, exist_ok=True)
         old_path.rename(new_path)
     except OSError as exc:
-        logger.error("Failed to rename %s to %s: %s", old_name, new_name, exc)
+        logger.error("Failed to rename %s to %s (source=%s): %s", old_name, new_name, source, exc)
         return jsonify({"ok": False, "error": str(exc)}), 500
 
-    _apply_rename(old_name, new_name)
+    _apply_rename(old_name, new_name, source=source)
     return jsonify({"ok": True, "new_name": new_name})
 
 
@@ -538,13 +729,21 @@ def api_suggest_names():
         rec = memory.lookup(fp)
         if rec is None or rec.status != "new":
             continue
+        # Resolve source from rec.meta
+        source = (
+            rec.meta.get("source", DEFAULT_SOURCE) if isinstance(rec.meta, dict) else DEFAULT_SOURCE
+        )
+        if not isinstance(source, str):
+            source = DEFAULT_SOURCE
         for candidate_name in (rec.last_known_name, rec.original_name):
             if not candidate_name:
                 continue
-            p = DESKTOP / candidate_name
-            if p.exists() and p.is_file():
+            p = _validate_source_path(source, candidate_name)
+            if p is not None and p.exists() and p.is_file():
                 pending.append((fp, rec.extension, p))
                 break
+            # Legacy fallback for Desktop already handled via
+            # validate_file_path for Desktop.
 
     if pending:
         workers = min(len(pending), int(os.environ.get("SS_DCL_SUGGEST_WORKERS", "4")))
@@ -626,28 +825,41 @@ def api_accept_suggestion():
 
     old_name = rec.last_known_name or rec.original_name
     new_name = rec.suggested_name
+    source = (
+        rec.meta.get("source", DEFAULT_SOURCE) if isinstance(rec.meta, dict) else DEFAULT_SOURCE
+    )
+    if not isinstance(source, str):
+        source = DEFAULT_SOURCE
 
     # Defensive: guard against empty/corrupt names from memory.json
     if not old_name or not new_name:
         return jsonify({"ok": False, "error": "invalid filename in memory record"}), 400
 
     # Validate old_name via the same path-traversal guard used by /api/rename
-    old_path = _validate_desktop_path(old_name)
+    old_path = _validate_source_path(source, old_name)
     if old_path is None:
         return jsonify({"ok": False, "error": "invalid old_name"}), 400
     if not old_path.is_file():
         return jsonify({"ok": False, "error": "source file not found on disk"}), 404
 
-    new_path = DESKTOP / new_name
+    new_path = _validate_source_path(source, new_name)
+    if new_path is None:
+        # Fallback: construct via source root for conflict check (should be valid name)
+        # If new_name contains separators, it's invalid
+        return jsonify({"ok": False, "error": "invalid suggested name"}), 400
     if new_path.exists():
         # Append a counter to avoid overwriting
         stem = Path(new_name).stem
         suffix = Path(new_name).suffix
         counter = 2
-        while (DESKTOP / f"{stem}-{counter}{suffix}").exists():
+        # Need source-aware conflict loop: check only inside source root
+        src_root = resolve_source_root(source, DESKTOP, _get_tracked_folders())
+        if src_root is None:
+            src_root = DESKTOP
+        while (src_root / f"{stem}-{counter}{suffix}").exists():
             counter += 1
         new_name = f"{stem}-{counter}{suffix}"
-        new_path = DESKTOP / new_name
+        new_path = src_root / new_name
 
     try:
         old_path.rename(new_path)
@@ -655,7 +867,7 @@ def api_accept_suggestion():
         llm_logger.error("Failed to rename %s to %s: %s", old_name, new_name, exc)
         return jsonify({"ok": False, "error": str(exc)}), 500
 
-    _apply_rename(old_name, new_name, fingerprint=fingerprint)
+    _apply_rename(old_name, new_name, fingerprint=fingerprint, source=source)
     return jsonify({"ok": True, "old_name": old_name, "new_name": new_name})
 
 
@@ -689,6 +901,8 @@ def api_get_settings():
             "llm_model": s.get("llm_model", settings.DEFAULT_LLM_MODEL),
             "auto_suggest": s.get("auto_suggest", False),
             "prune_max_age_days": s.get("prune_max_age_days", 90),
+            "tracked_folders": s.get("tracked_folders", []),
+            "tracked_folder_info": settings._get_tracked_folder_info(),
         }
     )
 
@@ -737,9 +951,43 @@ def api_save_settings():
                     400,
                 )
             current[key] = data[key]
+
+    # Handle tracked_folders separately with validation
+    if "tracked_folders" in data:
+        proposed = data["tracked_folders"]
+        if not isinstance(proposed, list):
+            return jsonify({"ok": False, "error": "tracked_folders must be a list"}), 400
+        # Validate each entry is string
+        for entry in proposed:
+            if not isinstance(entry, str):
+                return jsonify({"ok": False, "error": "Each tracked folder must be a string"}), 400
+        # Use current persisted for allowing missing already-tracked
+        persisted = current.get("tracked_folders", [])
+        if not isinstance(persisted, list):
+            persisted = []
+        normalized, err = validate_tracked_folders(proposed, DESKTOP, persisted)
+        if err:
+            return jsonify({"ok": False, "error": err}), 400
+        current["tracked_folders"] = normalized if normalized is not None else []
+
     settings._save_settings(current)
     settings.reset_prune_cache()
     return jsonify({"ok": True})
+
+
+@app.route("/api/pick-folder", methods=["POST"])
+def api_pick_folder():
+    """Native folder picker via NSOpenPanel (macOS only)."""
+    path, error = pick_folder_via_panel()
+    if error:
+        # Determine status code: off-macOS is 400, picker error is 500-ish
+        if "only available on macOS" in error:
+            return jsonify({"ok": False, "error": error}), 400
+        return jsonify({"ok": False, "error": error}), 500
+    if path is None:
+        # Cancel
+        return jsonify({"path": None}), 200
+    return jsonify({"path": path}), 200
 
 
 def _read_decisions() -> dict[str, str]:

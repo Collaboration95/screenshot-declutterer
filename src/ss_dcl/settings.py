@@ -6,6 +6,7 @@ to ``"litert"`` on every read (legacy values from earlier phases).
 
 import json
 import logging
+import os
 from pathlib import Path
 from typing import Any
 
@@ -15,6 +16,8 @@ logger = logging.getLogger(__name__)
 
 SETTINGS_FILE = Path.home() / ".ss-dcl" / "settings.json"
 DEFAULT_LLM_MODEL = "gemma4-e2b"
+# Default DESKTOP for validation (mirrors app.DESKTOP)
+_DEFAULT_DESKTOP = Path(os.environ.get("SS_DCL_DESKTOP", str(Path.home() / "Desktop")))
 
 # Valid range for prune_max_age_days (mirrors the settings UI min/max).
 PRUNE_MIN_DAYS = 1
@@ -48,8 +51,34 @@ def _load_settings() -> dict[str, Any]:
         # LiteRT is the only provider; normalize any legacy/stale value.
         if data.get("llm_provider") != "litert":
             data["llm_provider"] = "litert"
+        # Ensure tracked_folders defaults to [] and is validated type
+        if "tracked_folders" not in data or not isinstance(data["tracked_folders"], list):
+            data["tracked_folders"] = []
         return data
-    return {}
+    return {"tracked_folders": []}
+
+
+def _get_tracked_folders() -> list[str]:
+    """Return current tracked_folders list (empty if unset)."""
+    data = _load_settings()
+    tf = data.get("tracked_folders", [])
+    if not isinstance(tf, list):
+        return []
+    # Filter to strings only
+    return [str(p) for p in tf if isinstance(p, str)]
+
+
+def _get_tracked_folder_info() -> list[dict[str, Any]]:
+    """Return tracked folder info with existence flag for UI."""
+    folders = _get_tracked_folders()
+    info: list[dict[str, Any]] = []
+    for p in folders:
+        try:
+            exists = Path(p).expanduser().is_dir()
+        except Exception:
+            exists = False
+        info.append({"path": p, "exists": exists})
+    return info
 
 
 def _save_settings(settings: dict[str, Any]) -> None:

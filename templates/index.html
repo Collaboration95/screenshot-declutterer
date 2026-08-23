@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Screenshot Declutterer</title>
-  <link rel="stylesheet" href="/static/style.css?v=4" />
+  <link rel="stylesheet" href="/static/style.css?v=5" />
 </head>
 <body>
   <header>
@@ -47,7 +47,7 @@
       </div>
       <div class="column-cards" id="cards-unsorted"></div>
       <p id="loading-msg">Loading screenshots…</p>
-      <p id="empty-msg" hidden>No screenshots found on your Desktop.</p>
+      <p id="empty-msg" hidden>No screenshots found on your Desktop or tracked folders.</p>
     </section>
 
     <!-- Trash column (right) -->
@@ -152,6 +152,12 @@
           <span class="theme-icon-dark">☾</span>
         </button>
       </div>
+      <div class="settings-field">
+        <label>Tracked folders</label>
+        <div id="tracked-folders-list" class="tracked-folders-list" role="list"></div>
+        <button id="add-folder-btn" type="button" class="tracked-add-btn">+ Add folder</button>
+        <p id="tracked-folders-error" class="tracked-error" role="alert"></p>
+      </div>
     </div>
     <button id="suggest-all-btn" class="menu-suggest-all-btn" data-tooltip="Suggest names for all new screenshots" aria-label="Suggest names for all new screenshots">✨ Suggest All</button>
     <div class="settings-actions">
@@ -160,7 +166,7 @@
     </div>
   </div>
 
-  <script src="/static/ss_dcl_pure.js?v=3"></script>
-  <script src="/static/app.js?v=3"></script>
+  <script src="/static/ss_dcl_pure.js?v=4"></script>
+  <script src="/static/app.js?v=4"></script>
 </body>
 </html>

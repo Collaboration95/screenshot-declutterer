@@ -41,7 +41,7 @@
 
   // Column counts derived from the decisions map + total card count.
   // decisions: Map<filename, "keep"|"trash"> (any other value counts as
-  // unsorted).
+  // unsorted). Keys may be "source|name" for tracked folders or bare for Desktop.
   function computeCounts(decisions, totalCards) {
     let keep = 0;
     let trash = 0;
@@ -62,6 +62,46 @@
     return chunks;
   }
 
+  // ── Tracking folders helpers ──────────────────────────────────────
+  const DEFAULT_SOURCE = "Desktop";
+  function decisionKey(source, name) {
+    if (!source || source === DEFAULT_SOURCE) return name;
+    return `${source}|${name}`;
+  }
+  function parseDecisionKey(key) {
+    if (key.startsWith(`${DEFAULT_SOURCE}|`)) {
+      return { source: DEFAULT_SOURCE, name: key.slice(DEFAULT_SOURCE.length + 1) };
+    }
+    const idx = key.indexOf("|");
+    if (idx !== -1) {
+      const source = key.slice(0, idx);
+      const name = key.slice(idx + 1);
+      // If source looks like an absolute path, treat as tracked source
+      if (source.startsWith("/")) {
+        return { source, name };
+      }
+      // Fallback: if source is Desktop-like but not exact, treat as Desktop bare containing '|'
+      // but screenshot names don't contain '|', so rare.
+    }
+    return { source: DEFAULT_SOURCE, name: key };
+  }
+  function fileKey(file) {
+    return decisionKey(file.source || DEFAULT_SOURCE, file.name);
+  }
+  function sourceQuery(source) {
+    if (!source || source === DEFAULT_SOURCE) return "";
+    return `?source=${encodeURIComponent(source)}`;
+  }
+  function sourceQueryParam(source) {
+    if (!source || source === DEFAULT_SOURCE) return "";
+    return `&source=${encodeURIComponent(source)}`;
+  }
+  function cardSelector(source, filename) {
+    // Use CSS.escape for filename, but here we return a string to be used with querySelector
+    // Caller should escape.
+    return { source, filename };
+  }
+
   return {
     GHOST_TILE_W,
     GHOST_TILE_H,
@@ -69,5 +109,12 @@
     Path_name,
     computeCounts,
     chunked,
+    DEFAULT_SOURCE,
+    decisionKey,
+    parseDecisionKey,
+    fileKey,
+    sourceQuery,
+    sourceQueryParam,
+    cardSelector,
   };
 });

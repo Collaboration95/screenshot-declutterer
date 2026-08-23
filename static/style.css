@@ -938,6 +938,119 @@ header h1 {
   background: #0062cc;
 }
 
+/* ── Tracked folders ─────────────────────────────────────── */
+.tracked-folders-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 8px;
+  max-height: 160px;
+  overflow-y: auto;
+  border: 1px solid var(--border-col);
+  border-radius: 8px;
+  padding: 8px;
+  background: var(--bg-body);
+}
+
+.tracked-folder-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-col);
+  font-size: 0.8rem;
+}
+
+.tracked-folder-row.missing {
+  border-color: #ff9500;
+  background: rgba(255, 149, 0, 0.08);
+}
+
+.tracked-folder-path {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-primary);
+  font-family: "SF Mono", "Menlo", monospace;
+  font-size: 0.78rem;
+}
+
+.tracked-folder-row.missing .tracked-folder-path {
+  color: #ff9500;
+}
+
+.tracked-folder-remove {
+  flex-shrink: 0;
+  width: 24px;
+  height: 24px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 1rem;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s, color 0.15s;
+}
+
+.tracked-folder-remove:hover {
+  background: rgba(255, 59, 48, 0.12);
+  color: #ff3b30;
+}
+
+.tracked-add-btn {
+  width: 100%;
+  padding: 6px 12px;
+  border: 1px dashed var(--border-col);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.tracked-add-btn:hover {
+  background: var(--bg-btn-cancel);
+  border-color: var(--border-select-hover);
+}
+
+.tracked-error {
+  color: #ff3b30;
+  font-size: 0.75rem;
+  min-height: 1em;
+  margin-top: 4px;
+}
+
+.tracked-default-row {
+  opacity: 0.7;
+  font-style: italic;
+}
+
+/* ── Source tag on cards ─────────────────────────────────── */
+.source-tag {
+  position: absolute;
+  top: 6px;
+  left: 6px;
+  z-index: 2;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(4px);
+  color: #fff;
+  font-size: 0.65rem;
+  font-weight: 600;
+  font-family: -apple-system, sans-serif;
+  pointer-events: none;
+}
+
 /* ── Empty state ─────────────────────────────────────────── */
 #empty-msg {
   text-align: center;

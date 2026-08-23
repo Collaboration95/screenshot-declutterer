@@ -27,10 +27,17 @@ def build_keyword_scores(
     turns ``suggest_category`` into an O(keywords) lookup per file).
     """
     scores: dict[str, tuple[int, int]] = {}
-    for filename, decision in decisions.items():
+    for key, decision in decisions.items():
         if decision not in ("keep", "trash"):
             continue
-        rec = memory.lookup_by_name(filename)
+        # Keys may be "source|name" or legacy bare filename
+        from ss_dcl.sources import parse_decision_key
+
+        source, filename = parse_decision_key(key)
+        # Try source-aware lookup first, then legacy fallback
+        rec = memory.lookup_by_name(filename, source=source)
+        if rec is None:
+            rec = memory.lookup_by_name(filename)
         if rec is None:
             continue
         for kw in set(rec.meta.get("keywords", [])):
