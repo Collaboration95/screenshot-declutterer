@@ -3,6 +3,9 @@ const undoStack = [];
 const selectedCards = new Set();
 let totalCards = 0;
 let currentSort = "date_desc";
+let currentFileKeys = new Set();
+let trackedFoldersWorkingCopy = [];
+let trackedFolderInfo = [];
 
 try {
   const saved = sessionStorage.getItem("undoStack");
@@ -53,6 +56,9 @@ const settingsModel   = document.getElementById("settings-model");
 const settingsAuto    = document.getElementById("settings-auto");
 const settingsCancel  = document.getElementById("settings-cancel");
 const settingsSave    = document.getElementById("settings-save");
+const trackedFoldersList = document.getElementById("tracked-folders-list");
+const addFolderBtn    = document.getElementById("add-folder-btn");
+const trackedFoldersError = document.getElementById("tracked-folders-error");
 
 const llmServerBtn    = document.getElementById("llm-server-btn");
 
@@ -170,11 +176,107 @@ llmServerBtn.addEventListener("click", () => {
     });
 });
 
+function fileKey(source, filename) {
+  return SsDcl.decisionKey(source || "Desktop", filename);
+}
+function fileKeyForFile(file) {
+  return SsDcl.fileKey(file);
+}
 function loadSettings() {
   return fetch("/api/settings")
     .then(r => r.json())
-    .then(s => { llmSettings = s; })
+    .then(s => {
+      llmSettings = s;
+      // Tracked folders: working copy semantics
+      trackedFolderInfo = s.tracked_folder_info || [];
+      // If server provides tracked_folders, use that as working copy base
+      // Working copy is set when modal opens, but keep info for display
+    })
     .catch(() => {});
+}
+
+// ── Tracked folders UI helpers ─────────────────────────────────────
+function renderTrackedFolders() {
+  if (!trackedFoldersList) return;
+  trackedFoldersList.innerHTML = "";
+  // Desktop default row
+  const desktopRow = document.createElement("div");
+  desktopRow.className = "tracked-folder-row tracked-default-row";
+  const desktopPath = document.createElement("span");
+  desktopPath.className = "tracked-folder-path";
+  desktopPath.textContent = "Desktop (default)";
+  desktopPath.title = "Your Desktop — always scanned";
+  desktopRow.appendChild(desktopPath);
+  trackedFoldersList.appendChild(desktopRow);
+  // Working copy rows
+  trackedFoldersWorkingCopy.forEach((path, idx) => {
+    const row = document.createElement("div");
+    row.className = "tracked-folder-row";
+    // Check if missing
+    const info = trackedFolderInfo.find(i => i.path === path);
+    const exists = info ? info.exists : true;
+    if (!exists) row.classList.add("missing");
+    const pathSpan = document.createElement("span");
+    pathSpan.className = "tracked-folder-path";
+    pathSpan.textContent = exists ? path : `${path}  ⚠ no longer exists`;
+    pathSpan.title = path;
+    const removeBtn = document.createElement("button");
+    removeBtn.className = "tracked-folder-remove";
+    removeBtn.textContent = "✕";
+    removeBtn.title = "Remove";
+    removeBtn.setAttribute("aria-label", `Remove ${path}`);
+    removeBtn.addEventListener("click", () => {
+      trackedFoldersWorkingCopy.splice(idx, 1);
+      trackedFoldersError.textContent = "";
+      renderTrackedFolders();
+    });
+    row.appendChild(pathSpan);
+    row.appendChild(removeBtn);
+    trackedFoldersList.appendChild(row);
+  });
+}
+
+function showTrackedError(msg) {
+  if (trackedFoldersError) trackedFoldersError.textContent = msg || "";
+}
+
+if (addFolderBtn) {
+  addFolderBtn.addEventListener("click", () => {
+    showTrackedError("");
+    addFolderBtn.disabled = true;
+    addFolderBtn.textContent = "Opening…";
+    fetch("/api/pick-folder", { method: "POST" })
+      .then(r => r.json().then(j => ({ status: r.status, body: j })))
+      .then(({ status, body }) => {
+        addFolderBtn.disabled = false;
+        addFolderBtn.textContent = "+ Add folder";
+        if (status !== 200) {
+          showTrackedError(body.error || "Folder picker failed");
+          return;
+        }
+        if (body.path === null || body.path === undefined) {
+          // Cancel — no-op
+          return;
+        }
+        const newPath = body.path;
+        if (trackedFoldersWorkingCopy.includes(newPath)) {
+          showTrackedError("That folder is already tracked");
+          return;
+        }
+        // Client-side cap check before server validation
+        if (trackedFoldersWorkingCopy.length >= 10) {
+          showTrackedError("Too many tracked folders: maximum is 10");
+          return;
+        }
+        trackedFoldersWorkingCopy.push(newPath);
+        renderTrackedFolders();
+      })
+      .catch(() => {
+        addFolderBtn.disabled = false;
+        addFolderBtn.textContent = "+ Add folder";
+        showTrackedError("Folder picker failed — please try again");
+      });
+  });
 }
 
 // ── Bootstrap ────────────────────────────────────────────────────────────────
@@ -196,26 +298,37 @@ function loadScreenshots(savedDecisions) {
       loadingMsg.hidden = true;
       if (files.length === 0) {
         emptyMsg.hidden = false;
+        totalCards = 0;
+        currentFileKeys = new Set();
+        updateCounts();
         return;
       }
       totalCards = files.length;
-      const existing = new Set(files.map(f => f.name));
+      currentFileKeys = new Set(files.map(f => SsDcl.fileKey(f)));
 
-      for (const [name, col] of Object.entries(savedDecisions)) {
-        if (existing.has(name) && (col === "keep" || col === "trash")) {
-          decisions.set(name, col);
+      // Preserve all persisted decisions (including untracked folders) — only project active set into board
+      for (const [key, col] of Object.entries(savedDecisions)) {
+        if (col === "keep" || col === "trash") {
+          decisions.set(key, col);
+        } else {
+          decisions.delete(key);
         }
       }
-      for (const name of Array.from(decisions.keys())) {
-        if (!existing.has(name)) decisions.delete(name);
+      // Do NOT delete untracked decisions — they remain in Map for re-add restoration
+      // Clean invalid values only
+      for (const [k, v] of Array.from(decisions.entries())) {
+        if (v !== "keep" && v !== "trash" && !currentFileKeys.has(k)) {
+          // For non-active keys with invalid values, keep but they are not counted
+        }
       }
 
       files.forEach(f => {
-        const col = decisions.has(f.name) ? decisions.get(f.name) : "unsorted";
+        const key = SsDcl.fileKey(f);
+        const col = decisions.has(key) ? decisions.get(key) : "unsorted";
         const target = col === "trash" ? cardsTrash
                      : col === "keep"  ? cardsKeep
                      : cardsUnsorted;
-        target.appendChild(makeCard(f.name, col, f.fingerprint, f.memory_status, f.suggested_name, f.suggested_category));
+        target.appendChild(makeCard(f.name, f.source, col, f.fingerprint, f.memory_status, f.suggested_name, f.suggested_category));
       });
       updateCounts();
       saveState();
@@ -264,12 +377,23 @@ function saveState() {
 }
 
 // ── Card factory ─────────────────────────────────────────────────────────────
-function makeCard(filename, column, fingerprint, memoryStatus, suggestedName, suggestedCategory) {
+function makeCard(filename, source, column, fingerprint, memoryStatus, suggestedName, suggestedCategory) {
+  // Backward compat: if called with old signature (filename, column, ...), shift
+  if (typeof source === "string" && (source === "keep" || source === "trash" || source === "unsorted")) {
+    suggestedCategory = suggestedName;
+    suggestedName = memoryStatus;
+    memoryStatus = fingerprint;
+    fingerprint = column;
+    column = source;
+    source = "Desktop";
+  }
+  source = source || "Desktop";
   const card = document.createElement("article");
   card.className = "card";
   card.setAttribute("role", "listitem");
-  card.setAttribute("aria-label", filename);
+  card.setAttribute("aria-label", `${filename} (${source})`);
   card.dataset.filename = filename;
+  card.dataset.source = source;
   card.dataset.fingerprint = fingerprint || "";
   card.dataset.memoryStatus = memoryStatus || "";
   card.dataset.suggestedName = suggestedName || "";
@@ -279,8 +403,9 @@ function makeCard(filename, column, fingerprint, memoryStatus, suggestedName, su
   card.draggable = true;
   card.tabIndex = 0;
 
+  const thumbUrl = `/api/thumb/${encodeURIComponent(filename)}${SsDcl.sourceQuery(source)}`;
   const img = document.createElement("img");
-  img.src = `/api/thumb/${encodeURIComponent(filename)}`;
+  img.src = thumbUrl;
   img.alt = filename;
   img.loading = "lazy";
   img.decoding = "async";
@@ -289,6 +414,16 @@ function makeCard(filename, column, fingerprint, memoryStatus, suggestedName, su
   actions.className = "card-actions";
 
   card.appendChild(img);
+
+  // Source tag for tracked folders
+  if (source !== "Desktop") {
+    const tag = document.createElement("span");
+    tag.className = "source-tag";
+    const folderName = source.split("/").pop() || source;
+    tag.textContent = `in: ${folderName}`;
+    tag.title = source;
+    card.appendChild(tag);
+  }
 
   // Category hint visual (4C)
   if (suggestedCategory === "keep" || suggestedCategory === "trash") {
@@ -359,7 +494,7 @@ function setCardActions(card, column) {
 
   const renameBtn = makeActionBtn("Rename", "btn-rename", () => openRenameModal(card));
   const previewBtn = makeActionBtn("Preview", "btn-preview", () => openLightbox(card));
-  const revealBtn = makeActionBtn("Finder", "btn-reveal", () => revealInFinder(card.dataset.filename));
+  const revealBtn = makeActionBtn("Finder", "btn-reveal", () => revealInFinder(card.dataset.filename, card.dataset.source));
 
   if (column === "unsorted") {
     const keepBtn = makeActionBtn("\u2190 Keep", "btn-keep", () => moveCard(card, "keep"));
@@ -406,17 +541,19 @@ function makeActionBtn(label, cls, onClick) {
 // ── Move card between columns ────────────────────────────────────────────────
 function moveCard(card, toColumn) {
   const filename = card.dataset.filename;
+  const source = card.dataset.source || "Desktop";
+  const key = fileKey(source, filename);
   const fromColumn = getCardColumn(card);
 
   if (fromColumn === toColumn) return;
 
   if (toColumn === "unsorted") {
-    decisions.delete(filename);
+    decisions.delete(key);
   } else {
-    decisions.set(filename, toColumn);
+    decisions.set(key, toColumn);
   }
 
-  undoStack.push({ filename, from: fromColumn, to: toColumn });
+  undoStack.push({ filename, source, key, from: fromColumn, to: toColumn });
   _persistUndoStack();
 
   const target = toColumn === "trash" ? cardsTrash
@@ -679,7 +816,9 @@ function attachPreview(card) {
 
 function openLightbox(card) {
   lightbox.dataset.currentFilename = card.dataset.filename;
-  lightboxImg.src = `/api/image/${encodeURIComponent(card.dataset.filename)}`;
+  lightbox.dataset.currentSource = card.dataset.source || "Desktop";
+  const src = card.dataset.source || "Desktop";
+  lightboxImg.src = `/api/image/${encodeURIComponent(card.dataset.filename)}${SsDcl.sourceQuery(src)}`;
   lightboxImg.alt = card.dataset.filename;
   _updateLightboxBar(card.dataset.filename);
   lightbox.hidden = false;
@@ -688,14 +827,17 @@ function openLightbox(card) {
 function _lightboxNavigate(direction) {
   const allCards = [...document.querySelectorAll(".card")];
   const current = lightbox.dataset.currentFilename;
-  const idx = allCards.findIndex(c => c.dataset.filename === current);
+  const currentSource = lightbox.dataset.currentSource || "Desktop";
+  const idx = allCards.findIndex(c => c.dataset.filename === current && (c.dataset.source || "Desktop") === currentSource);
   if (idx < 0) return;
   const next = idx + direction;
   if (next < 0 || next >= allCards.length) return;
   const nextCard = allCards[next];
   const nextName = nextCard.dataset.filename;
+  const nextSource = nextCard.dataset.source || "Desktop";
   lightbox.dataset.currentFilename = nextName;
-  lightboxImg.src = `/api/image/${encodeURIComponent(nextName)}`;
+  lightbox.dataset.currentSource = nextSource;
+  lightboxImg.src = `/api/image/${encodeURIComponent(nextName)}${SsDcl.sourceQuery(nextSource)}`;
   lightboxImg.alt = nextName;
   _updateLightboxBar(nextName);
 }
@@ -713,12 +855,18 @@ document.getElementById("lightbox-close").addEventListener("click", closeLightbo
 document.querySelector(".lightbox-backdrop").addEventListener("click", closeLightbox);
 
 // ── Reveal in Finder ────────────────────────────────────────────────────────
-function revealInFinder(filename) {
+function revealInFinder(filename, source) {
   if (!filename) return;
+  source = source || "Desktop";
+  const payload = source === "Desktop" ? { filename } : { source, name: filename };
+  // Also send source for Desktop for clarity; server accepts both
+  if (source !== "Desktop" && !payload.source) payload.source = source;
+  // Prefer {source, name} contract, but keep legacy {filename} for Desktop
+  const body = source === "Desktop" ? { filename, source } : { source, name: filename };
   fetch("/api/reveal", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ filename }),
+    body: JSON.stringify(body),
   })
     .then(r => r.json())
     .then(data => {
@@ -732,7 +880,7 @@ function revealInFinder(filename) {
 }
 
 document.getElementById("lightbox-reveal-btn").addEventListener("click", () => {
-  revealInFinder(lightbox.dataset.currentFilename);
+  revealInFinder(lightbox.dataset.currentFilename, lightbox.dataset.currentSource);
 });
 
 // ── Card tooltip ───────────────────────────────────────────────────────────
@@ -819,12 +967,20 @@ function _cancelLightboxRename() {
 function applyRenameToCard(card, oldName, newName) {
   // Shared post-rename DOM/state dance (issue #101): used by the lightbox
   // rename, the rename modal, and acceptSuggestion.
+  const source = card.dataset.source || "Desktop";
+  const oldKey = fileKey(source, oldName);
+  const newKey = fileKey(source, newName);
   const col = getCardColumn(card);
   if (col === "unsorted") {
-    decisions.delete(oldName);
+    decisions.delete(oldKey);
   } else {
-    decisions.delete(oldName);
-    decisions.set(newName, col);
+    decisions.delete(oldKey);
+    decisions.set(newKey, col);
+  }
+  // Keep currentFileKeys in sync so counts and subsequent triage stay correct
+  if (currentFileKeys.has(oldKey)) {
+    currentFileKeys.delete(oldKey);
+    currentFileKeys.add(newKey);
   }
   card.dataset.filename = newName;
   // A rename always transitions status to "renamed".
@@ -839,7 +995,9 @@ function applyRenameToCard(card, oldName, newName) {
   delete card.dataset.suggestedCategory;
   const cardImg = card.querySelector("img");
   cardImg.alt = newName;
-  cardImg.src = `/api/thumb/${encodeURIComponent(newName)}?t=${Date.now()}`;
+  const thumbBase = `/api/thumb/${encodeURIComponent(newName)}${SsDcl.sourceQuery(source)}`;
+  cardImg.src = thumbBase + (thumbBase.includes("?") ? "&" : "?") + `t=${Date.now()}`;
+  // Update source tag title remains same source
   setCardActions(card, col);
   updateCounts();
   saveState();
@@ -848,6 +1006,7 @@ function applyRenameToCard(card, oldName, newName) {
 function _confirmLightboxRename() {
   if (lightboxRenameInput.disabled || lightboxRenameInput.hidden || lightbox.hidden) return;
   const oldName = lightbox.dataset.currentFilename;
+  const source = lightbox.dataset.currentSource || "Desktop";
   const newName = lightboxRenameInput.value.trim();
 
   if (!newName) {
@@ -873,7 +1032,7 @@ function _confirmLightboxRename() {
   fetch("/api/rename", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ old_name: oldName, new_name: newName }),
+    body: JSON.stringify({ old_name: oldName, new_name: newName, source }),
   })
     .then(r => r.json())
     .then(data => {
@@ -884,12 +1043,17 @@ function _confirmLightboxRename() {
         lightboxRenameInput.focus();
         return;
       }
-      const card = document.querySelector(`[data-filename="${CSS.escape(oldName)}"]`);
+      const card = document.querySelector(`[data-filename="${CSS.escape(oldName)}"][data-source="${CSS.escape(source)}"]`);
       if (card) {
         applyRenameToCard(card, oldName, newName);
+      } else {
+        // Fallback for legacy bare
+        const fallback = document.querySelector(`[data-filename="${CSS.escape(oldName)}"]`);
+        if (fallback) applyRenameToCard(fallback, oldName, newName);
       }
       lightbox.dataset.currentFilename = newName;
-      lightboxImg.src = `/api/image/${encodeURIComponent(newName)}?t=${Date.now()}`;
+      const imgBase = `/api/image/${encodeURIComponent(newName)}${SsDcl.sourceQuery(source)}`;
+      lightboxImg.src = imgBase + (imgBase.includes("?") ? "&" : "?") + `t=${Date.now()}`;
       lightboxImg.alt = newName;
       _updateLightboxBar(newName);
     })
@@ -1162,6 +1326,11 @@ settingsBtn.addEventListener("click", () => {
   settingsAuto.checked = llmSettings.auto_suggest || false;
   const pruneAge = document.getElementById("settings-prune-age");
   if (pruneAge) pruneAge.value = llmSettings.prune_max_age_days || 90;
+  // Tracked folders working copy
+  trackedFoldersWorkingCopy = [...(llmSettings.tracked_folders || [])];
+  trackedFolderInfo = llmSettings.tracked_folder_info || [];
+  showTrackedError("");
+  renderTrackedFolders();
   settingsMenu.hidden = false;
 });
 
@@ -1193,6 +1362,7 @@ settingsSave.addEventListener("click", () => {
     llm_model: settingsModel.value.trim() || "gemma4-e2b",
     auto_suggest: settingsAuto.checked,
     prune_max_age_days: isNaN(pruneVal) || pruneVal < 1 ? 90 : pruneVal,
+    tracked_folders: trackedFoldersWorkingCopy,
   };
 
   fetch("/api/settings", {
@@ -1200,15 +1370,27 @@ settingsSave.addEventListener("click", () => {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(newSettings),
   })
-    .then(r => r.json())
-    .then(data => {
-      if (data.ok) {
-        llmSettings = newSettings;
+    .then(r => r.json().then(j => ({ status: r.status, body: j })))
+    .then(({ status, body }) => {
+      if (status === 200 && body.ok) {
+        llmSettings = { ...newSettings, tracked_folder_info: body.tracked_folder_info || trackedFolderInfo };
         closeSettingsMenu();
         refreshLLMServerButton();
+        // Reload board to reflect new sources
+        document.querySelectorAll(".card").forEach(c => c.remove());
+        loadingMsg.hidden = false;
+        emptyMsg.hidden = true;
+        fetch("/api/state")
+          .then(r => r.json())
+          .then(state => loadScreenshots(state.decisions || {}))
+          .catch(() => loadScreenshots({}));
+      } else {
+        showTrackedError(body.error || "Failed to save settings");
       }
     })
-    .catch(() => {});
+    .catch(() => {
+      showTrackedError("Network error — please try again");
+    });
 });
 
 // ── Undo ─────────────────────────────────────────────────────────────────────
@@ -1220,17 +1402,22 @@ undoBtn.addEventListener("click", () => performUndo());
 function performUndo() {
   if (undoStack.length === 0) return;
   const action = undoStack.pop();
-  const card = document.querySelector(`[data-filename="${CSS.escape(action.filename)}"]`);
+  // Source-aware selector: find card by both filename and source
+  const selSource = action.source || "Desktop";
+  const selector = `[data-filename="${CSS.escape(action.filename)}"][data-source="${CSS.escape(selSource)}"]`;
+  let card = document.querySelector(selector);
+  // Fallback for legacy undo entries without source
+  if (!card) card = document.querySelector(`[data-filename="${CSS.escape(action.filename)}"]`);
   if (!card) {
     undoStack.push(action);
     return;
   }
   _persistUndoStack();
-
+  const key = action.key || fileKey(selSource, action.filename);
   if (action.from === "unsorted") {
-    decisions.delete(action.filename);
+    decisions.delete(key);
   } else {
-    decisions.set(action.filename, action.from);
+    decisions.set(key, action.from);
   }
 
   const target = action.from === "trash" ? cardsTrash
@@ -1245,7 +1432,12 @@ function performUndo() {
 
 // ── Counts & status ──────────────────────────────────────────────────────────
 function updateCounts() {
-  const { keep: nKeep, trash: nTrash, unsorted: nUnsorted, total } = SsDcl.computeCounts(decisions, totalCards);
+  // Count only decisions whose keys correspond to currently displayed files
+  const filtered = new Map();
+  for (const [k, v] of decisions) {
+    if (currentFileKeys.has(k)) filtered.set(k, v);
+  }
+  const { keep: nKeep, trash: nTrash, unsorted: nUnsorted, total } = SsDcl.computeCounts(filtered, totalCards);
 
   countUnsorted.textContent = nUnsorted;
   countTrash.textContent    = nTrash;
@@ -1287,6 +1479,7 @@ renameModal.addEventListener("click", e => {
 renameConfirm.addEventListener("click", () => {
   if (!renameTarget) return;
   const oldName = renameTarget.dataset.filename;
+  const source = renameTarget.dataset.source || "Desktop";
   const newName = renameInput.value.trim();
   if (!newName) {
     renameError.textContent = "Filename cannot be empty.";
@@ -1306,7 +1499,7 @@ renameConfirm.addEventListener("click", () => {
   fetch("/api/rename", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ old_name: oldName, new_name: newName }),
+    body: JSON.stringify({ old_name: oldName, new_name: newName, source }),
   })
     .then(r => r.json())
     .then(data => {
@@ -1353,7 +1546,7 @@ modalConfirm.addEventListener("click", () => {
   closeModal();
 
   const toTrash = [...cardsTrash.querySelectorAll(".card")]
-    .map(c => c.dataset.filename);
+    .map(c => ({ source: c.dataset.source || "Desktop", name: c.dataset.filename }));
 
   if (toTrash.length === 0) return;
 
@@ -1363,7 +1556,7 @@ modalConfirm.addEventListener("click", () => {
   fetch("/api/done", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ filenames: toTrash }),
+    body: JSON.stringify({ files: toTrash }),
   })
     .then(r => r.json())
     .then(data => {
@@ -1371,17 +1564,30 @@ modalConfirm.addEventListener("click", () => {
         alert("Some files could not be moved:\n" + data.errors.join("\n"));
       }
 
-      const failed = new Set();
-      (data.errors || []).forEach(e => {
-        const parts = e.split(":");
-        const name = parts.length > 1 ? parts[0].trim() : e.trim();
-        if (name) failed.add(name);
-      });
-      toTrash.forEach(filename => {
-        if (!failed.has(filename)) {
-          const card = cardsTrash.querySelector(`[data-filename="${CSS.escape(filename)}"]`);
-          if (card) { card.remove(); totalCards--; }
-          decisions.delete(filename);
+      // Prefer structured errors_detail if present
+      const failedKeys = new Set();
+      const details = data.errors_detail || data.failed || [];
+      if (details.length > 0) {
+        details.forEach(d => {
+          if (d.source && d.name) failedKeys.add(fileKey(d.source, d.name));
+          else if (d.name) failedKeys.add(d.name);
+        });
+      } else {
+        // Legacy fallback: parse "filename: error" strings
+        (data.errors || []).forEach(e => {
+          const parts = e.split(":");
+          const name = parts.length > 1 ? parts[0].trim() : e.trim();
+          if (name) failedKeys.add(name);
+        });
+      }
+      toTrash.forEach(({ source, name }) => {
+        const key = fileKey(source, name);
+        if (!failedKeys.has(key) && !failedKeys.has(name)) {
+          const card = cardsTrash.querySelector(`[data-filename="${CSS.escape(name)}"][data-source="${CSS.escape(source)}"]`) || cardsTrash.querySelector(`[data-filename="${CSS.escape(name)}"]`);
+          if (card) { card.remove(); totalCards--; if (currentFileKeys) currentFileKeys.delete(key); }
+          decisions.delete(key);
+          // Also clean legacy bare for Desktop
+          if (source === "Desktop") decisions.delete(name);
         }
       });
 

@@ -41,7 +41,7 @@
 
   // Column counts derived from the decisions map + total card count.
   // decisions: Map<filename, "keep"|"trash"> (any other value counts as
-  // unsorted).
+  // unsorted). Keys may be "source|name" for tracked folders or bare for Desktop.
   function computeCounts(decisions, totalCards) {
     let keep = 0;
     let trash = 0;
@@ -62,6 +62,59 @@
     return chunks;
   }
 
+  // ── Tracking folders helpers ──────────────────────────────────────
+  const DEFAULT_SOURCE = "Desktop";
+  function _enc(s) {
+    return s.replace(/\|/g, "%7C");
+  }
+  function _dec(s) {
+    return s.replace(/%7C/g, "|");
+  }
+  function decisionKey(source, name) {
+    if (!source || source === DEFAULT_SOURCE) {
+      if (name.includes("|")) return _enc(name);
+      return name;
+    }
+    return `${_enc(source)}|${_enc(name)}`;
+  }
+  function parseDecisionKey(key) {
+    if (key.startsWith(`${DEFAULT_SOURCE}|`)) {
+      return { source: DEFAULT_SOURCE, name: _dec(key.slice(DEFAULT_SOURCE.length + 1)) };
+    }
+    if (key.indexOf("|") === -1) {
+      if (key.indexOf("%7C") !== -1) {
+        return { source: DEFAULT_SOURCE, name: _dec(key) };
+      }
+      return { source: DEFAULT_SOURCE, name: key };
+    }
+    const idx = key.indexOf("|");
+    const sourceEnc = key.slice(0, idx);
+    const nameEnc = key.slice(idx + 1);
+    const source = _dec(sourceEnc);
+    const name = _dec(nameEnc);
+    if (!source) return { source: DEFAULT_SOURCE, name: _dec(key) };
+    if (source !== DEFAULT_SOURCE && !source.startsWith("/")) {
+      return { source: DEFAULT_SOURCE, name: _dec(key) };
+    }
+    return { source, name };
+  }
+  function fileKey(file) {
+    return decisionKey(file.source || DEFAULT_SOURCE, file.name);
+  }
+  function sourceQuery(source) {
+    if (!source || source === DEFAULT_SOURCE) return "";
+    return `?source=${encodeURIComponent(source)}`;
+  }
+  function sourceQueryParam(source) {
+    if (!source || source === DEFAULT_SOURCE) return "";
+    return `&source=${encodeURIComponent(source)}`;
+  }
+  function cardSelector(source, filename) {
+    // Use CSS.escape for filename, but here we return a string to be used with querySelector
+    // Caller should escape.
+    return { source, filename };
+  }
+
   return {
     GHOST_TILE_W,
     GHOST_TILE_H,
@@ -69,5 +122,12 @@
     Path_name,
     computeCounts,
     chunked,
+    DEFAULT_SOURCE,
+    decisionKey,
+    parseDecisionKey,
+    fileKey,
+    sourceQuery,
+    sourceQueryParam,
+    cardSelector,
   };
 });

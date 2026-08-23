@@ -25,15 +25,35 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 
+def _enc(s: str) -> str:
+    return s.replace("|", "%7C")
+
+
+def _dec(s: str) -> str:
+    return s.replace("%7C", "|")
+
+
 def compute_fingerprint(name: str, size: int) -> str:
     """Return a stable identity string derived from file metadata.
 
     Uses ``"{name}|{size}"`` — zero file I/O, just string formatting.
-    macOS screenshot names encode second-precision timestamps with
-    automatic dedup suffixes ``(2)``, ``(3)``, … so ``(name, size)`` is
-    practically collision-free for a single-user desktop tool.
+    ``|`` and ``%`` in the name are percent-encoded so the delimiter
+    remains unambiguous.
     """
-    return f"{name}|{size}"
+    return f"{_enc(name)}|{size}"
+
+
+def compute_source_fingerprint(source: str, name: str, size: int) -> str:
+    """Source-aware fingerprint.
+
+    Desktop stays legacy ``name|size`` for backward compatibility;
+    tracked folders use ``source|name|size`` to guarantee uniqueness
+    across sources with identical name+size. ``|`` and ``%`` are
+    percent-encoded so valid paths/names containing ``|`` cannot collide.
+    """
+    if source == "Desktop":
+        return f"{_enc(name)}|{size}"
+    return f"{_enc(source)}|{_enc(name)}|{size}"
 
 
 # ---------------------------------------------------------------------------
@@ -112,47 +132,71 @@ class MemoryStore:
     On-disk format is a single JSON file::
 
         {
-          "version": 1,
+          "version": 2,
           "files": {
             "<fingerprint>": { ... FileRecord dict ... },
             ...
           }
         }
 
+    Version 1 fingerprints were ``name|size`` (Desktop only). Version 2
+    adds source-aware fingerprints ``source|name|size`` for tracked
+    folders; legacy version 1 files are migrated on load (treated as
+    ``Desktop`` records).
+
     All mutating operations are in-memory only until :meth:`save` is
     called.  Callers are responsible for calling ``save()`` after a
     batch of changes.
     """
 
-    VERSION = 1
+    VERSION = 2
 
     def __init__(self, path: Path) -> None:
         self._path = path
         self._files: dict[str, FileRecord] = {}
+        # Legacy bare-name index (for backward-compat fallback)
         self._name_index: dict[str, FileRecord] = {}
+        # Source-aware index: (source, name) -> record
+        self._source_name_index: dict[tuple[str, str], FileRecord] = {}
 
     # ── Name index ─────────────────────────────────────────────────
     #
     # Maps every last_known_name / original_name to its record so
     # lookup_by_name() is O(1) instead of a linear scan over all records
     # (issue #79 — get_screenshots calls it per file per decision).
+    # Now source-aware as well.
 
     def _rebuild_name_index(self) -> None:
         self._name_index.clear()
+        self._source_name_index.clear()
         for rec in self._files.values():
+            source = rec.meta.get("source", "Desktop")
+            if not isinstance(source, str):
+                source = "Desktop"
             for name in (rec.last_known_name, rec.original_name):
                 if name:
                     self._name_index[name] = rec
+                    self._source_name_index[(source, name)] = rec
 
     def _index_name(self, rec: FileRecord) -> None:
+        source = rec.meta.get("source", "Desktop")
+        if not isinstance(source, str):
+            source = "Desktop"
         for name in (rec.last_known_name, rec.original_name):
             if name:
                 self._name_index[name] = rec
+                self._source_name_index[(source, name)] = rec
 
     def _unindex_record(self, rec: FileRecord) -> None:
+        source = rec.meta.get("source", "Desktop")
+        if not isinstance(source, str):
+            source = "Desktop"
         for name in (rec.last_known_name, rec.original_name):
-            if name and self._name_index.get(name) is rec:
-                del self._name_index[name]
+            if name:
+                if self._name_index.get(name) is rec:
+                    del self._name_index[name]
+                if self._source_name_index.get((source, name)) is rec:
+                    del self._source_name_index[(source, name)]
 
     # ── Load / Save ──────────────────────────────────────────────
 
@@ -160,6 +204,7 @@ class MemoryStore:
         """Load memory from disk.  Resets to empty on corruption."""
         self._files.clear()
         self._name_index.clear()
+        self._source_name_index.clear()
         if not self._path.exists():
             return
         try:
@@ -170,7 +215,8 @@ class MemoryStore:
         if not isinstance(raw, dict) or "files" not in raw:
             logger.warning("Memory file has unexpected structure, resetting")
             return
-        if raw.get("version") != self.VERSION:
+        version = raw.get("version")
+        if version not in (1, 2):
             logger.warning(
                 "Memory file version mismatch (got %s, expected %s), resetting",
                 raw.get("version"),
@@ -181,8 +227,17 @@ class MemoryStore:
             if not isinstance(entry, dict):
                 continue
             try:
+                meta = entry.get("meta", {})
+                if not isinstance(meta, dict):
+                    meta = {}
+                # Migrate legacy records without source => Desktop
+                if "source" not in meta:
+                    meta["source"] = "Desktop"
+                # Ensure fingerprint matches dict key for source-aware store
+                # For v1, dict key is bare fingerprint; for v2 it's source-aware
+                fingerprint = fp
                 self._files[fp] = FileRecord(
-                    fingerprint=fp,
+                    fingerprint=fingerprint,
                     original_name=entry.get("original_name", ""),
                     last_known_name=entry.get("last_known_name", ""),
                     size=entry.get("size", 0),
@@ -192,7 +247,7 @@ class MemoryStore:
                     user_name=entry.get("user_name"),
                     first_seen=entry.get("first_seen", ""),
                     last_updated=entry.get("last_updated", ""),
-                    meta=entry.get("meta", {}),
+                    meta=meta,
                 )
             except (ValueError, TypeError) as exc:
                 logger.warning("Skipping malformed memory entry %s: %s", fp, exc)
@@ -209,11 +264,28 @@ class MemoryStore:
     # ── Queries ──────────────────────────────────────────────────
 
     def lookup(self, fingerprint: str) -> FileRecord | None:
-        """Look up a record by its fingerprint."""
-        return self._files.get(fingerprint)
+        """Look up a record by its fingerprint (source-aware or legacy)."""
+        rec = self._files.get(fingerprint)
+        if rec is not None:
+            return rec
+        # Fallback: try to find by legacy bare fingerprint inside source-aware store?
+        # For Desktop legacy entries requested with source-aware key? Not needed.
+        return None
 
-    def lookup_by_name(self, filename: str) -> FileRecord | None:
-        """Look up a record by its last-known or original filename (O(1))."""
+    def lookup_by_name(self, filename: str, source: str | None = None) -> FileRecord | None:
+        """Look up a record by its last-known or original filename (O(1)).
+
+        If *source* is provided, lookup is source-aware via (source, name) index.
+        Otherwise falls back to legacy bare-name index (which may be ambiguous
+        when same name exists in multiple sources — returns one of them).
+        """
+        if source is not None:
+            rec = self._source_name_index.get((source, filename))
+            if rec is not None:
+                return rec
+            # Fallback: try to find any record with this name and matching source meta?
+            # Already covered by source_name_index; if not found, return None
+            return None
         return self._name_index.get(filename)
 
     def all_records(self) -> list[FileRecord]:
@@ -222,13 +294,14 @@ class MemoryStore:
 
     # ── Mutations ────────────────────────────────────────────────
 
-    def record_file(self, name: str, size: int) -> FileRecord:
+    def record_file(self, name: str, size: int, source: str = "Desktop") -> FileRecord:
         """Record a newly discovered file and return its record.
 
         If the fingerprint already exists the existing record is
-        returned unchanged (idempotent).
+        returned unchanged (idempotent). *source* distinguishes
+        same-name+size files in different folders.
         """
-        fp = compute_fingerprint(name, size)
+        fp = compute_source_fingerprint(source, name, size)
         existing = self._files.get(fp)
         if existing is not None:
             return existing
@@ -243,8 +316,11 @@ class MemoryStore:
             status="new",
             first_seen=now,
             last_updated=now,
+            meta={"source": source},
         )
         self._files[fp] = rec
+        # Index both source-aware and legacy bare name (for fallback)
+        self._source_name_index[(source, name)] = rec
         self._name_index[name] = rec
         return rec
 

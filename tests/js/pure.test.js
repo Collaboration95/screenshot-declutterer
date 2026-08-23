@@ -110,3 +110,56 @@ test("chunked: empty input yields no chunks", () => {
 test("chunked: single chunk when smaller than chunkSize", () => {
   assert.deepEqual(SsDcl.chunked([1, 2], 5), [[1, 2]]);
 });
+
+// ── decisionKey / parseDecisionKey ────────────────────────────────────────
+
+test("decisionKey: Desktop bare name stays bare", () => {
+  assert.equal(SsDcl.decisionKey("Desktop", "a.png"), "a.png");
+  assert.equal(SsDcl.decisionKey(undefined, "a.png"), "a.png");
+});
+
+test("decisionKey: tracked source is prefixed", () => {
+  assert.equal(SsDcl.decisionKey("/tmp/extra", "a.png"), "/tmp/extra|a.png");
+});
+
+test("decisionKey: encodes delimiter in source and name", () => {
+  assert.equal(SsDcl.decisionKey("/root/a|b", "Screenshot|1.png"), "/root/a%7Cb|Screenshot%7C1.png");
+  // Round-trip
+  const key = SsDcl.decisionKey("/root/a", "Screenshot|1.png");
+  assert.equal(key, "/root/a|Screenshot%7C1.png");
+  assert.deepEqual(SsDcl.parseDecisionKey(key), { source: "/root/a", name: "Screenshot|1.png" });
+});
+
+test("parseDecisionKey: Desktop legacy bare", () => {
+  assert.deepEqual(SsDcl.parseDecisionKey("a.png"), { source: "Desktop", name: "a.png" });
+});
+
+test("parseDecisionKey: Desktop explicit prefix", () => {
+  assert.deepEqual(SsDcl.parseDecisionKey("Desktop|a.png"), { source: "Desktop", name: "a.png" });
+});
+
+test("parseDecisionKey: tracked round-trip", () => {
+  const key = SsDcl.decisionKey("/tmp/extra", "Screenshot 1.png");
+  assert.deepEqual(SsDcl.parseDecisionKey(key), { source: "/tmp/extra", name: "Screenshot 1.png" });
+});
+
+test("parseDecisionKey: delimiter collision is unambiguous", () => {
+  const k1 = SsDcl.decisionKey("/root/a", "Screenshot|Screenshot x.png");
+  const k2 = SsDcl.decisionKey("/root/a|Screenshot", "Screenshot x.png");
+  assert.notEqual(k1, k2);
+  assert.deepEqual(SsDcl.parseDecisionKey(k1), { source: "/root/a", name: "Screenshot|Screenshot x.png" });
+  assert.deepEqual(SsDcl.parseDecisionKey(k2), { source: "/root/a|Screenshot", name: "Screenshot x.png" });
+});
+
+test("fileKey: delegates to decisionKey", () => {
+  assert.equal(SsDcl.fileKey({ source: "Desktop", name: "a.png" }), "a.png");
+  assert.equal(SsDcl.fileKey({ source: "/tmp/extra", name: "a.png" }), "/tmp/extra|a.png");
+  assert.equal(SsDcl.fileKey({ name: "a.png" }), "a.png");
+});
+
+test("sourceQuery: Desktop is empty, tracked is encoded", () => {
+  assert.equal(SsDcl.sourceQuery("Desktop"), "");
+  assert.equal(SsDcl.sourceQuery(undefined), "");
+  assert.equal(SsDcl.sourceQuery("/tmp/extra"), "?source=%2Ftmp%2Fextra");
+  assert.equal(SsDcl.sourceQuery("/root/a|b"), "?source=%2Froot%2Fa%7Cb");
+});
