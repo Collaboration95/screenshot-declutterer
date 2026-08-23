@@ -838,3 +838,60 @@ class TestFrontendRegressions:
         # Frontend decisionKey should encode `|`
         assert "fileKey(" in body
         assert "SsDcl.decisionKey" in body or "SsDcl.fileKey" in body
+
+
+class TestUntrackRestore:
+    def test_untrack_then_readd_restores_decision(self, client, tmp_path):
+        c, _ = client
+        name = "Screenshot 2024-01-01 at 12.00.00 PM.png"
+        extra = tmp_path / "extra"
+        extra.mkdir()
+        (extra / name).write_bytes(b"extra")
+        # Track folder
+        c.put(
+            "/api/settings",
+            data=json.dumps({"tracked_folders": [str(extra)]}),
+            content_type="application/json",
+        )
+        r = c.get("/api/screenshots")
+        files = json.loads(r.data)
+        assert any(f["name"] == name and f["source"] == str(extra) for f in files)
+        # Set decision for tracked file to keep
+        from ss_dcl.sources import decision_key
+
+        key = decision_key(str(extra), name)
+        c.put(
+            "/api/state",
+            data=json.dumps({"decisions": {key: "keep"}}),
+            content_type="application/json",
+        )
+        # Verify decision persisted
+        r = c.get("/api/state")
+        assert json.loads(r.data)["decisions"][key] == "keep"
+        # Untrack folder
+        c.put(
+            "/api/settings",
+            data=json.dumps({"tracked_folders": []}),
+            content_type="application/json",
+        )
+        r = c.get("/api/screenshots")
+        files = json.loads(r.data)
+        assert not any(f["source"] == str(extra) for f in files)
+        # Decision should still be in state (not deleted)
+        r = c.get("/api/state")
+        assert json.loads(r.data)["decisions"].get(key) == "keep"
+        # Re-add folder
+        c.put(
+            "/api/settings",
+            data=json.dumps({"tracked_folders": [str(extra)]}),
+            content_type="application/json",
+        )
+        r = c.get("/api/screenshots")
+        files = json.loads(r.data)
+        assert any(f["name"] == name and f["source"] == str(extra) for f in files)
+        # Decision should still be keep, so card would be in Keep column
+        r = c.get("/api/state")
+        assert json.loads(r.data)["decisions"].get(key) == "keep"
+        # Verify that get_screenshots with that decision returns suggested_category correctly?
+        # Just ensure the decision is still there and not pruned
+        assert key in json.loads(c.get("/api/state").data)["decisions"]
