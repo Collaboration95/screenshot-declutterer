@@ -16,13 +16,14 @@ import time
 from pathlib import Path
 
 from ss_dcl import llm
+from ss_dcl.paths import runtime_home, state_dir
 
 logger = logging.getLogger(__name__)
 
 LITERT_SERVE_CMD = os.environ.get("LITERT_SERVE_CMD", "litert-lm serve")
 LITERT_SERVE_READY_TIMEOUT = 30  # seconds to wait for /v1/models after spawn
-LITERT_PIDFILE = str(Path.home() / ".ss-dcl" / "litert.pid")
-LITERT_LOG_FILE = str(Path.home() / ".ss-dcl" / "litert.log")
+LITERT_PIDFILE = str(state_dir() / "litert.pid")
+LITERT_LOG_FILE = str(state_dir() / "litert.log")
 # Fallback binary: the sample venv used in the verified workflow.
 LITERT_VENV_FALLBACK = str(Path.home() / "litert-lm" / ".venv" / "bin" / "litert-lm")
 
@@ -92,7 +93,7 @@ def start_server() -> tuple[bool, str]:
                 stdout=log_handle,
                 stderr=subprocess.STDOUT,
                 start_new_session=True,
-                cwd=str(Path.home()),
+                cwd=str(runtime_home()),
             )
         except FileNotFoundError:
             return (

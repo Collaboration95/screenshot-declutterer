@@ -26,7 +26,7 @@ from flask import (
 from send2trash import send2trash
 from werkzeug.serving import WSGIRequestHandler
 
-from ss_dcl import categorize, llm, server, settings, thumbs
+from ss_dcl import categorize, llm, paths, server, settings, thumbs
 from ss_dcl.logging_config import configure_logging, new_request_id, request_id_var
 from ss_dcl.memory import MemoryStore, atomic_write, compute_source_fingerprint
 from ss_dcl.sources import (
@@ -124,9 +124,9 @@ DESKTOP = Path(os.environ.get("SS_DCL_DESKTOP", str(Path.home() / "Desktop")))
 # cache instead of reusing old-resolution thumbs (mtime-based staleness check
 # would otherwise keep serving them).
 _thumb_size_key = f"{thumbs.THUMB_SIZE[0]}x{thumbs.THUMB_SIZE[1]}"
-THUMB_DIR = Path.home() / ".cache" / "ss-dcl" / "thumbs" / _thumb_size_key
-STATE_FILE = Path.home() / ".ss-dcl" / "state.json"
-MEMORY_FILE = Path.home() / ".ss-dcl" / "memory.json"
+THUMB_DIR = paths.cache_dir() / "thumbs" / _thumb_size_key
+STATE_FILE = paths.state_dir() / "state.json"
+MEMORY_FILE = paths.state_dir() / "memory.json"
 IS_MACOS = sys.platform == "darwin"
 # TODO Need to check if rendering changes for .tiff or .bmp needs to be handled seperately
 SUPPORTED_IMAGE_EXTENSION = (".png", ".jpg", ".jpeg", ".tiff", ".bmp")

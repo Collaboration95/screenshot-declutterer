@@ -19,9 +19,10 @@ import logging.handlers
 import os
 import uuid
 from contextvars import ContextVar
-from pathlib import Path
 
-DEFAULT_LOG_FILE = str(Path.home() / ".ss-dcl" / "app.log")
+from ss_dcl.paths import state_dir
+
+DEFAULT_LOG_FILE = str(state_dir() / "app.log")
 DEFAULT_LOG_LEVEL = "INFO"
 
 _configured = False
