@@ -167,6 +167,20 @@
   --selection-fill: var(--accent-ai-strong);
   --selection-on: var(--ink-on-solid);
   --status-error-ink: var(--accent-trash-ink);
+
+  /* Phase 2 roles: app bar, thumbnail frame, progress meter, status dots.
+     These are aliases, so the light and dark palettes above stay the single
+     place a colour is chosen and the two dark copies never have to repeat a
+     role name. */
+  --surface-bar: var(--surface-shell);
+  --thumb-frame-bg: var(--surface-sunken);
+  --progress-track: var(--surface-muted);
+  --progress-fill: var(--accent-ai-strong);
+  --status-ready-fill: var(--accent-keep-fill);
+  --status-stopped-fill: var(--ink-disabled);
+  --status-starting-fill: var(--status-warning-fill);
+  --status-error-fill: var(--accent-trash-fill);
+  --status-error-surface: var(--accent-trash-soft);
 }
 
 /* ── Tokens: dark palette (explicit choice) ───────────────── */
@@ -2344,5 +2358,893 @@ header h1 {
 
   .card-actions-triage .card-action-row {
     gap: 6px;
+  }
+}
+/* ══ Phase 2 · Application shell, board and cards ═══════════════════════════
+   PLAN section 10 (Phase 2). Phase 1 tokenised the palette; this layer arranges
+   it: one calm application bar carries identity, progress and the workflow
+   controls, the board dominates the window between two quiet side trays, and
+   every card leads with its decision while the file utilities move behind a
+   labelled overflow menu. No behaviour changes here - only the surface. */
+
+/* The component rules below set display on nodes the markup hides with the
+   [hidden] attribute (card overflow menus, dialogs, the batch bar), so the
+   attribute has to stay authoritative above every component rule. */
+[hidden] {
+  display: none !important;
+}
+
+/* ── App shell and application bar ────────────────────────── */
+.app-shell {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.appbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-6);
+  padding: var(--space-4) var(--space-7);
+  background: var(--surface-bar);
+  border-bottom: var(--border-width) solid var(--border-subtle);
+  box-shadow: none;
+}
+
+.appbar-brand {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.brand-mark {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: var(--control-height-sm);
+  height: var(--control-height-sm);
+  border-radius: var(--radius-control);
+  background: var(--accent-ai-soft);
+  color: var(--accent-ai-strong);
+}
+
+.brand-name {
+  margin: 0;
+  color: var(--ink-primary);
+  font-size: var(--type-display-sm);
+  font-weight: var(--weight-semibold);
+  letter-spacing: -0.01em;
+  line-height: var(--type-display-sm-line);
+  white-space: nowrap;
+}
+
+/* ── Status pills (local-only, managed LLM server) ────────── */
+.status-pill,
+.header-llm-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: var(--control-height-sm);
+  padding: 0 var(--space-4);
+  border: var(--border-width) solid var(--control-border);
+  border-radius: var(--radius-pill);
+  background: var(--control-bg);
+  color: var(--ink-secondary);
+  font-family: var(--font-sans);
+  font-size: var(--type-label);
+  font-weight: var(--weight-semibold);
+  line-height: var(--type-label-line);
+  white-space: nowrap;
+}
+
+button.status-pill {
+  cursor: pointer;
+  transition:
+    background var(--duration-base) var(--ease-standard),
+    border-color var(--duration-base) var(--ease-standard),
+    color var(--duration-base) var(--ease-standard);
+}
+
+button.status-pill:hover:not(:disabled) {
+  background: var(--control-bg-hover);
+  border-color: var(--control-border-hover);
+}
+
+button.status-pill:disabled {
+  cursor: progress;
+}
+
+.status-dot {
+  flex: 0 0 auto;
+  width: 8px;
+  height: 8px;
+  border-radius: var(--radius-pill);
+  background: var(--status-stopped-fill);
+}
+
+.status-pill-local,
+.status-pill-llm.is-ready {
+  background: var(--accent-keep-soft);
+  border-color: var(--accent-keep-border);
+  color: var(--accent-keep-ink);
+}
+
+.status-pill-local .status-dot,
+.status-pill-llm.is-ready .status-dot {
+  background: var(--status-ready-fill);
+}
+
+.status-pill-llm.is-stopped {
+  background: var(--control-bg);
+  border-color: var(--control-border);
+  color: var(--ink-secondary);
+}
+
+.status-pill-llm.is-stopped .status-dot {
+  background: var(--status-stopped-fill);
+}
+
+.status-pill-llm.is-starting {
+  background: var(--status-warning-soft);
+  border-color: var(--status-warning-border);
+  color: var(--status-warning-ink);
+}
+
+.status-pill-llm.is-starting .status-dot {
+  background: var(--status-starting-fill);
+}
+
+.status-pill-llm.is-error {
+  background: var(--status-error-surface);
+  border-color: var(--accent-trash-border);
+  color: var(--status-error-ink);
+}
+
+.status-pill-llm.is-error .status-dot {
+  background: var(--status-error-fill);
+}
+
+/* ── Progress summary and meter ───────────────────────────── */
+.appbar-progress {
+  display: flex;
+  flex: 1 1 240px;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.progress-summary {
+  max-width: 100%;
+  color: var(--ink-secondary);
+  font-size: var(--type-label);
+  font-weight: var(--weight-semibold);
+  line-height: var(--type-label-line);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.progress-meter {
+  width: min(320px, 100%);
+  height: var(--space-1);
+  border-radius: var(--radius-pill);
+  background: var(--progress-track);
+  overflow: hidden;
+}
+
+.progress-meter-fill {
+  display: block;
+  width: 0;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--progress-fill);
+  transition: width var(--duration-base) var(--ease-standard);
+}
+
+#status-msg {
+  max-width: 100%;
+  margin: 0;
+  color: var(--ink-muted);
+  font-size: var(--type-caption);
+  line-height: var(--type-caption-line);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+#status-msg.is-error {
+  color: var(--status-error-ink);
+  font-weight: var(--weight-semibold);
+}
+
+/* ── Workflow actions ─────────────────────────────────────── */
+.appbar-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin-left: auto;
+}
+
+.appbar-label {
+  color: var(--ink-muted);
+  font-size: var(--type-caption);
+  font-weight: var(--weight-semibold);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.appbar-actions #sort-select {
+  min-height: var(--control-height-sm);
+  padding: 0 var(--space-3);
+  border: var(--border-width) solid var(--border-subtle);
+  border-radius: var(--radius-control);
+  background: var(--control-bg);
+  color: var(--control-text);
+  font-size: var(--type-label);
+}
+
+/* The decision action is the only solid control in the bar; Undo stays quiet
+   so the eye lands on Done. Disabled actions keep their shape and read from
+   the ink rather than fading into a grey smear. */
+#undo-btn,
+#done-btn {
+  min-height: var(--control-height-sm);
+}
+
+#undo-btn {
+  background: transparent;
+  border-color: var(--control-border);
+  color: var(--control-text);
+}
+
+#undo-btn:not(:disabled):hover {
+  background: var(--control-bg-hover);
+  border-color: var(--control-border-hover);
+}
+
+#done-btn {
+  background: var(--action-primary);
+  color: var(--on-action);
+}
+
+#done-btn:not(:disabled):hover {
+  background: var(--action-primary-hover);
+}
+
+#undo-btn:disabled,
+#done-btn:disabled {
+  opacity: 1;
+  background: transparent;
+  border-color: transparent;
+  color: var(--ink-disabled);
+  cursor: not-allowed;
+}
+
+/* ── Compact column switcher (≤1024px) ────────────────────── */
+.compact-switcher {
+  display: none;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-5);
+  background: var(--surface-bar);
+  border-bottom: var(--border-width) solid var(--border-subtle);
+}
+
+.compact-switcher-item {
+  display: inline-flex;
+  flex: 1 1 0;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  min-height: var(--control-height-sm);
+  padding: 0 var(--space-3);
+  border: var(--border-width) solid var(--border-subtle);
+  border-radius: var(--radius-control);
+  background: var(--control-bg);
+  color: var(--ink-secondary);
+  font-family: var(--font-sans);
+  font-size: var(--type-label);
+  font-weight: var(--weight-semibold);
+  cursor: pointer;
+}
+
+.compact-switcher-item:hover {
+  border-color: var(--control-border-hover);
+}
+
+.compact-switcher-item[aria-pressed="true"] {
+  background: var(--accent-ai-soft);
+  border-color: var(--accent-ai-border);
+  color: var(--accent-ai-strong);
+}
+
+.compact-switcher-count {
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-pill);
+  background: var(--surface-muted);
+  color: var(--ink-secondary);
+  font-size: var(--type-caption);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── Workspace and board ──────────────────────────────────── */
+.workspace {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  padding: var(--space-5) var(--space-6) var(--space-6);
+}
+
+.kanban {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  border: var(--border-width) solid var(--border-subtle);
+  border-radius: var(--radius-dialog);
+  box-shadow: none;
+  overflow: hidden;
+}
+
+.column {
+  display: flex;
+  min-width: 0;
+  border-right: var(--border-width) solid var(--border-subtle);
+}
+
+.column:last-child {
+  border-right: none;
+}
+
+.column-keep,
+.column-trash {
+  width: 22%;
+  min-width: 168px;
+}
+
+.column-keep {
+  background: var(--accent-keep-soft);
+}
+
+.column-trash {
+  background: var(--accent-trash-soft);
+}
+
+.column-unsorted {
+  position: relative;
+  flex: 1;
+  background: var(--surface-canvas);
+}
+
+/* ── Column headers, counts and scrolling ─────────────────── */
+.column-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-4) var(--space-5);
+  border-bottom: var(--border-width) solid var(--border-subtle);
+}
+
+.column-title {
+  color: var(--ink-secondary);
+  font-size: var(--type-label);
+  font-weight: var(--weight-semibold);
+  line-height: var(--type-label-line);
+}
+
+.column-keep .column-title {
+  color: var(--accent-keep-ink);
+}
+
+.column-trash .column-title {
+  color: var(--accent-trash-ink);
+}
+
+.column-count {
+  min-width: var(--space-6);
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-pill);
+  background: var(--surface-muted);
+  color: var(--ink-secondary);
+  font-size: var(--type-caption);
+  font-weight: var(--weight-semibold);
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+
+.column-keep .column-count {
+  background: var(--surface-raised);
+  color: var(--accent-keep-ink);
+}
+
+.column-trash .column-count {
+  background: var(--surface-raised);
+  color: var(--accent-trash-ink);
+}
+
+.column-cards {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  padding: var(--space-4);
+  gap: var(--space-4);
+  overflow-y: auto;
+}
+
+.column-keep .column-cards,
+.column-trash .column-cards {
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.column-unsorted .column-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(232px, 1fr));
+  align-content: start;
+  gap: var(--space-5);
+}
+
+.column-keep .card img,
+.column-trash .card img {
+  width: 100%;
+  height: auto;
+}
+
+/* ── Drop targets ─────────────────────────────────────────── */
+.column.drag-over {
+  background: var(--drop-wash-neutral);
+}
+
+.column-keep.drag-over {
+  background: var(--drop-wash-keep);
+  box-shadow: inset 0 0 0 var(--border-width-emphasis) var(--drop-ring-keep);
+}
+
+.column-trash.drag-over {
+  background: var(--drop-wash-trash);
+  box-shadow: inset 0 0 0 var(--border-width-emphasis) var(--drop-ring-trash);
+}
+
+.column-unsorted.drag-over {
+  background: var(--drop-wash-neutral);
+  box-shadow: inset 0 0 0 var(--border-width-emphasis) var(--border-strong);
+}
+
+/* The wash is never the only cue: an inset dashed outline marks the tray that
+   will receive the drop, and the empty hint switches to a release promise. */
+.column-keep.drag-over .column-cards,
+.column-trash.drag-over .column-cards,
+.column-unsorted.drag-over .column-cards {
+  outline: var(--border-width-emphasis) dashed var(--border-strong);
+  outline-offset: calc(-1 * var(--space-2));
+}
+
+.column-keep.drag-over .column-cards:empty::after {
+  content: "Release to keep";
+}
+
+.column-trash.drag-over .column-cards:empty::after {
+  content: "Release to trash";
+}
+
+/* ── Card ─────────────────────────────────────────────────── */
+.card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  border: var(--border-width) solid var(--border-subtle);
+  border-radius: var(--radius-card);
+  overflow: visible;
+  background: var(--surface-raised);
+  box-shadow: var(--elevation-1);
+  transition:
+    box-shadow var(--duration-base) var(--ease-standard),
+    transform var(--duration-base) var(--ease-standard),
+    border-color var(--duration-base) var(--ease-standard);
+}
+
+.card:hover,
+.card:focus-visible {
+  border-color: var(--border-strong);
+  box-shadow: var(--elevation-2);
+}
+
+.card:hover {
+  transform: translateY(-2px);
+}
+
+.card:active {
+  cursor: grabbing;
+}
+
+.card.dragging {
+  opacity: 0.5;
+  transform: scale(0.96);
+}
+
+.card-thumb {
+  position: relative;
+  aspect-ratio: 4 / 3;
+  border-radius: calc(var(--radius-card) - var(--border-width))
+    calc(var(--radius-card) - var(--border-width)) 0 0;
+  background: var(--thumb-frame-bg);
+  overflow: hidden;
+}
+
+.card img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  aspect-ratio: 4 / 3;
+  object-fit: cover;
+  pointer-events: none;
+}
+
+/* ── Selection ────────────────────────────────────────────── */
+.card-select {
+  position: absolute;
+  top: var(--space-3);
+  left: var(--space-3);
+  z-index: 3;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: var(--border-width) solid var(--overlay-control-border);
+  border-radius: var(--radius-pill);
+  background: var(--overlay-control);
+  color: var(--overlay-ink);
+  cursor: pointer;
+  backdrop-filter: blur(6px);
+}
+
+.card-select:hover {
+  background: var(--overlay-control-hover);
+  color: var(--overlay-ink-hover);
+}
+
+.card-select .icon {
+  opacity: 0;
+  transition: opacity var(--duration-fast) var(--ease-standard);
+}
+
+.card:hover .card-select .icon,
+.card-select:focus-visible .icon {
+  opacity: 0.65;
+}
+
+.card.selected {
+  border-color: var(--selection-ring);
+  box-shadow: 0 0 0 2px var(--selection-ring), var(--elevation-2);
+}
+
+.card.selected .card-select {
+  background: var(--selection-fill);
+  border-color: var(--selection-fill);
+  color: var(--selection-on);
+}
+
+.card.selected .card-select .icon {
+  opacity: 1;
+}
+
+/* The checked select control now carries the tick, so drop the older corner
+   glyph and keep exactly one selection mark per card. */
+.card.selected::after {
+  display: none;
+}
+
+/* ── Card meta strip ──────────────────────────────────────── */
+.card-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  border-top: var(--border-width) solid var(--border-subtle);
+}
+
+.card-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  color: var(--ink-secondary);
+  font-family: var(--font-mono);
+  font-size: var(--type-caption);
+  line-height: var(--type-caption-line);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.card-badge {
+  flex-shrink: 0;
+}
+
+/* ── Card action bar (hover or keyboard focus) ────────────── */
+.card-actions {
+  position: absolute;
+  inset: auto 0 0 0;
+  z-index: 4;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  background: var(--image-scrim);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--duration-base) var(--ease-standard);
+}
+
+.card:hover .card-actions,
+.card:focus-within .card-actions,
+.card:has(.card-overflow:not([hidden])) .card-actions {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+/* The suggestion badge must stay interactive: raise it above the overlay and
+   suppress the overlay while the badge itself is hovered. */
+.card:has(.suggestion-badge:hover) .card-actions {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.card-action-primary,
+.card-action-secondary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.card-action-secondary {
+  margin-left: auto;
+}
+
+.suggestion-badge {
+  z-index: 6;
+}
+
+/* ── Action buttons ───────────────────────────────────────── */
+.action-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  min-height: 28px;
+  padding: 0 var(--space-4);
+  border: var(--border-width) solid var(--overlay-control-border);
+  border-radius: var(--radius-control);
+  background: var(--action-neutral);
+  color: var(--on-action);
+  font-family: var(--font-sans);
+  font-size: var(--type-caption);
+  font-weight: var(--weight-semibold);
+  line-height: var(--type-caption-line);
+  white-space: nowrap;
+  cursor: pointer;
+  backdrop-filter: blur(6px);
+  transition:
+    background var(--duration-base) var(--ease-standard),
+    border-color var(--duration-base) var(--ease-standard),
+    color var(--duration-base) var(--ease-standard);
+}
+
+.action-btn:hover:not(:disabled) {
+  background: var(--action-neutral-hover);
+}
+
+.action-btn:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+.action-btn:disabled {
+  background: var(--control-disabled-bg);
+  color: var(--control-disabled-text);
+  cursor: not-allowed;
+  transform: none;
+}
+
+.action-btn-icon {
+  min-width: 28px;
+  padding: 0;
+}
+
+.action-btn .icon {
+  flex: 0 0 auto;
+}
+
+.action-btn.btn-keep,
+.action-btn.btn-accept {
+  background: var(--action-keep);
+}
+
+.action-btn.btn-keep:hover:not(:disabled),
+.action-btn.btn-accept:hover:not(:disabled) {
+  background: var(--action-keep-hover);
+}
+
+.action-btn.btn-trash {
+  background: var(--action-trash);
+}
+
+.action-btn.btn-trash:hover:not(:disabled) {
+  background: var(--action-trash-hover);
+}
+
+/* Preview and the overflow trigger sit on the image, so they stay translucent
+   instead of taking a solid fill. */
+.action-btn.btn-preview,
+.action-btn.btn-more {
+  border: var(--border-width) solid var(--overlay-control-border);
+  background: var(--overlay-control);
+  color: var(--overlay-ink);
+  backdrop-filter: blur(6px);
+}
+
+.action-btn.btn-preview:hover:not(:disabled),
+.action-btn.btn-more:hover:not(:disabled) {
+  background: var(--overlay-control-hover);
+  color: var(--overlay-ink-hover);
+}
+
+/* ── Card overflow menu ───────────────────────────────────── */
+.card-overflow-wrap {
+  position: relative;
+  display: inline-flex;
+}
+
+.card-overflow {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + var(--space-2));
+  z-index: 5;
+  display: flex;
+  min-width: 176px;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-2);
+  border: var(--border-width) solid var(--border-subtle);
+  border-radius: var(--radius-panel);
+  background: var(--surface-raised);
+  box-shadow: var(--elevation-3);
+}
+
+/* Inside the popover the file utilities are quiet menu rows, not solid
+   primary fills: Rename and Reveal must never out-shout Keep/Trash. */
+.card-overflow .action-btn {
+  justify-content: flex-start;
+  width: 100%;
+  border-color: transparent;
+  background: transparent;
+  color: var(--ink-primary);
+  backdrop-filter: none;
+}
+
+.card-overflow .action-btn:hover:not(:disabled) {
+  background: var(--control-bg-hover);
+  border-color: transparent;
+  color: var(--ink-primary);
+}
+
+/* ── Board-level states ───────────────────────────────────── */
+.board-state {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  margin: 0;
+  padding: var(--space-4) var(--space-5);
+  color: var(--ink-muted);
+  font-size: var(--type-label);
+  text-align: center;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+}
+
+#empty-msg {
+  margin: 0;
+  color: var(--ink-muted);
+}
+
+/* ── Source tag (static pill in the meta strip) ───────────── */
+.source-tag {
+  position: static;
+  max-width: 100%;
+  padding: 1px var(--space-2);
+  border-radius: var(--radius-pill);
+  background: var(--surface-muted);
+  color: var(--ink-muted);
+  font-size: var(--type-caption);
+  font-weight: var(--weight-semibold);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  backdrop-filter: none;
+  pointer-events: none;
+}
+
+/* ══ Phase 2 · Compact board (≤1024px) ══════════════════════════════════════
+   Below 1024px the three trays cannot all hold a usable card width, so the
+   switcher picks one column at a time and every primary action stays on screen
+   at 1024x768 without horizontal page scroll. */
+@media (max-width: 1024px) {
+  .appbar {
+    gap: var(--space-4);
+    padding: var(--space-3) var(--space-5);
+  }
+
+  .appbar-progress {
+    order: 5;
+    flex: 1 1 100%;
+  }
+
+  .progress-meter {
+    width: 100%;
+  }
+
+  .compact-switcher {
+    display: flex;
+  }
+
+  .workspace {
+    padding: var(--space-4) var(--space-4) var(--space-5);
+  }
+
+  .column {
+    display: none;
+    width: 100%;
+    min-width: 0;
+    max-height: none;
+    border-right: none;
+    border-bottom: none;
+  }
+
+  .kanban[data-compact-column="keep"] .column-keep,
+  .kanban[data-compact-column="unsorted"] .column-unsorted,
+  .kanban[data-compact-column="trash"] .column-trash {
+    display: flex;
+  }
+
+  .column-unsorted .column-cards {
+    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  }
+}
+
+/* ══ Phase 2 · Forced colours ═══════════════════════════════════════════════
+   The new shell controls carry their state in colour, so hand each one a
+   system-colour boundary when the palette is replaced. */
+@media (forced-colors: active) {
+  .status-pill,
+  .compact-switcher-item,
+  .brand-mark,
+  .progress-meter,
+  .card-select {
+    border: var(--border-width) solid CanvasText;
+  }
+
+  .compact-switcher-item[aria-pressed="true"] {
+    outline: var(--border-width-emphasis) solid Highlight;
+    outline-offset: calc(-1 * var(--border-width-emphasis));
+  }
+
+  .progress-meter-fill,
+  .card.selected .card-select {
+    background: Highlight;
+    color: HighlightText;
+  }
+
+  .card-select .icon,
+  .card:hover .card-select .icon,
+  .card.selected .card-select .icon {
+    opacity: 1;
   }
 }

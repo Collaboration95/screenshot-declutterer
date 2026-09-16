@@ -61,6 +61,17 @@ const addFolderBtn    = document.getElementById("add-folder-btn");
 const trackedFoldersError = document.getElementById("tracked-folders-error");
 
 const llmServerBtn    = document.getElementById("llm-server-btn");
+const llmStatusLabel  = document.getElementById("llm-status-label");
+
+const sortSummary        = document.getElementById("sort-summary");
+const progressMeter      = document.getElementById("progress-meter");
+const progressMeterFill  = document.getElementById("progress-meter-fill");
+
+const kanban         = document.getElementById("kanban");
+const columnSwitcher = document.getElementById("column-switcher");
+const compactCountKeep     = document.getElementById("compact-count-keep");
+const compactCountUnsorted = document.getElementById("compact-count-unsorted");
+const compactCountTrash    = document.getElementById("compact-count-trash");
 
 const renameModal   = document.getElementById("rename-modal");
 const renameInput   = document.getElementById("rename-input");
@@ -138,34 +149,71 @@ function providerErrorCopy() {
   return `${label} is not running — use the Start button and try again.`;
 }
 
-// ── Managed LiteRT server (start/stop button) ───────────────────────────────
+// ── Transient announcements ─────────────────────────────────────────────────
+// #sort-summary owns the stable progress statement, so #status-msg only ever
+// carries a short-lived notice: it clears itself instead of overwriting the
+// summary indefinitely (PLAN 6.2).
+let _statusTimer = null;
+
+function announce(message, options) {
+  const opts = options || {};
+  if (_statusTimer) clearTimeout(_statusTimer);
+  _statusTimer = null;
+  statusMsg.textContent = message || "";
+  statusMsg.classList.toggle("is-error", !!opts.error);
+  if (!message) return;
+  _statusTimer = setTimeout(() => {
+    statusMsg.textContent = "";
+    statusMsg.classList.remove("is-error");
+    _statusTimer = null;
+  }, opts.timeout || 8000);
+}
+
+// ── Managed LiteRT server status pill ───────────────────────────────────────
+// The state lives on the control itself (class + label + accessible name) so
+// the server condition is never communicated by button text alone.
+let llmServerState = "stopped";
+
+const LLM_STATE_COPY = {
+  ready: { label: "AI ready", hint: "Local AI server is running — click to stop it" },
+  stopped: { label: "AI stopped", hint: "Local AI server is stopped — click to start it" },
+  starting: { label: "AI starting", hint: "Local AI server is starting or stopping…" },
+  error: { label: "AI offline", hint: "Local AI server is unreachable — click to try starting it" },
+};
+
+function _setLLMStatus(state, labelOverride) {
+  llmServerState = state;
+  const copy = LLM_STATE_COPY[state] || LLM_STATE_COPY.stopped;
+  llmServerBtn.hidden = false;
+  llmServerBtn.classList.remove("is-ready", "is-stopped", "is-starting", "is-error");
+  llmServerBtn.classList.add(`is-${state}`);
+  if (llmStatusLabel) llmStatusLabel.textContent = labelOverride || copy.label;
+  llmServerBtn.disabled = state === "starting";
+  llmServerBtn.setAttribute("aria-label", copy.hint);
+  llmServerBtn.dataset.tooltip = copy.hint;
+}
+
 // Label follows the last health verdict.
 function refreshLLMServerButton() {
   llmServerBtn.hidden = false;
   llmServerBtn.disabled = true;
   fetch("/api/llm/health")
     .then(r => r.json())
-    .then(h => {
-      llmServerBtn.textContent = h.ok ? "■ Stop LLM" : "▶ Start LLM";
-      llmServerBtn.disabled = false;
-    })
-    .catch(() => {
-      llmServerBtn.textContent = "▶ Start LLM";
-      llmServerBtn.disabled = false;
-    });
+    .then(h => _setLLMStatus(h.ok ? "ready" : "stopped"))
+    .catch(() => _setLLMStatus("error"));
 }
 
 llmServerBtn.addEventListener("click", () => {
-  const starting = llmServerBtn.textContent.includes("Start");
-  llmServerBtn.disabled = true;
-  fetch(starting ? "/api/llm/start" : "/api/llm/stop", { method: "POST" })
+  const stopping = llmServerState === "ready";
+  _setLLMStatus("starting", stopping ? "AI stopping…" : "AI starting…");
+  fetch(stopping ? "/api/llm/stop" : "/api/llm/start", { method: "POST" })
     .then(r => r.json())
     .then(data => {
-      statusMsg.textContent = data.message || data.error || "Server control failed.";
+      announce(data.message || data.error || "Server control failed.", { error: !data.ok });
       refreshLLMServerButton();
     })
     .catch(() => {
-      statusMsg.textContent = "Couldn't reach the server controller.";
+      announce("Couldn't reach the server controller.", { error: true });
       refreshLLMServerButton();
     });
 });
@@ -337,11 +385,32 @@ function loadScreenshots(savedDecisions) {
     })
     .catch(() => {
       loadingMsg.hidden = true;
-      statusMsg.textContent = "Failed to load screenshots.";
+      announce("Failed to load screenshots.", { error: true });
     });
 }
 
 init();
+
+// ── Compact column switcher (<=1024px) ───────────────────────────────────────
+// Below the compact breakpoint the board shows one column at a time so every
+// primary action stays reachable without horizontal scrolling; this control
+// chooses which column is on screen (PLAN 6.4). The pressed state lives on the
+// group so assistive tech reads the switcher as a single selection.
+function setCompactColumn(target) {
+  if (!kanban || !columnSwitcher) return;
+  kanban.dataset.compactColumn = target;
+  columnSwitcher.querySelectorAll(".compact-switcher-item").forEach(btn => {
+    btn.setAttribute("aria-pressed", String(btn.dataset.columnTarget === target));
+  });
+}
+
+if (columnSwitcher) {
+  columnSwitcher.addEventListener("click", e => {
+    const btn = e.target.closest(".compact-switcher-item");
+    if (btn) setCompactColumn(btn.dataset.columnTarget);
+  });
+}
+
 
 // ── Sort ─────────────────────────────────────────────────────────────────────
 sortSelect.addEventListener("change", () => {
@@ -364,10 +433,72 @@ function saveState() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ decisions: obj }),
     }).catch(() => {
-      statusMsg.textContent = "Warning: failed to save state.";
+      announce("Warning: failed to save state.", { error: true });
     });
     _saveTimer = null;
   }, 300);
+}
+
+// ── Local icon set ───────────────────────────────────────────────────────────
+// Small stroke icons drawn from path data in this file: no font, no CDN, no
+// emoji glyph carrying meaning on its own (PLAN 6.2/6.4).
+const ICON_PATHS = {
+  keep: "M5 12.5 9.5 17 19 7",
+  trash: "M6 7h12M9.5 7V5h5v2M7.5 7l.9 12h7.2l.9-12M10.5 10.5v6M13.5 10.5v6",
+  preview: "M2.7 12S6.2 6.2 12 6.2 21.3 12 21.3 12 17.8 17.8 12 17.8 2.7 12 2.7 12Z M12 14.9a2.9 2.9 0 1 0 0-5.8 2.9 2.9 0 0 0 0 5.8Z",
+  rename: "M4.5 19.5h15M6.3 16.2 16 6.5a2 2 0 0 1 2.8 2.8l-9.7 9.7-3.6.8.8-3.6Z",
+  reveal: "M4 7.2A1.7 1.7 0 0 1 5.7 5.5h3.6l1.8 1.9h7.2A1.7 1.7 0 0 1 20 9.1v8.2a1.7 1.7 0 0 1-1.7 1.7H5.7A1.7 1.7 0 0 1 4 17.3V7.2Z",
+  suggest: "M11 4.5 12.4 8.6 16.5 10 12.4 11.4 11 15.5 9.6 11.4 5.5 10 9.6 8.6 11 4.5ZM17.5 14.5l.8 2.2 2.2.8-2.2.8-.8 2.2-.8-2.2-2.2-.8 2.2-.8.8-2.2Z",
+  undo: "M8 5 4 9l4 4M4 9h10.5a5.5 5.5 0 0 1 0 11H10",
+  more: "M7 12h.01M12 12h.01M17 12h.01",
+  check: "M5 12.5 9.5 17 19 7",
+};
+
+const SVG_NS = "http://www.w3.org/2000/svg";
+
+function icon(name, size) {
+  const svg = document.createElementNS(SVG_NS, "svg");
+  svg.setAttribute("class", "icon");
+  svg.setAttribute("viewBox", "0 0 24 24");
+  svg.setAttribute("width", String(size || 16));
+  svg.setAttribute("height", String(size || 16));
+  svg.setAttribute("aria-hidden", "true");
+  svg.setAttribute("focusable", "false");
+  const path = document.createElementNS(SVG_NS, "path");
+  path.setAttribute("d", ICON_PATHS[name] || "");
+  path.setAttribute("fill", "none");
+  path.setAttribute("stroke", "currentColor");
+  path.setAttribute("stroke-width", "1.9");
+  path.setAttribute("stroke-linecap", "round");
+  path.setAttribute("stroke-linejoin", "round");
+  svg.appendChild(path);
+  return svg;
+}
+
+// ── Category hint (4C) ───────────────────────────────────────────────────────
+// The learned category is announced in words as well as colour: a labelled
+// micro-badge plus the supplemental left border (PLAN 6.4).
+function _applyCategoryHint(card, category) {
+  card.classList.remove("category-hint-keep", "category-hint-trash");
+  const previous = card.querySelector(".card-badge");
+  if (previous) previous.remove();
+  delete card.dataset.suggestedCategory;
+  if (category !== "keep" && category !== "trash") return;
+  card.dataset.suggestedCategory = category;
+  card.classList.add(`category-hint-${category}`);
+  const badge = document.createElement("span");
+  badge.className = `card-badge badge badge-${category}`;
+  badge.textContent = category === "keep" ? "Likely keep" : "Likely trash";
+  badge.title =
+    category === "keep"
+      ? "Your past decisions suggest keeping this screenshot"
+      : "Your past decisions suggest trashing this screenshot";
+  const meta = card.querySelector(".card-meta");
+  if (meta) meta.appendChild(badge);
+}
+
+function _clearCategoryHint(card) {
+  _applyCategoryHint(card, null);
 }
 
 // ── Card factory ─────────────────────────────────────────────────────────────
@@ -398,16 +529,38 @@ function makeCard(filename, source, column, fingerprint, memoryStatus, suggested
   card.tabIndex = 0;
 
   const thumbUrl = `/api/thumb/${encodeURIComponent(filename)}${SsDcl.sourceQuery(source)}`;
+  const thumb = document.createElement("div");
+  thumb.className = "card-thumb";
+
   const img = document.createElement("img");
   img.src = thumbUrl;
   img.alt = filename;
   img.loading = "lazy";
   img.decoding = "async";
 
-  const actions = document.createElement("div");
-  actions.className = "card-actions";
+  // Persistent selection affordance at the top-left of the thumbnail (PLAN
+  // 6.4 #4). It is a real button so assistive tech can find and name it, but it
+  // sits outside the tab order: the card itself takes focus, exposes the action
+  // bar on :focus-within, and Enter/Space toggles the same selection.
+  const select = document.createElement("button");
+  select.type = "button";
+  select.className = "card-select";
+  select.tabIndex = -1;
+  select.setAttribute("aria-pressed", "false");
+  select.setAttribute("aria-label", `Select ${filename}`);
+  select.appendChild(icon("check", 14));
 
-  card.appendChild(img);
+  thumb.appendChild(img);
+  thumb.appendChild(select);
+
+  const meta = document.createElement("div");
+  meta.className = "card-meta";
+
+  const name = document.createElement("span");
+  name.className = "card-name";
+  name.textContent = filename;
+  name.title = filename;
+  meta.appendChild(name);
 
   // Source tag for tracked folders
   if (source !== "Desktop") {
@@ -416,19 +569,25 @@ function makeCard(filename, source, column, fingerprint, memoryStatus, suggested
     const folderName = source.split("/").pop() || source;
     tag.textContent = `in: ${folderName}`;
     tag.title = source;
-    card.appendChild(tag);
+    meta.appendChild(tag);
   }
 
-  // Category hint visual (4C)
-  if (suggestedCategory === "keep" || suggestedCategory === "trash") {
-    card.classList.add("category-hint-" + suggestedCategory);
-  }
+  const actions = document.createElement("div");
+  actions.className = "card-actions";
+
+  card.appendChild(thumb);
+  card.appendChild(meta);
+
+  // Category hint: labelled micro-badge plus the supplemental left border.
+  _applyCategoryHint(card, suggestedCategory);
 
   // Suggestion badge (always visible when status is "suggested")
   if (memoryStatus === "suggested" && suggestedName) {
     card.appendChild(_makeSuggestionBadge(card));
   }
 
+  // The action bar must stay the last child: suggestBatch() inserts badges
+  // with insertBefore(badge, .card-actions).
   card.appendChild(actions);
 
   setCardActions(card, column);
@@ -480,56 +639,147 @@ function _makeSuggestionBadge(card) {
   return badge;
 }
 
-// ── Card action buttons ──────────────────────────────────────────────────────
-function setCardActions(card, column) {
-  const actions = card.querySelector(".card-actions");
-  actions.innerHTML = "";
-  actions.classList.toggle("card-actions-triage", column === "unsorted");
+// ── Card action bar ─────────────────────────────────────────────────────────
+// One bar per card, revealed on hover or keyboard focus (PLAN 6.4 #5/#6). The
+// decision (Keep / Trash) is always the primary cluster; preview, an optional
+// AI suggest, and the overflow menu that hides Rename / Reveal in Finder are
+// secondary. Keep and Trash cards reuse the very same bar, so the side trays
+// keep filename access and file actions instead of collapsing to image tiles.
+//
+// The overflow menu is a plain in-card popover: it is toggled by its own
+// trigger, and closes on selection, Escape, or an outside click. Nothing here
+// depends on hover to function.
+let _openOverflow = null;
 
-  const renameBtn = makeActionBtn("Rename", "btn-rename", () => openRenameModal(card));
-  const previewBtn = makeActionBtn("Preview", "btn-preview", () => openLightbox(card));
-  const revealBtn = makeActionBtn("Finder", "btn-reveal", () => revealInFinder(card.dataset.filename, card.dataset.source));
+function closeCardOverflow() {
+  if (!_openOverflow) return;
+  const trigger = _openOverflow.parentElement
+    ? _openOverflow.parentElement.querySelector(".btn-more")
+    : null;
+  _openOverflow.hidden = true;
+  if (trigger) trigger.setAttribute("aria-expanded", "false");
+  _openOverflow = null;
+}
 
-  if (column === "unsorted") {
-    const keepBtn = makeActionBtn("\u2190 Keep", "btn-keep", () => moveCard(card, "keep"));
-    const trashBtn = makeActionBtn("Trash \u2192", "btn-trash", () => moveCard(card, "trash"));
-
-    // Keep the triage controls in three predictable rows so the overlay is
-    // easy to scan: file actions, optional suggestion, then the decision.
-    actions.appendChild(makeActionRow(renameBtn, revealBtn, previewBtn));
-
-    // Show "✨ AI Suggest" for unprocessed files
-    if (card.dataset.memoryStatus === "new") {
-      const suggestBtn = makeActionBtn("✨ Suggest", "btn-suggest", () => suggestSingle(card));
-      actions.appendChild(makeActionRow(suggestBtn));
-    }
-
-    actions.appendChild(makeActionRow(keepBtn, trashBtn));
-  } else {
-    const undoBtn = makeActionBtn("\u21A9 Undo", "btn-undo", () => moveCard(card, "unsorted"));
-    actions.appendChild(previewBtn);
-    actions.appendChild(renameBtn);
-    actions.appendChild(revealBtn);
-    actions.appendChild(undoBtn);
+function toggleCardOverflow(menu, trigger) {
+  if (_openOverflow === menu) {
+    closeCardOverflow();
+    return;
   }
+  closeCardOverflow();
+  menu.hidden = false;
+  trigger.setAttribute("aria-expanded", "true");
+  _openOverflow = menu;
 }
 
-function makeActionRow(...buttons) {
-  const row = document.createElement("div");
-  row.className = "card-action-row";
-  buttons.forEach(button => row.appendChild(button));
-  return row;
-}
+document.addEventListener("click", e => {
+  if (!_openOverflow) return;
+  if (_openOverflow.contains(e.target)) return;
+  closeCardOverflow();
+});
 
-function makeActionBtn(label, cls, onClick) {
+function makeActionBtn(label, cls, onClick, options) {
+  const opts = options || {};
   const btn = document.createElement("button");
-  btn.className = `action-btn ${cls}`;
-  btn.textContent = label;
+  btn.type = "button";
+  btn.className = `action-btn ${cls}${opts.iconOnly ? " action-btn-icon" : ""}`;
+  if (opts.iconName) btn.appendChild(icon(opts.iconName, 15));
+  if (opts.iconOnly) {
+    // Icon-only controls carry their name in text, never in the glyph alone.
+    btn.setAttribute("aria-label", opts.ariaLabel || label);
+    btn.dataset.tooltip = opts.tooltip || opts.ariaLabel || label;
+  } else {
+    const text = document.createElement("span");
+    text.className = "action-btn-label";
+    text.textContent = label;
+    btn.appendChild(text);
+  }
   btn.addEventListener("click", e => {
     e.stopPropagation();
+    if (btn.closest(".card-overflow")) closeCardOverflow();
     onClick();
   });
   return btn;
+}
+
+// Overflow trigger + menu, grouped so the menu can anchor to the action bar.
+function makeOverflowMenu(items, contextLabel) {
+  const wrap = document.createElement("div");
+  wrap.className = "card-overflow-wrap";
+
+  const trigger = makeActionBtn("More", "btn-more", () => {}, {
+    iconName: "more",
+    iconOnly: true,
+    ariaLabel: `More actions for ${contextLabel}`,
+    tooltip: "More actions",
+  });
+  trigger.setAttribute("aria-haspopup", "menu");
+  trigger.setAttribute("aria-expanded", "false");
+
+  const menu = document.createElement("div");
+  menu.className = "card-overflow menu";
+  menu.setAttribute("role", "menu");
+  menu.setAttribute("aria-label", `More actions for ${contextLabel}`);
+  menu.hidden = true;
+  items.forEach(item => {
+    item.setAttribute("role", "menuitem");
+    menu.appendChild(item);
+  });
+
+  trigger.addEventListener("click", () => toggleCardOverflow(menu, trigger));
+  wrap.appendChild(trigger);
+  wrap.appendChild(menu);
+  return wrap;
+}
+
+function setCardActions(card, column) {
+  closeCardOverflow();
+  const actions = card.querySelector(".card-actions");
+  actions.textContent = "";
+
+  const primary = document.createElement("div");
+  primary.className = "card-action-primary";
+  const secondary = document.createElement("div");
+  secondary.className = "card-action-secondary";
+
+  const filename = card.dataset.filename;
+  const isNew = card.dataset.memoryStatus === "new";
+
+  const previewBtn = makeActionBtn("Preview", "btn-preview", () => openLightbox(card), {
+    iconName: "preview",
+    iconOnly: true,
+    ariaLabel: `Preview ${filename}`,
+    tooltip: "Preview",
+  });
+  const renameBtn = makeActionBtn("Rename", "btn-rename", () => openRenameModal(card), {
+    iconName: "rename",
+  });
+  const revealBtn = makeActionBtn(
+    "Reveal in Finder",
+    "btn-reveal",
+    () => revealInFinder(card.dataset.filename, card.dataset.source),
+    { iconName: "reveal" }
+  );
+  const suggestBtn = makeActionBtn("Suggest name", "btn-suggest", () => suggestSingle(card), {
+    iconName: "suggest",
+  });
+
+  if (column === "unsorted") {
+    primary.appendChild(makeActionBtn("Keep", "btn-keep", () => moveCard(card, "keep"), { iconName: "keep" }));
+    primary.appendChild(makeActionBtn("Trash", "btn-trash", () => moveCard(card, "trash"), { iconName: "trash" }));
+    secondary.appendChild(previewBtn);
+    // Unprocessed files get the one-click AI action; processed ones keep it
+    // reachable from the overflow menu.
+    const overflow = isNew ? [renameBtn, revealBtn] : [suggestBtn, renameBtn, revealBtn];
+    secondary.appendChild(makeOverflowMenu(overflow, filename));
+  } else {
+    primary.appendChild(makeActionBtn("Unsorted", "btn-undo", () => moveCard(card, "unsorted"), { iconName: "undo" }));
+    secondary.appendChild(previewBtn);
+    secondary.appendChild(makeOverflowMenu([renameBtn, revealBtn], filename));
+  }
+
+  actions.appendChild(primary);
+  actions.appendChild(secondary);
 }
 
 // ── Move card between columns ────────────────────────────────────────────────
@@ -638,6 +888,17 @@ function attachSelect(card) {
   });
 }
 
+// Selection is never signalled by colour alone: the card gets a high-contrast
+// ring plus a checked control, and the select button carries the state for
+// assistive tech.
+function _syncCardSelection(card) {
+  const selected = card.classList.contains("selected");
+  const control = card.querySelector(".card-select");
+  if (!control) return;
+  control.setAttribute("aria-pressed", selected ? "true" : "false");
+  control.setAttribute("aria-label", `${selected ? "Deselect" : "Select"} ${card.dataset.filename}`);
+}
+
 function toggleSelect(card) {
   if (selectedCards.has(card)) {
     selectedCards.delete(card);
@@ -646,11 +907,15 @@ function toggleSelect(card) {
     selectedCards.add(card);
     card.classList.add("selected");
   }
+  _syncCardSelection(card);
   updateBatchBar();
 }
 
 function clearSelection() {
-  selectedCards.forEach(card => card.classList.remove("selected"));
+  selectedCards.forEach(card => {
+    card.classList.remove("selected");
+    _syncCardSelection(card);
+  });
   selectedCards.clear();
   updateBatchBar();
 }
@@ -686,6 +951,15 @@ batchClearBtn.addEventListener("click", clearSelection);
 const MAX_GHOST_TILES = 6;
 const GHOST_TILE_W = SsDcl.GHOST_TILE_W;
 const GHOST_TILE_H = SsDcl.GHOST_TILE_H;
+const GHOST_TILE_RADIUS = 12;
+
+// The fanned stack is rasterised on a canvas, which cannot inherit CSS, so the
+// tile chrome is read from the design tokens instead of repeating the palette
+// here. Fallbacks only apply before the stylesheet has resolved.
+function ghostToken(name, fallback) {
+  const value = getComputedStyle(document.documentElement).getPropertyValue(name);
+  return (value || "").trim() || fallback;
+}
 
 function ghostRoundedRect(ctx, x, y, w, h, r) {
   ctx.beginPath();
@@ -739,6 +1013,11 @@ function buildBatchDragGhost(cards, total) {
   ctx.scale(dpr, dpr);
   ctx.translate(half, half); // fan center = drag hotspot later
 
+  const tileSurface = ghostToken("--surface-raised", "#FFFFFF");
+  const tileBorder = ghostToken("--border-strong", "rgba(0, 0, 0, 0.25)");
+  const badgeSurface = ghostToken("--surface-raised", "#FFFFFF");
+  const badgeInk = ghostToken("--ink-primary", "#1A1A18");
+
   // Draw most-tilted tiles first so the straight-on "front" card is on top.
   const order = [...layout.keys()].sort(
     (a, b) => Math.abs(layout[b].rot) - Math.abs(layout[a].rot)
@@ -749,15 +1028,15 @@ function buildBatchDragGhost(cards, total) {
     ctx.save();
     ctx.translate(t.dx, t.dy);
     ctx.rotate((t.rot * Math.PI) / 180);
-    ghostRoundedRect(ctx, -GHOST_TILE_W / 2, -GHOST_TILE_H / 2, GHOST_TILE_W, GHOST_TILE_H, 8);
-    ctx.fillStyle = "#fff";
+    ghostRoundedRect(ctx, -GHOST_TILE_W / 2, -GHOST_TILE_H / 2, GHOST_TILE_W, GHOST_TILE_H, GHOST_TILE_RADIUS);
+    ctx.fillStyle = tileSurface;
     ctx.fill();
     ctx.save();
     ctx.clip();
     ctx.drawImage(img, -GHOST_TILE_W / 2, -GHOST_TILE_H / 2, GHOST_TILE_W, GHOST_TILE_H);
     ctx.restore();
-    ghostRoundedRect(ctx, -GHOST_TILE_W / 2, -GHOST_TILE_H / 2, GHOST_TILE_W, GHOST_TILE_H, 8);
-    ctx.strokeStyle = "rgba(30, 30, 30, 0.25)";
+    ghostRoundedRect(ctx, -GHOST_TILE_W / 2, -GHOST_TILE_H / 2, GHOST_TILE_W, GHOST_TILE_H, GHOST_TILE_RADIUS);
+    ctx.strokeStyle = tileBorder;
     ctx.lineWidth = 1;
     ctx.stroke();
     ctx.restore();
@@ -774,9 +1053,9 @@ function buildBatchDragGhost(cards, total) {
     const bx = -GHOST_TILE_W / 2 + 10;
     const by = GHOST_TILE_H / 2 - 26;
     ghostRoundedRect(ctx, bx, by, bw, bh, bh / 2);
-    ctx.fillStyle = "rgba(255, 255, 255, 0.96)";
+    ctx.fillStyle = badgeSurface;
     ctx.fill();
-    ctx.fillStyle = "#1c1c1e";
+    ctx.fillStyle = badgeInk;
     ctx.textBaseline = "middle";
     ctx.fillText(label, bx + 10, by + bh / 2 + 0.5);
   }
@@ -864,12 +1143,13 @@ function revealInFinder(filename, source) {
   })
     .then(r => r.json())
     .then(data => {
-      statusMsg.textContent = data.ok
-        ? "Revealed in Finder."
-        : (data.error || "Could not reveal in Finder.");
+      announce(
+        data.ok ? "Revealed in Finder." : (data.error || "Could not reveal in Finder."),
+        { error: !data.ok },
+      );
     })
     .catch(() => {
-      statusMsg.textContent = "Network error — could not reveal in Finder.";
+      announce("Network error — could not reveal in Finder.", { error: true });
     });
 }
 
@@ -1062,7 +1342,16 @@ function _confirmLightboxRename() {
 // ── Keyboard shortcuts ───────────────────────────────────────────────────────
 function attachKeyboard(card) {
   card.addEventListener("keydown", e => {
+    // Inner controls own their own keys (Enter on Rename must not also
+    // toggle the card's selection).
+    if (e.target !== card) return;
     const col = getCardColumn(card);
+    // Enter/Space toggle multi-select, mirroring the click on the card.
+    if (e.key === "Enter" || e.key === " " || e.key === "Spacebar") {
+      e.preventDefault();
+      toggleSelect(card);
+      return;
+    }
     if (col === "unsorted") {
       if (e.key === "ArrowLeft") { e.preventDefault(); moveCard(card, "keep"); }
       if (e.key === "ArrowRight") { e.preventDefault(); moveCard(card, "trash"); }
@@ -1126,7 +1415,7 @@ function suggestBatch(fingerprints) {
   function abortBatch(message) {
     suggestProgressFill.style.width = "100%";
     suggestProgressText.textContent = message;
-    statusMsg.textContent = message;
+    announce(message, { error: true });
     setTimeout(() => { suggestProgress.hidden = true; suggestAllBtn.disabled = false; }, 4000);
   }
 
@@ -1140,7 +1429,7 @@ function suggestBatch(fingerprints) {
       suggestProgressFill.style.width = "100%";
       if (completed === 0 && firstError) {
         suggestProgressText.textContent = firstError;
-        statusMsg.textContent = firstError;
+        announce(firstError, { error: true });
         setTimeout(() => { suggestProgress.hidden = true; suggestAllBtn.disabled = false; }, 4000);
       } else if (completed === 0) {
         suggestProgressText.textContent = providerErrorCopy();
@@ -1152,7 +1441,7 @@ function suggestBatch(fingerprints) {
           suggestProgressText.textContent = `Done! ${completed} processed`;
         }
         if (firstError) {
-          statusMsg.textContent = firstError;
+          announce(firstError, { error: true });
         }
         setTimeout(() => { suggestProgress.hidden = true; suggestAllBtn.disabled = false; }, 2500);
       }
@@ -1209,7 +1498,7 @@ function suggestBatch(fingerprints) {
     .then(r => r.json())
     .then(h => {
       if (!h.ok) {
-        statusMsg.textContent = h.error || providerErrorCopy();
+        announce(h.error || providerErrorCopy(), { error: true });
         suggestAllBtn.disabled = false;
         suggestProgress.hidden = true;
         suggestProgressFill.style.width = "0%";
@@ -1223,7 +1512,7 @@ function suggestBatch(fingerprints) {
       processChunk(0);
     })
     .catch(() => {
-      statusMsg.textContent = providerErrorCopy();
+      announce(providerErrorCopy(), { error: true });
       suggestAllBtn.disabled = false;
       suggestProgress.hidden = true;
     });
@@ -1303,7 +1592,7 @@ suggestAllBtn.addEventListener("click", () => {
     .map(c => c.dataset.fingerprint)
     .filter(Boolean);
   if (newFps.length === 0) {
-    statusMsg.textContent = "No new screenshots to suggest names for.";
+    announce("No new screenshots to suggest names for.");
     return;
   }
   closeSettingsMenu();
@@ -1437,11 +1726,22 @@ function updateCounts() {
   countTrash.textContent    = nTrash;
   countKeep.textContent     = nKeep;
 
-  if (nTrash + nKeep === 0) {
-    statusMsg.textContent = `${total} screenshot${total !== 1 ? "s" : ""} \u2014 drag to sort`;
-  } else {
-    statusMsg.textContent = `${nTrash + nKeep}/${total} sorted \u00B7 ${nTrash} to trash`;
-  }
+  // The compact switcher carries the same tallies as the column headers so the
+  // hidden columns stay countable at narrow widths (PLAN 6.4).
+  compactCountKeep.textContent     = nKeep;
+  compactCountUnsorted.textContent = nUnsorted;
+  compactCountTrash.textContent    = nTrash;
+
+  // #sort-summary is the stable progress statement and the meter renders the
+  // same figure visually; #status-msg is reserved for transient notices.
+  const progress = SsDcl.progressSummary({ keep: nKeep, trash: nTrash, unsorted: nUnsorted, total: total });
+  sortSummary.textContent = progress.summary;
+  progressMeterFill.style.width = progress.percent + "%";
+  progressMeter.setAttribute("aria-valuenow", String(progress.percent));
+  progressMeter.setAttribute("aria-valuetext", progress.summary);
+
+  // The primary action names itself once there is something to clean up.
+  doneBtn.textContent = SsDcl.doneLabel(nTrash);
 
   undoBtn.disabled = undoStack.length === 0;
   doneBtn.disabled = nTrash === 0;
@@ -1545,7 +1845,7 @@ modalConfirm.addEventListener("click", () => {
   if (toTrash.length === 0) return;
 
   doneBtn.disabled = true;
-  statusMsg.textContent = "Moving to Trash\u2026";
+  announce("Moving to Trash\u2026");
 
   fetch("/api/done", {
     method: "POST",
@@ -1594,7 +1894,7 @@ modalConfirm.addEventListener("click", () => {
       const remaining = document.querySelectorAll(".card").length;
       if (remaining === 0) {
         emptyMsg.hidden = false;
-        statusMsg.textContent = "All done!";
+        announce("All done!");
         doneBtn.disabled = true;
       }
     })

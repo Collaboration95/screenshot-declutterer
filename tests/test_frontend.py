@@ -106,19 +106,53 @@ def test_static_css_served(client):
     assert b"kanban" in r.data
 
 
-def test_unsorted_card_actions_use_ordered_rows(client):
-    """Triage controls must have dedicated rows for the reference layout."""
+def test_card_actions_separate_primary_from_secondary(client):
+    """The decision buttons must outrank the file utilities (PLAN 6.1/6.3)."""
     c, _ = client
     js = c.get("/static/app.js").data
     css = c.get("/static/style.css").data
-    assert b"card-actions-triage" in js
-    assert b"makeActionRow(renameBtn, revealBtn, previewBtn)" in js
-    assert b"makeActionRow(suggestBtn)" in js
-    assert b"makeActionRow(keepBtn, trashBtn)" in js
-    assert b".card-actions-triage" in css
-    assert b".card-action-row" in css
-    assert b"gap: 25px" in css
-    assert b"gap: 12px" in css
+    assert b"card-action-primary" in js
+    assert b"card-action-secondary" in js
+    assert b".card-action-primary" in css
+    assert b".card-action-secondary" in css
+
+
+def test_action_bar_is_reachable_by_hover_and_keyboard_focus(client):
+    """Both pointers and keyboards must expose the same card controls."""
+    c, _ = client
+    css = c.get("/static/style.css").data
+    assert b".card:hover .card-actions" in css
+    assert b".card:focus-within .card-actions" in css
+
+
+def test_category_hints_render_as_labelled_badges(client):
+    """A categorised card names its suggestion instead of tinting silently."""
+    c, _ = client
+    js = c.get("/static/app.js").data
+    assert b"Likely keep" in js
+    assert b"Likely trash" in js
+
+
+def test_progress_summary_and_meter_share_one_source(client):
+    """#sort-summary and the meter both render the pure helper's figures."""
+    c, _ = client
+    js = c.get("/static/app.js").data
+    html = c.get("/").data
+    assert b"SsDcl.progressSummary" in js
+    assert b"SsDcl.doneLabel" in js
+    for element_id in (b"sort-summary", b"progress-meter", b"progress-meter-fill"):
+        assert b'id="' + element_id + b'"' in html
+
+
+def test_compact_switcher_shows_one_column_at_a_time(client):
+    """Below the compact breakpoint the switcher picks the visible column."""
+    c, _ = client
+    js = c.get("/static/app.js").data
+    html = c.get("/").data
+    assert b"setCompactColumn" in js
+    assert b"dataset.compactColumn" in js
+    for column in (b"keep", b"unsorted", b"trash"):
+        assert b'data-column-target="' + column + b'"' in html
 
 
 def test_app_js_sets_fingerprint_dataset(client):

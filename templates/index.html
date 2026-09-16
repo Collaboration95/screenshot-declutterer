@@ -8,61 +8,115 @@
        fetched, so the first paint is already in the right palette. No inline
        script is used anywhere; the CSP script-src stays 'self'. -->
   <script src="/static/theme-init.js?v=1"></script>
-  <link rel="stylesheet" href="/static/style.css?v=6" />
+  <link rel="stylesheet" href="/static/style.css?v=7" />
 </head>
 <body>
-  <header>
-    <div class="header-left">
-      <h1>Screenshot Declutterer</h1>
-      <button id="llm-server-btn" class="header-llm-btn" hidden data-tooltip="Start or stop the local LLM server (LiteRT)" aria-label="Manage the LLM server"></button>
-    </div>
-    <div class="header-center">
-      <span id="status-msg" role="status" aria-live="polite"></span>
-    </div>
-    <div class="header-right">
-      <label for="sort-select" class="sr-only">Sort order</label>
-      <select id="sort-select" aria-label="Sort screenshots">
-        <option value="date_desc">Newest first</option>
-        <option value="date">Oldest first</option>
-        <option value="name">Name (A–Z)</option>
-        <option value="name_desc">Name (Z–A)</option>
-      </select>
-      <button id="undo-btn" data-tooltip="Undo last move" disabled aria-label="Undo last move">Undo</button>
-      <button id="done-btn" data-tooltip="Move screenshots to Trash" disabled aria-label="Move screenshots to trash">Done</button>
-      <button id="settings-btn" class="header-settings-btn" data-tooltip="Settings" aria-label="Open settings">⚙</button>
-    </div>
-  </header>
-
-  <main class="kanban" role="region" aria-label="Screenshot sorting board">
-    <!-- Keep column (left) -->
-    <section class="column column-keep" id="col-keep" data-column="keep" role="list" aria-label="Keep column">
-      <div class="column-header">
-        <span class="column-title">Keep</span>
-        <span class="column-count" id="count-keep">0</span>
+  <div class="app-shell">
+    <!-- Application bar: identity + local/LLM status on the left, the stable
+         progress summary in the middle, workflow controls on the right. -->
+    <header class="appbar">
+      <div class="appbar-brand">
+        <span class="brand-mark" aria-hidden="true">
+          <svg viewBox="0 0 24 24" width="18" height="18" focusable="false" aria-hidden="true">
+            <path d="M4 7.5A2.5 2.5 0 0 1 6.5 5h11A2.5 2.5 0 0 1 20 7.5v9a2.5 2.5 0 0 1-2.5 2.5h-11A2.5 2.5 0 0 1 4 16.5v-9Z" fill="none" stroke="currentColor" stroke-width="1.7" />
+            <path d="M8.5 14.5 11 12l2 2 2.5-3" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" />
+          </svg>
+        </span>
+        <h1 class="brand-name">Screenshot Declutterer</h1>
+        <span class="status-pill status-pill-local" data-tooltip="Screenshots stay on this Mac \u2014 nothing is uploaded">
+          <span class="status-dot" aria-hidden="true"></span>
+          <span class="status-pill-text">On-device</span>
+          <span class="sr-only">\u2014 screenshots stay on this Mac</span>
+        </span>
+        <button type="button" id="llm-server-btn" class="status-pill status-pill-llm is-stopped" hidden
+                data-tooltip="Local AI server \u2014 click to start" aria-label="Manage the LLM server">
+          <span class="status-dot" aria-hidden="true"></span>
+          <span class="status-pill-text" id="llm-status-label">AI stopped</span>
+        </button>
       </div>
-      <div class="column-cards" id="cards-keep"></div>
-    </section>
 
-    <!-- Unsorted column (center) -->
-    <section class="column column-unsorted" id="col-unsorted" data-column="unsorted" role="list" aria-label="Unsorted column">
-      <div class="column-header">
-        <span class="column-title">Unsorted</span>
-        <span class="column-count" id="count-unsorted">0</span>
+      <div class="appbar-progress">
+        <span class="progress-summary" id="sort-summary" aria-live="polite" aria-atomic="true">Loading\u2026</span>
+        <div class="progress-meter" id="progress-meter" role="progressbar" aria-labelledby="sort-summary"
+             aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" aria-valuetext="Loading">
+          <span class="progress-meter-fill" id="progress-meter-fill"></span>
+        </div>
+        <p id="status-msg" class="appbar-status" role="status" aria-live="polite"></p>
       </div>
-      <div class="column-cards" id="cards-unsorted"></div>
-      <p id="loading-msg">Loading screenshots…</p>
-      <p id="empty-msg" hidden>No screenshots found on your Desktop or tracked folders.</p>
-    </section>
 
-    <!-- Trash column (right) -->
-    <section class="column column-trash" id="col-trash" data-column="trash" role="list" aria-label="Trash column">
-      <div class="column-header">
-        <span class="column-title">Trash</span>
-        <span class="column-count" id="count-trash">0</span>
+      <div class="appbar-actions">
+        <label class="appbar-label" for="sort-select">Sort</label>
+        <select id="sort-select" aria-label="Sort screenshots">
+          <option value="date_desc">Newest first</option>
+          <option value="date">Oldest first</option>
+          <option value="name">Name (A\u2013Z)</option>
+          <option value="name_desc">Name (Z\u2013A)</option>
+        </select>
+        <button id="undo-btn" class="btn btn-ghost btn-sm" data-tooltip="Undo last move" disabled aria-label="Undo last move">
+          <svg class="icon" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" focusable="false">
+            <path d="M8 5 4 9l4 4" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" />
+            <path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H10" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" />
+          </svg>
+          <span>Undo</span>
+        </button>
+        <button id="done-btn" class="btn btn-primary btn-sm" data-tooltip="Move screenshots to Trash" disabled aria-label="Move screenshots to trash">Done</button>
+        <button id="settings-btn" class="icon-btn" data-tooltip="Settings" aria-label="Open settings">
+          <svg class="icon" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" focusable="false">
+            <path d="M4 7h7M16 7h4M4 17h4M13 17h7" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" />
+            <circle cx="13.5" cy="7" r="2.3" fill="none" stroke="currentColor" stroke-width="1.7" />
+            <circle cx="10.5" cy="17" r="2.3" fill="none" stroke="currentColor" stroke-width="1.7" />
+          </svg>
+        </button>
       </div>
-      <div class="column-cards" id="cards-trash"></div>
-    </section>
-  </main>
+    </header>
+
+    <!-- Compact (<=1024px) column switcher: one column at a time with counts,
+         so the primary actions never squeeze off screen. -->
+    <nav id="column-switcher" class="compact-switcher" aria-label="Choose board column">
+      <button type="button" class="compact-switcher-item" data-column-target="keep" aria-pressed="false">
+        Keep <span class="compact-switcher-count" id="compact-count-keep">0</span>
+      </button>
+      <button type="button" class="compact-switcher-item" data-column-target="unsorted" aria-pressed="true">
+        Unsorted <span class="compact-switcher-count" id="compact-count-unsorted">0</span>
+      </button>
+      <button type="button" class="compact-switcher-item" data-column-target="trash" aria-pressed="false">
+        Trash <span class="compact-switcher-count" id="compact-count-trash">0</span>
+      </button>
+    </nav>
+
+    <div class="workspace">
+      <main class="kanban" id="kanban" role="region" aria-label="Screenshot sorting board" data-compact-column="unsorted">
+        <!-- Keep column (left) -->
+        <section class="column column-keep" id="col-keep" data-column="keep" role="list" aria-label="Keep column">
+          <div class="column-header">
+            <span class="column-title">Keep</span>
+            <span class="column-count" id="count-keep">0</span>
+          </div>
+          <div class="column-cards" id="cards-keep"></div>
+        </section>
+
+        <!-- Unsorted column (center) -->
+        <section class="column column-unsorted" id="col-unsorted" data-column="unsorted" role="list" aria-label="Unsorted column">
+          <div class="column-header">
+            <span class="column-title">Unsorted</span>
+            <span class="column-count" id="count-unsorted">0</span>
+          </div>
+          <div class="column-cards" id="cards-unsorted"></div>
+          <p id="loading-msg" class="board-state">Loading screenshots\u2026</p>
+          <p id="empty-msg" class="board-state" hidden>No screenshots found on your Desktop or tracked folders.</p>
+        </section>
+
+        <!-- Trash column (right) -->
+        <section class="column column-trash" id="col-trash" data-column="trash" role="list" aria-label="Trash column">
+          <div class="column-header">
+            <span class="column-title">Trash</span>
+            <span class="column-count" id="count-trash">0</span>
+          </div>
+          <div class="column-cards" id="cards-trash"></div>
+        </section>
+      </main>
+    </div>
+  </div>
 
   <!-- Batch action bar (multi-select) -->
   <div id="batch-bar" class="batch-bar" hidden role="toolbar" aria-label="Batch actions">
@@ -96,7 +150,7 @@
   <div id="confirm-modal" class="modal-overlay" hidden role="dialog" aria-labelledby="modal-title">
     <div class="modal">
       <p class="modal-title" id="modal-title">Move screenshots to Trash?</p>
-      <p class="modal-desc">This uses macOS Trash — you can recover files if needed.</p>
+      <p class="modal-desc">This uses macOS Trash &mdash; you can recover files if needed.</p>
       <div class="modal-actions">
         <button class="modal-btn modal-cancel" id="modal-cancel">Cancel</button>
         <button class="modal-btn modal-confirm" id="modal-confirm">Move to Trash</button>
@@ -152,8 +206,8 @@
       <div class="settings-field settings-field-row">
         <label for="theme-toggle">Toggle Mode</label>
         <button id="theme-toggle" class="header-theme-btn" data-tooltip="Switch light/dark theme" aria-label="Toggle dark mode">
-          <span class="theme-icon-light">☀</span>
-          <span class="theme-icon-dark">☾</span>
+          <span class="theme-icon-light">\u2600</span>
+          <span class="theme-icon-dark">\u263e</span>
         </button>
       </div>
       <div class="settings-field">
@@ -163,14 +217,14 @@
         <p id="tracked-folders-error" class="tracked-error" role="alert"></p>
       </div>
     </div>
-    <button id="suggest-all-btn" class="menu-suggest-all-btn" data-tooltip="Suggest names for all new screenshots" aria-label="Suggest names for all new screenshots">✨ Suggest All</button>
+    <button id="suggest-all-btn" class="menu-suggest-all-btn" data-tooltip="Suggest names for all new screenshots" aria-label="Suggest names for all new screenshots">\u2728 Suggest All</button>
     <div class="settings-actions">
       <button class="modal-btn modal-cancel" id="settings-cancel">Close</button>
       <button class="modal-btn modal-confirm settings-save-btn" id="settings-save">Save</button>
     </div>
   </div>
 
-  <script src="/static/ss_dcl_pure.js?v=4"></script>
-  <script src="/static/app.js?v=5"></script>
+  <script src="/static/ss_dcl_pure.js?v=5"></script>
+  <script src="/static/app.js?v=6"></script>
 </body>
 </html>
