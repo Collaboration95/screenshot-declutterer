@@ -78,57 +78,51 @@ const batchClearBtn = document.getElementById("batch-clear-btn");
 const columns = [colTrash, colUnsorted, colKeep];
 
 // ── Theme management ─────────────────────────────────────────────────────────
-const THEME_KEY = "ss-dcl-theme";
+// static/theme-init.js resolved and applied the stored mode before the first
+// paint, so this file only owns the interaction and the accessible label. The
+// storage key is owned by the bootstrap, so app.js references it instead of
+// declaring a second copy that could drift.
+const THEME_KEY = SsDclTheme.THEME_STORAGE_KEY;
 
-function applyTheme(mode) {
-  if (mode === "dark") {
-    document.documentElement.setAttribute("data-theme", "dark");
-  } else if (mode === "light") {
-    document.documentElement.removeAttribute("data-theme");
-  } else {
-    const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
-    if (prefersDark) {
-      document.documentElement.setAttribute("data-theme", "dark");
-    } else {
-      document.documentElement.removeAttribute("data-theme");
-    }
-  }
-}
+const themeToggle = document.getElementById("theme-toggle");
 
 function getSavedTheme() {
-  try { return localStorage.getItem(THEME_KEY) || "auto"; } catch (_) { return "auto"; }
+  return SsDclTheme.readMode(window);
 }
 
-function saveTheme(mode) {
-  try { localStorage.setItem(THEME_KEY, mode); } catch (_) {}
-}
-
-function cycleTheme() {
-  const current = getSavedTheme();
-  const next = { auto: "dark", dark: "light", light: "auto" }[current] || "auto";
-  saveTheme(next);
-  applyTheme(next);
-  _updateThemeLabel();
+function applyTheme(mode) {
+  return SsDclTheme.applyTheme(mode, window);
 }
 
 function _updateThemeLabel() {
-  const btn = document.getElementById("theme-toggle");
-  if (!btn) return;
+  if (!themeToggle) return;
   const mode = getSavedTheme();
-  const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
-  const effective = mode === "auto" ? (prefersDark ? "dark" : "light") : mode;
-  btn.setAttribute("aria-label", "Theme: " + mode + (mode === "auto" ? " (" + effective + ")" : "") + " — click to cycle");
+  const label = SsDclTheme.themeLabel(mode, SsDclTheme.systemPrefersDark(window));
+  themeToggle.setAttribute("aria-label", label + " — click to cycle");
+  themeToggle.setAttribute(
+    "data-tooltip",
+    SsDclTheme.effectiveTheme(mode, window) === "dark" ? "Switch to light theme" : "Switch to dark theme"
+  );
 }
 
-applyTheme(getSavedTheme());
-window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => {
-  if (getSavedTheme() === "auto") applyTheme("auto");
-});
-
-document.getElementById("theme-toggle").addEventListener("click", () => {
-  cycleTheme();
+function cycleTheme() {
+  const next = SsDclTheme.cycleTheme(window);
   _updateThemeLabel();
-});
+  return next;
+}
+
+if (themeToggle) {
+  themeToggle.addEventListener("click", cycleTheme);
+}
+
+// With "auto" selected the board has to follow the OS live.
+if (typeof window.matchMedia === "function") {
+  window.matchMedia(SsDclTheme.DARK_QUERY).addEventListener("change", () => {
+    if (getSavedTheme() === "auto") applyTheme("auto");
+  });
+}
+
+// The bootstrap already painted the right theme; this only syncs the label.
 _updateThemeLabel();
 
 // ── Settings state (loaded on init) ────────────────────────────────────────────

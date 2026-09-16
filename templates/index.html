@@ -4,7 +4,11 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Screenshot Declutterer</title>
-  <link rel="stylesheet" href="/static/style.css?v=5" />
+  <!-- Resolves and applies the stored theme before the stylesheet is even
+       fetched, so the first paint is already in the right palette. No inline
+       script is used anywhere; the CSP script-src stays 'self'. -->
+  <script src="/static/theme-init.js?v=1"></script>
+  <link rel="stylesheet" href="/static/style.css?v=6" />
 </head>
 <body>
   <header>
@@ -167,6 +171,6 @@
   </div>
 
   <script src="/static/ss_dcl_pure.js?v=4"></script>
-  <script src="/static/app.js?v=4"></script>
+  <script src="/static/app.js?v=5"></script>
 </body>
 </html>
