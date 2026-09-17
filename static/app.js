@@ -44,6 +44,18 @@ const lightboxRenameInput = document.getElementById("lightbox-rename-input");
 const lightboxRenameError = document.getElementById("lightbox-rename-error");
 const lightboxBar = document.querySelector(".lightbox-bar");
 const cardTooltip = document.getElementById("card-tooltip");
+const lightboxPrev = document.getElementById("lightbox-prev");
+const lightboxNext = document.getElementById("lightbox-next");
+const lightboxPosition = document.getElementById("lightbox-position");
+const lightboxRenameBtn = document.getElementById("lightbox-rename-btn");
+
+const toastRegion = document.getElementById("toast-region");
+const feedbackBanner = document.getElementById("feedback-banner");
+const feedbackBannerTitle = document.getElementById("feedback-banner-title");
+const feedbackBannerMessage = document.getElementById("feedback-banner-message");
+const feedbackBannerDetails = document.getElementById("feedback-banner-details");
+const feedbackBannerList = document.getElementById("feedback-banner-list");
+const feedbackBannerClose = document.getElementById("feedback-banner-close");
 
 const confirmModal = document.getElementById("confirm-modal");
 const modalTitle   = document.getElementById("modal-title");
@@ -56,11 +68,42 @@ const settingsModel   = document.getElementById("settings-model");
 const settingsAuto    = document.getElementById("settings-auto");
 const settingsCancel  = document.getElementById("settings-cancel");
 const settingsSave    = document.getElementById("settings-save");
+const settingsCloseBtn = document.getElementById("settings-close-btn");
+const settingsSaveStatus = document.getElementById("settings-save-status");
+const settingsLLMStatus = document.getElementById("settings-llm-status");
+const settingsLLMStatusText = document.getElementById("settings-llm-status-text");
+const settingsLLMAction = document.getElementById("settings-llm-action");
+const appbar = document.querySelector(".appbar");
 const trackedFoldersList = document.getElementById("tracked-folders-list");
 const addFolderBtn    = document.getElementById("add-folder-btn");
 const trackedFoldersError = document.getElementById("tracked-folders-error");
 
 const llmServerBtn    = document.getElementById("llm-server-btn");
+const llmStatusLabel  = document.getElementById("llm-status-label");
+const llmMenu         = document.getElementById("llm-menu");
+const llmMenuAction   = document.getElementById("llm-menu-action");
+const llmMenuStatus   = document.getElementById("llm-menu-status");
+const llmMenuDesc     = document.getElementById("llm-menu-desc");
+
+const sortSummary        = document.getElementById("sort-summary");
+const progressMeter      = document.getElementById("progress-meter");
+const progressMeterFill  = document.getElementById("progress-meter-fill");
+const allSortedMsg = document.getElementById("all-sorted-msg");
+const scanErrorMsg = document.getElementById("scan-error-msg");
+const scanErrorDetail = document.getElementById("scan-error-detail");
+const refreshButtons = [
+  document.getElementById("refresh-btn"),
+  document.getElementById("refresh-sorted-btn"),
+  document.getElementById("retry-scan-btn"),
+].filter(Boolean);
+const suggestProgressFailure = document.getElementById("suggest-progress-failure");
+const suggestProgressBar = suggestProgress ? suggestProgress.querySelector('[role="progressbar"]') : null;
+
+const kanban         = document.getElementById("kanban");
+const columnSwitcher = document.getElementById("column-switcher");
+const compactCountKeep     = document.getElementById("compact-count-keep");
+const compactCountUnsorted = document.getElementById("compact-count-unsorted");
+const compactCountTrash    = document.getElementById("compact-count-trash");
 
 const renameModal   = document.getElementById("rename-modal");
 const renameInput   = document.getElementById("rename-input");
@@ -78,57 +121,76 @@ const batchClearBtn = document.getElementById("batch-clear-btn");
 const columns = [colTrash, colUnsorted, colKeep];
 
 // ── Theme management ─────────────────────────────────────────────────────────
-const THEME_KEY = "ss-dcl-theme";
-
-function applyTheme(mode) {
-  if (mode === "dark") {
-    document.documentElement.setAttribute("data-theme", "dark");
-  } else if (mode === "light") {
-    document.documentElement.removeAttribute("data-theme");
-  } else {
-    const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
-    if (prefersDark) {
-      document.documentElement.setAttribute("data-theme", "dark");
-    } else {
-      document.documentElement.removeAttribute("data-theme");
-    }
-  }
-}
+// static/theme-init.js resolved and applied the stored mode before the first
+// paint, so this file only owns the interaction and the accessible label. The
+// storage key is owned by the bootstrap, so app.js references it instead of
+// declaring a second copy that could drift.
+const THEME_KEY = SsDclTheme.THEME_STORAGE_KEY;
+const themeChoices = [...document.querySelectorAll("[data-theme-choice]")];
+const themeColorMeta = document.getElementById("theme-color-meta");
 
 function getSavedTheme() {
-  try { return localStorage.getItem(THEME_KEY) || "auto"; } catch (_) { return "auto"; }
+  return SsDclTheme.readMode(window);
 }
 
-function saveTheme(mode) {
-  try { localStorage.setItem(THEME_KEY, mode); } catch (_) {}
-}
-
-function cycleTheme() {
-  const current = getSavedTheme();
-  const next = { auto: "dark", dark: "light", light: "auto" }[current] || "auto";
-  saveTheme(next);
-  applyTheme(next);
-  _updateThemeLabel();
+function applyTheme(mode) {
+  return SsDclTheme.applyTheme(mode, window);
 }
 
 function _updateThemeLabel() {
-  const btn = document.getElementById("theme-toggle");
-  if (!btn) return;
   const mode = getSavedTheme();
-  const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
-  const effective = mode === "auto" ? (prefersDark ? "dark" : "light") : mode;
-  btn.setAttribute("aria-label", "Theme: " + mode + (mode === "auto" ? " (" + effective + ")" : "") + " — click to cycle");
+  themeChoices.forEach(choice => {
+    const selected = choice.dataset.themeChoice === mode;
+    choice.setAttribute("aria-checked", String(selected));
+    choice.classList.toggle("is-selected", selected);
+  });
+  if (themeColorMeta) {
+    themeColorMeta.content = SsDclTheme.effectiveTheme(mode, window) === "dark" ? "#171815" : "#F7F6E8";
+  }
 }
 
-applyTheme(getSavedTheme());
-window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => {
-  if (getSavedTheme() === "auto") applyTheme("auto");
+function cycleTheme() {
+  const next = SsDclTheme.cycleTheme(window);
+  _updateThemeLabel();
+  return next;
+}
+
+themeChoices.forEach(choice => {
+  choice.addEventListener("click", () => {
+    selectTheme(choice.dataset.themeChoice);
+  });
+  choice.addEventListener("keydown", event => {
+    if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+    event.preventDefault();
+    const index = themeChoices.indexOf(choice);
+    const delta = event.key === "ArrowRight" ? 1 : -1;
+    const next = themeChoices[(index + delta + themeChoices.length) % themeChoices.length];
+    next.focus();
+    selectTheme(next.dataset.themeChoice);
+  });
 });
 
-document.getElementById("theme-toggle").addEventListener("click", () => {
-  cycleTheme();
+function selectTheme(mode) {
+  // Keep the ownership contract visible here: theme-init.js owns the key and
+  // persistence implementation; app.js only selects one of its known modes.
+  void THEME_KEY;
+  SsDclTheme.writeMode(mode, window);
+  applyTheme(mode);
   _updateThemeLabel();
-});
+  announce(`Theme set to ${mode === "auto" ? "System" : mode === "dark" ? "Dark" : "Light"}.`, { type: "success", timeout: 3000 });
+}
+
+// With "auto" selected the board has to follow the OS live.
+if (typeof window.matchMedia === "function") {
+  window.matchMedia(SsDclTheme.DARK_QUERY).addEventListener("change", () => {
+    if (getSavedTheme() === "auto") {
+      applyTheme("auto");
+      _updateThemeLabel();
+    }
+  });
+}
+
+// The bootstrap already painted the right theme; this only syncs the label.
 _updateThemeLabel();
 
 // ── Settings state (loaded on init) ────────────────────────────────────────────
@@ -144,36 +206,186 @@ function providerErrorCopy() {
   return `${label} is not running — use the Start button and try again.`;
 }
 
-// ── Managed LiteRT server (start/stop button) ───────────────────────────────
+// ── Transient announcements ─────────────────────────────────────────────────
+// #sort-summary owns the stable progress statement, so #status-msg only ever
+// carries a short-lived notice: it clears itself instead of overwriting the
+// summary indefinitely (PLAN 6.2).
+let _statusTimer = null;
+let _toastId = 0;
+
+function _toastType(options) {
+  const opts = options || {};
+  return opts.error ? "error" : (opts.type || "info");
+}
+
+function showToast(message, options) {
+  if (!toastRegion || !message) return;
+  const opts = options || {};
+  const toast = document.createElement("div");
+  const type = _toastType(opts);
+  toast.className = `toast toast-${type}`;
+  toast.dataset.toastId = String(++_toastId);
+  toast.setAttribute("role", type === "error" ? "alert" : "status");
+
+  const iconEl = document.createElement("span");
+  iconEl.className = "toast-icon";
+  iconEl.setAttribute("aria-hidden", "true");
+  iconEl.textContent = type === "success" ? "✓" : type === "error" ? "!" : type === "warning" ? "!" : "i";
+  const copy = document.createElement("span");
+  copy.className = "toast-copy";
+  copy.textContent = message;
+  const close = document.createElement("button");
+  close.type = "button";
+  close.className = "toast-dismiss";
+  close.setAttribute("aria-label", "Dismiss notification");
+  close.textContent = "×";
+  close.addEventListener("click", () => toast.remove());
+  toast.append(iconEl, copy, close);
+  toastRegion.appendChild(toast);
+
+  const timeout = opts.timeout === undefined ? (type === "error" ? 0 : 6500) : opts.timeout;
+  if (timeout > 0) {
+    let timer = setTimeout(() => toast.remove(), timeout);
+    const pause = () => { clearTimeout(timer); };
+    const resume = () => { timer = setTimeout(() => toast.remove(), timeout); };
+    toast.addEventListener("mouseenter", pause);
+    toast.addEventListener("focusin", pause);
+    toast.addEventListener("mouseleave", resume);
+    toast.addEventListener("focusout", resume);
+  }
+  return toast;
+}
+
+function showFeedbackBanner(title, message, options) {
+  if (!feedbackBanner) return;
+  const opts = options || {};
+  feedbackBanner.className = `feedback-banner feedback-${opts.type || (opts.error ? "error" : "warning")}`;
+  feedbackBannerTitle.textContent = title || "Something needs your attention";
+  feedbackBannerMessage.textContent = message || "";
+  feedbackBannerList.textContent = "";
+  const details = opts.details || [];
+  feedbackBannerDetails.hidden = details.length === 0;
+  details.forEach(detail => {
+    const item = document.createElement("li");
+    item.textContent = detail;
+    feedbackBannerList.appendChild(item);
+  });
+  feedbackBanner.hidden = false;
+  if (feedbackBannerClose) feedbackBannerClose.focus({ preventScroll: true });
+}
+
+function hideFeedbackBanner() {
+  if (feedbackBanner) feedbackBanner.hidden = true;
+}
+
+if (feedbackBannerClose) feedbackBannerClose.addEventListener("click", hideFeedbackBanner);
+
+function announce(message, options) {
+  const opts = options || {};
+  if (_statusTimer) clearTimeout(_statusTimer);
+  _statusTimer = null;
+  statusMsg.textContent = message || "";
+  statusMsg.classList.toggle("is-error", !!opts.error);
+  if (!message) return;
+  showToast(message, opts);
+  if (opts.persistent) showFeedbackBanner(opts.title, message, opts);
+  if (opts.timeout !== 0) {
+    _statusTimer = setTimeout(() => {
+      statusMsg.textContent = "";
+      statusMsg.classList.remove("is-error");
+      _statusTimer = null;
+    }, opts.timeout || 8000);
+  }
+}
+
+// ── Managed LiteRT server status pill ───────────────────────────────────────
+// The state lives on the control itself (class + label + accessible name) so
+// the server condition is never communicated by button text alone.
+let llmServerState = "stopped";
+
+const LLM_STATE_COPY = {
+  ready: { label: "AI ready", hint: "Local AI server is running — click to stop it" },
+  stopped: { label: "AI stopped", hint: "Local AI server is stopped — click to start it" },
+  starting: { label: "AI starting", hint: "Local AI server is starting or stopping…" },
+  error: { label: "AI offline", hint: "Local AI server is unreachable — click to try starting it" },
+};
+
+function _setLLMStatus(state, labelOverride) {
+  llmServerState = state;
+  const copy = LLM_STATE_COPY[state] || LLM_STATE_COPY.stopped;
+  llmServerBtn.hidden = false;
+  llmServerBtn.classList.remove("is-ready", "is-stopped", "is-starting", "is-error");
+  llmServerBtn.classList.add(`is-${state}`);
+  if (llmStatusLabel) llmStatusLabel.textContent = labelOverride || copy.label;
+  llmServerBtn.disabled = state === "starting";
+  llmServerBtn.setAttribute("aria-label", copy.hint);
+  llmServerBtn.dataset.tooltip = copy.hint;
+  llmServerBtn.setAttribute("aria-expanded", String(!llmMenu.hidden));
+  if (llmMenuStatus) llmMenuStatus.textContent = copy.label.replace(/^AI /, "");
+  if (llmMenuDesc) llmMenuDesc.textContent = state === "error"
+    ? "The local AI server is unavailable. Start it to enable filename suggestions."
+    : "AI suggestions run on this Mac and never upload your screenshots.";
+  if (llmMenuAction) {
+    llmMenuAction.querySelector(".menu-item-label").textContent = state === "ready" ? "Stop local AI" : "Start local AI";
+    llmMenuAction.disabled = state === "starting";
+  }
+  if (settingsLLMStatus) {
+    settingsLLMStatus.className = `settings-llm-status status-${state}`;
+    settingsLLMStatusText.textContent = copy.hint;
+  }
+}
+
 // Label follows the last health verdict.
 function refreshLLMServerButton() {
   llmServerBtn.hidden = false;
   llmServerBtn.disabled = true;
   fetch("/api/llm/health")
     .then(r => r.json())
-    .then(h => {
-      llmServerBtn.textContent = h.ok ? "■ Stop LLM" : "▶ Start LLM";
-      llmServerBtn.disabled = false;
+    .then(h => _setLLMStatus(h.ok ? "ready" : (h.error ? "error" : "stopped")))
+    .catch(() => _setLLMStatus("error"));
+}
+
+function performLLMControl() {
+  const stopping = llmServerState === "ready";
+  _setLLMStatus("starting", stopping ? "AI stopping…" : "AI starting…");
+  fetch(stopping ? "/api/llm/stop" : "/api/llm/start", { method: "POST" })
+    .then(r => r.json())
+    .then(data => {
+      announce(data.message || data.error || "Server control failed.", { error: !data.ok });
+      refreshLLMServerButton();
     })
     .catch(() => {
-      llmServerBtn.textContent = "▶ Start LLM";
-      llmServerBtn.disabled = false;
+      announce("Couldn't reach the server controller.", { error: true });
+      refreshLLMServerButton();
     });
 }
 
-llmServerBtn.addEventListener("click", () => {
-  const starting = llmServerBtn.textContent.includes("Start");
-  llmServerBtn.disabled = true;
-  fetch(starting ? "/api/llm/start" : "/api/llm/stop", { method: "POST" })
-    .then(r => r.json())
-    .then(data => {
-      statusMsg.textContent = data.message || data.error || "Server control failed.";
-      refreshLLMServerButton();
-    })
-    .catch(() => {
-      statusMsg.textContent = "Couldn't reach the server controller.";
-      refreshLLMServerButton();
-    });
+function toggleLLMMenu() {
+  if (!llmMenu) return;
+  const opening = llmMenu.hidden;
+  closeCardOverflow();
+  llmMenu.hidden = !opening;
+  llmServerBtn.setAttribute("aria-expanded", String(opening));
+  if (opening) {
+    const action = llmMenu.querySelector("[role=menuitem]");
+    if (action) action.focus();
+  }
+}
+
+llmServerBtn.addEventListener("click", toggleLLMMenu);
+if (llmMenuAction) {
+  llmMenuAction.addEventListener("click", () => {
+    llmMenu.hidden = true;
+    llmServerBtn.setAttribute("aria-expanded", "false");
+    performLLMControl();
+  });
+}
+if (settingsLLMAction) settingsLLMAction.addEventListener("click", performLLMControl);
+document.addEventListener("click", event => {
+  if (!llmMenu || llmMenu.hidden) return;
+  if (llmMenu.contains(event.target) || llmServerBtn.contains(event.target)) return;
+  llmMenu.hidden = true;
+  llmServerBtn.setAttribute("aria-expanded", "false");
 });
 
 function fileKey(source, filename) {
@@ -229,6 +441,7 @@ function renderTrackedFolders() {
       trackedFoldersWorkingCopy.splice(idx, 1);
       trackedFoldersError.textContent = "";
       renderTrackedFolders();
+      updateSettingsDirty();
     });
     row.appendChild(pathSpan);
     row.appendChild(removeBtn);
@@ -270,6 +483,7 @@ if (addFolderBtn) {
         }
         trackedFoldersWorkingCopy.push(newPath);
         renderTrackedFolders();
+        updateSettingsDirty();
       })
       .catch(() => {
         addFolderBtn.disabled = false;
@@ -280,26 +494,51 @@ if (addFolderBtn) {
 }
 
 // ── Bootstrap ────────────────────────────────────────────────────────────────
+function setBoardState(state, detail) {
+  [loadingMsg, emptyMsg, allSortedMsg, scanErrorMsg].forEach(node => {
+    if (node) node.hidden = true;
+  });
+  if (state === "loading" && loadingMsg) loadingMsg.hidden = false;
+  if (state === "empty" && emptyMsg) emptyMsg.hidden = false;
+  if (state === "sorted" && allSortedMsg) allSortedMsg.hidden = false;
+  if (state === "error" && scanErrorMsg) {
+    scanErrorMsg.hidden = false;
+    if (scanErrorDetail) scanErrorDetail.textContent = detail || "Check that Desktop is available, then try again.";
+  }
+}
+
+function refreshScreenshots() {
+  document.querySelectorAll(".card").forEach(card => card.remove());
+  totalCards = 0;
+  currentFileKeys = new Set();
+  setBoardState("loading");
+  fetch("/api/state")
+    .then(r => r.json())
+    .then(state => loadScreenshots(state.decisions || {}))
+    .catch(() => loadScreenshots({}));
+}
+
 function init() {
   loadSettings().then(() => {
     refreshLLMServerButton();
-    fetch("/api/state")
-      .then(r => r.json())
-      .then(state => loadScreenshots(state.decisions || {}))
-      .catch(() => loadScreenshots({}));
+    refreshScreenshots();
   });
 }
 
 function loadScreenshots(savedDecisions) {
   clearSelection();
+  setBoardState("loading");
   fetch(`/api/screenshots?sort=${encodeURIComponent(currentSort)}`)
-    .then(r => r.json())
-    .then(files => {
-      loadingMsg.hidden = true;
+    .then(r => r.json().then(body => ({ ok: r.ok, body })))
+    .then(({ ok, body: files }) => {
+      if (!ok || !Array.isArray(files)) {
+        const detail = files && (files.error || files.message);
+        throw new Error(detail || "The screenshot scan failed.");
+      }
       if (files.length === 0) {
-        emptyMsg.hidden = false;
         totalCards = 0;
         currentFileKeys = new Set();
+        setBoardState("empty");
         updateCounts();
         return;
       }
@@ -330,6 +569,7 @@ function loadScreenshots(savedDecisions) {
                      : cardsUnsorted;
         target.appendChild(makeCard(f.name, f.source, col, f.fingerprint, f.memory_status, f.suggested_name, f.suggested_category));
       });
+      setBoardState("board");
       updateCounts();
       saveState();
 
@@ -341,13 +581,44 @@ function loadScreenshots(savedDecisions) {
         if (newFps.length > 0) suggestBatch(newFps);
       }
     })
-    .catch(() => {
-      loadingMsg.hidden = true;
-      statusMsg.textContent = "Failed to load screenshots.";
+    .catch(error => {
+      totalCards = 0;
+      currentFileKeys = new Set();
+      setBoardState("error", error.message);
+      updateCounts();
+      announce(error.message || "Failed to load screenshots.", {
+        error: true,
+        persistent: true,
+        title: "Scan failed",
+        timeout: 0,
+      });
     });
 }
 
+refreshButtons.forEach(button => button.addEventListener("click", refreshScreenshots));
+
 init();
+
+// ── Compact column switcher (<=1024px) ───────────────────────────────────────
+// Below the compact breakpoint the board shows one column at a time so every
+// primary action stays reachable without horizontal scrolling; this control
+// chooses which column is on screen (PLAN 6.4). The pressed state lives on the
+// group so assistive tech reads the switcher as a single selection.
+function setCompactColumn(target) {
+  if (!kanban || !columnSwitcher) return;
+  kanban.dataset.compactColumn = target;
+  columnSwitcher.querySelectorAll(".compact-switcher-item").forEach(btn => {
+    btn.setAttribute("aria-pressed", String(btn.dataset.columnTarget === target));
+  });
+}
+
+if (columnSwitcher) {
+  columnSwitcher.addEventListener("click", e => {
+    const btn = e.target.closest(".compact-switcher-item");
+    if (btn) setCompactColumn(btn.dataset.columnTarget);
+  });
+}
+
 
 // ── Sort ─────────────────────────────────────────────────────────────────────
 sortSelect.addEventListener("change", () => {
@@ -370,10 +641,72 @@ function saveState() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ decisions: obj }),
     }).catch(() => {
-      statusMsg.textContent = "Warning: failed to save state.";
+      announce("Warning: failed to save state.", { error: true });
     });
     _saveTimer = null;
   }, 300);
+}
+
+// ── Local icon set ───────────────────────────────────────────────────────────
+// Small stroke icons drawn from path data in this file: no font, no CDN, no
+// emoji glyph carrying meaning on its own (PLAN 6.2/6.4).
+const ICON_PATHS = {
+  keep: "M5 12.5 9.5 17 19 7",
+  trash: "M6 7h12M9.5 7V5h5v2M7.5 7l.9 12h7.2l.9-12M10.5 10.5v6M13.5 10.5v6",
+  preview: "M2.7 12S6.2 6.2 12 6.2 21.3 12 21.3 12 17.8 17.8 12 17.8 2.7 12 2.7 12Z M12 14.9a2.9 2.9 0 1 0 0-5.8 2.9 2.9 0 0 0 0 5.8Z",
+  rename: "M4.5 19.5h15M6.3 16.2 16 6.5a2 2 0 0 1 2.8 2.8l-9.7 9.7-3.6.8.8-3.6Z",
+  reveal: "M4 7.2A1.7 1.7 0 0 1 5.7 5.5h3.6l1.8 1.9h7.2A1.7 1.7 0 0 1 20 9.1v8.2a1.7 1.7 0 0 1-1.7 1.7H5.7A1.7 1.7 0 0 1 4 17.3V7.2Z",
+  suggest: "M11 4.5 12.4 8.6 16.5 10 12.4 11.4 11 15.5 9.6 11.4 5.5 10 9.6 8.6 11 4.5ZM17.5 14.5l.8 2.2 2.2.8-2.2.8-.8 2.2-.8-2.2-2.2-.8 2.2-.8.8-2.2Z",
+  undo: "M8 5 4 9l4 4M4 9h10.5a5.5 5.5 0 0 1 0 11H10",
+  more: "M7 12h.01M12 12h.01M17 12h.01",
+  check: "M5 12.5 9.5 17 19 7",
+};
+
+const SVG_NS = "http://www.w3.org/2000/svg";
+
+function icon(name, size) {
+  const svg = document.createElementNS(SVG_NS, "svg");
+  svg.setAttribute("class", "icon");
+  svg.setAttribute("viewBox", "0 0 24 24");
+  svg.setAttribute("width", String(size || 16));
+  svg.setAttribute("height", String(size || 16));
+  svg.setAttribute("aria-hidden", "true");
+  svg.setAttribute("focusable", "false");
+  const path = document.createElementNS(SVG_NS, "path");
+  path.setAttribute("d", ICON_PATHS[name] || "");
+  path.setAttribute("fill", "none");
+  path.setAttribute("stroke", "currentColor");
+  path.setAttribute("stroke-width", "1.9");
+  path.setAttribute("stroke-linecap", "round");
+  path.setAttribute("stroke-linejoin", "round");
+  svg.appendChild(path);
+  return svg;
+}
+
+// ── Category hint (4C) ───────────────────────────────────────────────────────
+// The learned category is announced in words as well as colour: a labelled
+// micro-badge plus the supplemental left border (PLAN 6.4).
+function _applyCategoryHint(card, category) {
+  card.classList.remove("category-hint-keep", "category-hint-trash");
+  const previous = card.querySelector(".card-badge");
+  if (previous) previous.remove();
+  delete card.dataset.suggestedCategory;
+  if (category !== "keep" && category !== "trash") return;
+  card.dataset.suggestedCategory = category;
+  card.classList.add(`category-hint-${category}`);
+  const badge = document.createElement("span");
+  badge.className = `card-badge badge badge-${category}`;
+  badge.textContent = category === "keep" ? "Likely keep" : "Likely trash";
+  badge.title =
+    category === "keep"
+      ? "Your past decisions suggest keeping this screenshot"
+      : "Your past decisions suggest trashing this screenshot";
+  const meta = card.querySelector(".card-meta");
+  if (meta) meta.appendChild(badge);
+}
+
+function _clearCategoryHint(card) {
+  _applyCategoryHint(card, null);
 }
 
 // ── Card factory ─────────────────────────────────────────────────────────────
@@ -404,16 +737,48 @@ function makeCard(filename, source, column, fingerprint, memoryStatus, suggested
   card.tabIndex = 0;
 
   const thumbUrl = `/api/thumb/${encodeURIComponent(filename)}${SsDcl.sourceQuery(source)}`;
+  const thumb = document.createElement("div");
+  thumb.className = "card-thumb";
+
   const img = document.createElement("img");
   img.src = thumbUrl;
   img.alt = filename;
   img.loading = "lazy";
   img.decoding = "async";
+  img.addEventListener("error", () => {
+    card.classList.add("image-error");
+    img.hidden = true;
+    const fallback = thumb.querySelector(".card-image-error") || document.createElement("div");
+    fallback.className = "card-image-error";
+    fallback.textContent = "Preview unavailable";
+    fallback.setAttribute("role", "img");
+    fallback.setAttribute("aria-label", `${filename}: preview unavailable`);
+    if (!fallback.parentElement) thumb.insertBefore(fallback, select);
+  });
 
-  const actions = document.createElement("div");
-  actions.className = "card-actions";
+  // Persistent selection affordance at the top-left of the thumbnail (PLAN
+  // 6.4 #4). It is a real button so assistive tech can find and name it, but it
+  // sits outside the tab order: the card itself takes focus, exposes the action
+  // bar on :focus-within, and Enter/Space toggles the same selection.
+  const select = document.createElement("button");
+  select.type = "button";
+  select.className = "card-select";
+  select.tabIndex = -1;
+  select.setAttribute("aria-pressed", "false");
+  select.setAttribute("aria-label", `Select ${filename}`);
+  select.appendChild(icon("check", 14));
 
-  card.appendChild(img);
+  thumb.appendChild(img);
+  thumb.appendChild(select);
+
+  const meta = document.createElement("div");
+  meta.className = "card-meta";
+
+  const name = document.createElement("span");
+  name.className = "card-name";
+  name.textContent = filename;
+  name.title = filename;
+  meta.appendChild(name);
 
   // Source tag for tracked folders
   if (source !== "Desktop") {
@@ -422,19 +787,25 @@ function makeCard(filename, source, column, fingerprint, memoryStatus, suggested
     const folderName = source.split("/").pop() || source;
     tag.textContent = `in: ${folderName}`;
     tag.title = source;
-    card.appendChild(tag);
+    meta.appendChild(tag);
   }
 
-  // Category hint visual (4C)
-  if (suggestedCategory === "keep" || suggestedCategory === "trash") {
-    card.classList.add("category-hint-" + suggestedCategory);
-  }
+  const actions = document.createElement("div");
+  actions.className = "card-actions";
+
+  card.appendChild(thumb);
+  card.appendChild(meta);
+
+  // Category hint: labelled micro-badge plus the supplemental left border.
+  _applyCategoryHint(card, suggestedCategory);
 
   // Suggestion badge (always visible when status is "suggested")
   if (memoryStatus === "suggested" && suggestedName) {
     card.appendChild(_makeSuggestionBadge(card));
   }
 
+  // The action bar must stay the last child: suggestBatch() inserts badges
+  // with insertBefore(badge, .card-actions).
   card.appendChild(actions);
 
   setCardActions(card, column);
@@ -486,56 +857,147 @@ function _makeSuggestionBadge(card) {
   return badge;
 }
 
-// ── Card action buttons ──────────────────────────────────────────────────────
-function setCardActions(card, column) {
-  const actions = card.querySelector(".card-actions");
-  actions.innerHTML = "";
-  actions.classList.toggle("card-actions-triage", column === "unsorted");
+// ── Card action bar ─────────────────────────────────────────────────────────
+// One bar per card, revealed on hover or keyboard focus (PLAN 6.4 #5/#6). The
+// decision (Keep / Trash) is always the primary cluster; preview, an optional
+// AI suggest, and the overflow menu that hides Rename / Reveal in Finder are
+// secondary. Keep and Trash cards reuse the very same bar, so the side trays
+// keep filename access and file actions instead of collapsing to image tiles.
+//
+// The overflow menu is a plain in-card popover: it is toggled by its own
+// trigger, and closes on selection, Escape, or an outside click. Nothing here
+// depends on hover to function.
+let _openOverflow = null;
 
-  const renameBtn = makeActionBtn("Rename", "btn-rename", () => openRenameModal(card));
-  const previewBtn = makeActionBtn("Preview", "btn-preview", () => openLightbox(card));
-  const revealBtn = makeActionBtn("Finder", "btn-reveal", () => revealInFinder(card.dataset.filename, card.dataset.source));
+function closeCardOverflow() {
+  if (!_openOverflow) return;
+  const trigger = _openOverflow.parentElement
+    ? _openOverflow.parentElement.querySelector(".btn-more")
+    : null;
+  _openOverflow.hidden = true;
+  if (trigger) trigger.setAttribute("aria-expanded", "false");
+  _openOverflow = null;
+}
 
-  if (column === "unsorted") {
-    const keepBtn = makeActionBtn("\u2190 Keep", "btn-keep", () => moveCard(card, "keep"));
-    const trashBtn = makeActionBtn("Trash \u2192", "btn-trash", () => moveCard(card, "trash"));
-
-    // Keep the triage controls in three predictable rows so the overlay is
-    // easy to scan: file actions, optional suggestion, then the decision.
-    actions.appendChild(makeActionRow(renameBtn, revealBtn, previewBtn));
-
-    // Show "✨ AI Suggest" for unprocessed files
-    if (card.dataset.memoryStatus === "new") {
-      const suggestBtn = makeActionBtn("✨ Suggest", "btn-suggest", () => suggestSingle(card));
-      actions.appendChild(makeActionRow(suggestBtn));
-    }
-
-    actions.appendChild(makeActionRow(keepBtn, trashBtn));
-  } else {
-    const undoBtn = makeActionBtn("\u21A9 Undo", "btn-undo", () => moveCard(card, "unsorted"));
-    actions.appendChild(previewBtn);
-    actions.appendChild(renameBtn);
-    actions.appendChild(revealBtn);
-    actions.appendChild(undoBtn);
+function toggleCardOverflow(menu, trigger) {
+  if (_openOverflow === menu) {
+    closeCardOverflow();
+    return;
   }
+  closeCardOverflow();
+  menu.hidden = false;
+  trigger.setAttribute("aria-expanded", "true");
+  _openOverflow = menu;
 }
 
-function makeActionRow(...buttons) {
-  const row = document.createElement("div");
-  row.className = "card-action-row";
-  buttons.forEach(button => row.appendChild(button));
-  return row;
-}
+document.addEventListener("click", e => {
+  if (!_openOverflow) return;
+  if (_openOverflow.contains(e.target)) return;
+  closeCardOverflow();
+});
 
-function makeActionBtn(label, cls, onClick) {
+function makeActionBtn(label, cls, onClick, options) {
+  const opts = options || {};
   const btn = document.createElement("button");
-  btn.className = `action-btn ${cls}`;
-  btn.textContent = label;
+  btn.type = "button";
+  btn.className = `action-btn ${cls}${opts.iconOnly ? " action-btn-icon" : ""}`;
+  if (opts.iconName) btn.appendChild(icon(opts.iconName, 15));
+  if (opts.iconOnly) {
+    // Icon-only controls carry their name in text, never in the glyph alone.
+    btn.setAttribute("aria-label", opts.ariaLabel || label);
+    btn.dataset.tooltip = opts.tooltip || opts.ariaLabel || label;
+  } else {
+    const text = document.createElement("span");
+    text.className = "action-btn-label";
+    text.textContent = label;
+    btn.appendChild(text);
+  }
   btn.addEventListener("click", e => {
     e.stopPropagation();
+    if (btn.closest(".card-overflow")) closeCardOverflow();
     onClick();
   });
   return btn;
+}
+
+// Overflow trigger + menu, grouped so the menu can anchor to the action bar.
+function makeOverflowMenu(items, contextLabel) {
+  const wrap = document.createElement("div");
+  wrap.className = "card-overflow-wrap";
+
+  const trigger = makeActionBtn("More", "btn-more", () => {}, {
+    iconName: "more",
+    iconOnly: true,
+    ariaLabel: `More actions for ${contextLabel}`,
+    tooltip: "More actions",
+  });
+  trigger.setAttribute("aria-haspopup", "menu");
+  trigger.setAttribute("aria-expanded", "false");
+
+  const menu = document.createElement("div");
+  menu.className = "card-overflow menu";
+  menu.setAttribute("role", "menu");
+  menu.setAttribute("aria-label", `More actions for ${contextLabel}`);
+  menu.hidden = true;
+  items.forEach(item => {
+    item.setAttribute("role", "menuitem");
+    menu.appendChild(item);
+  });
+
+  trigger.addEventListener("click", () => toggleCardOverflow(menu, trigger));
+  wrap.appendChild(trigger);
+  wrap.appendChild(menu);
+  return wrap;
+}
+
+function setCardActions(card, column) {
+  closeCardOverflow();
+  const actions = card.querySelector(".card-actions");
+  actions.textContent = "";
+
+  const primary = document.createElement("div");
+  primary.className = "card-action-primary";
+  const secondary = document.createElement("div");
+  secondary.className = "card-action-secondary";
+
+  const filename = card.dataset.filename;
+  const isNew = card.dataset.memoryStatus === "new";
+
+  const previewBtn = makeActionBtn("Preview", "btn-preview", () => openLightbox(card), {
+    iconName: "preview",
+    iconOnly: true,
+    ariaLabel: `Preview ${filename}`,
+    tooltip: "Preview",
+  });
+  const renameBtn = makeActionBtn("Rename", "btn-rename", () => openRenameModal(card), {
+    iconName: "rename",
+  });
+  const revealBtn = makeActionBtn(
+    "Reveal in Finder",
+    "btn-reveal",
+    () => revealInFinder(card.dataset.filename, card.dataset.source),
+    { iconName: "reveal" }
+  );
+  const suggestBtn = makeActionBtn("Suggest name", "btn-suggest", () => suggestSingle(card), {
+    iconName: "suggest",
+  });
+
+  if (column === "unsorted") {
+    primary.appendChild(makeActionBtn("Keep", "btn-keep", () => moveCard(card, "keep"), { iconName: "keep" }));
+    primary.appendChild(makeActionBtn("Trash", "btn-trash", () => moveCard(card, "trash"), { iconName: "trash" }));
+    secondary.appendChild(previewBtn);
+    // Unprocessed files get the one-click AI action; processed ones keep it
+    // reachable from the overflow menu.
+    const overflow = isNew ? [renameBtn, revealBtn] : [suggestBtn, renameBtn, revealBtn];
+    secondary.appendChild(makeOverflowMenu(overflow, filename));
+  } else {
+    primary.appendChild(makeActionBtn("Unsorted", "btn-undo", () => moveCard(card, "unsorted"), { iconName: "undo" }));
+    secondary.appendChild(previewBtn);
+    secondary.appendChild(makeOverflowMenu([renameBtn, revealBtn], filename));
+  }
+
+  actions.appendChild(primary);
+  actions.appendChild(secondary);
 }
 
 // ── Move card between columns ────────────────────────────────────────────────
@@ -644,6 +1106,17 @@ function attachSelect(card) {
   });
 }
 
+// Selection is never signalled by colour alone: the card gets a high-contrast
+// ring plus a checked control, and the select button carries the state for
+// assistive tech.
+function _syncCardSelection(card) {
+  const selected = card.classList.contains("selected");
+  const control = card.querySelector(".card-select");
+  if (!control) return;
+  control.setAttribute("aria-pressed", selected ? "true" : "false");
+  control.setAttribute("aria-label", `${selected ? "Deselect" : "Select"} ${card.dataset.filename}`);
+}
+
 function toggleSelect(card) {
   if (selectedCards.has(card)) {
     selectedCards.delete(card);
@@ -652,11 +1125,15 @@ function toggleSelect(card) {
     selectedCards.add(card);
     card.classList.add("selected");
   }
+  _syncCardSelection(card);
   updateBatchBar();
 }
 
 function clearSelection() {
-  selectedCards.forEach(card => card.classList.remove("selected"));
+  selectedCards.forEach(card => {
+    card.classList.remove("selected");
+    _syncCardSelection(card);
+  });
   selectedCards.clear();
   updateBatchBar();
 }
@@ -692,6 +1169,15 @@ batchClearBtn.addEventListener("click", clearSelection);
 const MAX_GHOST_TILES = 6;
 const GHOST_TILE_W = SsDcl.GHOST_TILE_W;
 const GHOST_TILE_H = SsDcl.GHOST_TILE_H;
+const GHOST_TILE_RADIUS = 12;
+
+// The fanned stack is rasterised on a canvas, which cannot inherit CSS, so the
+// tile chrome is read from the design tokens instead of repeating the palette
+// here. Fallbacks only apply before the stylesheet has resolved.
+function ghostToken(name, fallback) {
+  const value = getComputedStyle(document.documentElement).getPropertyValue(name);
+  return (value || "").trim() || fallback;
+}
 
 function ghostRoundedRect(ctx, x, y, w, h, r) {
   ctx.beginPath();
@@ -745,6 +1231,11 @@ function buildBatchDragGhost(cards, total) {
   ctx.scale(dpr, dpr);
   ctx.translate(half, half); // fan center = drag hotspot later
 
+  const tileSurface = ghostToken("--surface-raised", "#FFFFFF");
+  const tileBorder = ghostToken("--border-strong", "rgba(0, 0, 0, 0.25)");
+  const badgeSurface = ghostToken("--surface-raised", "#FFFFFF");
+  const badgeInk = ghostToken("--ink-primary", "#1A1A18");
+
   // Draw most-tilted tiles first so the straight-on "front" card is on top.
   const order = [...layout.keys()].sort(
     (a, b) => Math.abs(layout[b].rot) - Math.abs(layout[a].rot)
@@ -755,15 +1246,15 @@ function buildBatchDragGhost(cards, total) {
     ctx.save();
     ctx.translate(t.dx, t.dy);
     ctx.rotate((t.rot * Math.PI) / 180);
-    ghostRoundedRect(ctx, -GHOST_TILE_W / 2, -GHOST_TILE_H / 2, GHOST_TILE_W, GHOST_TILE_H, 8);
-    ctx.fillStyle = "#fff";
+    ghostRoundedRect(ctx, -GHOST_TILE_W / 2, -GHOST_TILE_H / 2, GHOST_TILE_W, GHOST_TILE_H, GHOST_TILE_RADIUS);
+    ctx.fillStyle = tileSurface;
     ctx.fill();
     ctx.save();
     ctx.clip();
     ctx.drawImage(img, -GHOST_TILE_W / 2, -GHOST_TILE_H / 2, GHOST_TILE_W, GHOST_TILE_H);
     ctx.restore();
-    ghostRoundedRect(ctx, -GHOST_TILE_W / 2, -GHOST_TILE_H / 2, GHOST_TILE_W, GHOST_TILE_H, 8);
-    ctx.strokeStyle = "rgba(30, 30, 30, 0.25)";
+    ghostRoundedRect(ctx, -GHOST_TILE_W / 2, -GHOST_TILE_H / 2, GHOST_TILE_W, GHOST_TILE_H, GHOST_TILE_RADIUS);
+    ctx.strokeStyle = tileBorder;
     ctx.lineWidth = 1;
     ctx.stroke();
     ctx.restore();
@@ -780,9 +1271,9 @@ function buildBatchDragGhost(cards, total) {
     const bx = -GHOST_TILE_W / 2 + 10;
     const by = GHOST_TILE_H / 2 - 26;
     ghostRoundedRect(ctx, bx, by, bw, bh, bh / 2);
-    ctx.fillStyle = "rgba(255, 255, 255, 0.96)";
+    ctx.fillStyle = badgeSurface;
     ctx.fill();
-    ctx.fillStyle = "#1c1c1e";
+    ctx.fillStyle = badgeInk;
     ctx.textBaseline = "middle";
     ctx.fillText(label, bx + 10, by + bh / 2 + 0.5);
   }
@@ -806,6 +1297,64 @@ function buildBatchDragGhost(cards, total) {
   return { canvas, offsetX: half, offsetY: half };
 }
 
+// ── Shared overlay contract ────────────────────────────────────────────────
+// Settings, rename, confirmation, and the lightbox all use the same small
+// focus manager. The DOM remains a fallback-friendly div overlay, while the
+// aria-modal contract and keyboard loop provide native-dialog behaviour.
+let activeOverlay = null;
+let overlayReturnFocus = null;
+
+function overlayFocusable(dialog) {
+  return [...dialog.querySelectorAll(
+    "button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [href], [tabindex]:not([tabindex='-1'])"
+  )].filter(node => !node.hidden && node.offsetParent !== null);
+}
+
+function openOverlay(dialog, trigger, firstSelector) {
+  if (!dialog) return;
+  if (activeOverlay && activeOverlay !== dialog) closeOverlay(activeOverlay, { restore: false });
+  overlayReturnFocus = trigger || document.activeElement;
+  activeOverlay = dialog;
+  dialog.hidden = false;
+  const first = (firstSelector && dialog.querySelector(firstSelector)) || overlayFocusable(dialog)[0] || dialog;
+  requestAnimationFrame(() => first.focus({ preventScroll: true }));
+}
+
+function closeOverlay(dialog, options) {
+  if (!dialog) return;
+  const opts = options || {};
+  dialog.hidden = true;
+  if (activeOverlay === dialog) activeOverlay = null;
+  const returnFocus = overlayReturnFocus;
+  overlayReturnFocus = null;
+  if (opts.restore !== false && returnFocus && document.contains(returnFocus) && !returnFocus.disabled) {
+    requestAnimationFrame(() => returnFocus.focus({ preventScroll: true }));
+  }
+}
+
+function trapOverlayFocus(dialog, event) {
+  if (event.key !== "Tab" || activeOverlay !== dialog) return;
+  const focusable = overlayFocusable(dialog);
+  if (focusable.length === 0) {
+    event.preventDefault();
+    dialog.focus();
+    return;
+  }
+  const first = focusable[0];
+  const last = focusable[focusable.length - 1];
+  if (event.shiftKey && document.activeElement === first) {
+    event.preventDefault();
+    last.focus();
+  } else if (!event.shiftKey && document.activeElement === last) {
+    event.preventDefault();
+    first.focus();
+  }
+}
+
+[confirmModal, renameModal, settingsMenu, lightbox].forEach(dialog => {
+  if (dialog) dialog.addEventListener("keydown", event => trapOverlayFocus(dialog, event));
+});
+
 // ── Preview / Lightbox ───────────────────────────────────────────────────────
 function attachPreview(card) {
   card.addEventListener("dblclick", e => {
@@ -821,11 +1370,27 @@ function openLightbox(card) {
   lightboxImg.src = `/api/image/${encodeURIComponent(card.dataset.filename)}${SsDcl.sourceQuery(src)}`;
   lightboxImg.alt = card.dataset.filename;
   _updateLightboxBar(card.dataset.filename);
-  lightbox.hidden = false;
+  openOverlay(lightbox, card, "#lightbox-close");
+  _syncLightboxNavigation();
+}
+
+function lightboxCards() {
+  return [...document.querySelectorAll(".card")];
+}
+
+function _syncLightboxNavigation() {
+  const allCards = lightboxCards();
+  const current = lightbox.dataset.currentFilename;
+  const currentSource = lightbox.dataset.currentSource || "Desktop";
+  const idx = allCards.findIndex(c => c.dataset.filename === current && (c.dataset.source || "Desktop") === currentSource);
+  const position = idx >= 0 ? idx + 1 : 0;
+  if (lightboxPosition) lightboxPosition.textContent = `${position} of ${allCards.length}`;
+  if (lightboxPrev) lightboxPrev.disabled = idx <= 0;
+  if (lightboxNext) lightboxNext.disabled = idx < 0 || idx >= allCards.length - 1;
 }
 
 function _lightboxNavigate(direction) {
-  const allCards = [...document.querySelectorAll(".card")];
+  const allCards = lightboxCards();
   const current = lightbox.dataset.currentFilename;
   const currentSource = lightbox.dataset.currentSource || "Desktop";
   const idx = allCards.findIndex(c => c.dataset.filename === current && (c.dataset.source || "Desktop") === currentSource);
@@ -840,19 +1405,24 @@ function _lightboxNavigate(direction) {
   lightboxImg.src = `/api/image/${encodeURIComponent(nextName)}${SsDcl.sourceQuery(nextSource)}`;
   lightboxImg.alt = nextName;
   _updateLightboxBar(nextName);
+  _syncLightboxNavigation();
 }
 
 function closeLightbox() {
-  lightbox.hidden = true;
+  closeOverlay(lightbox);
   lightboxImg.src = "";
   lightboxRenameInput.hidden = true;
   lightboxRenameInput.classList.remove("error");
   lightboxRenameError.textContent = "";
   lightboxFilename.hidden = false;
+  if (lightboxPosition) lightboxPosition.textContent = "";
 }
 
 document.getElementById("lightbox-close").addEventListener("click", closeLightbox);
 document.querySelector(".lightbox-backdrop").addEventListener("click", closeLightbox);
+if (lightboxPrev) lightboxPrev.addEventListener("click", () => _lightboxNavigate(-1));
+if (lightboxNext) lightboxNext.addEventListener("click", () => _lightboxNavigate(1));
+if (lightboxRenameBtn) lightboxRenameBtn.addEventListener("click", _startLightboxRename);
 
 // ── Reveal in Finder ────────────────────────────────────────────────────────
 function revealInFinder(filename, source) {
@@ -870,12 +1440,13 @@ function revealInFinder(filename, source) {
   })
     .then(r => r.json())
     .then(data => {
-      statusMsg.textContent = data.ok
-        ? "Revealed in Finder."
-        : (data.error || "Could not reveal in Finder.");
+      announce(
+        data.ok ? "Revealed in Finder." : (data.error || "Could not reveal in Finder."),
+        { error: !data.ok },
+      );
     })
     .catch(() => {
-      statusMsg.textContent = "Network error — could not reveal in Finder.";
+      announce("Network error — could not reveal in Finder.", { error: true });
     });
 }
 
@@ -885,31 +1456,42 @@ document.getElementById("lightbox-reveal-btn").addEventListener("click", () => {
 
 // ── Card tooltip ───────────────────────────────────────────────────────────
 function attachTooltip(card) {
-  card.addEventListener("mouseenter", () => {
-    cardTooltip.textContent = card.dataset.filename;
-    cardTooltip.classList.add("visible");
-    requestAnimationFrame(() => {
-      const rect = card.getBoundingClientRect();
-      const tooltipRect = cardTooltip.getBoundingClientRect();
-      let left = rect.left + rect.width / 2 - tooltipRect.width / 2;
-      // Anchor above the card image, not the card's bottom edge, so the
-      // tooltip never overlaps the suggestion badge below the image.
-      const img = card.querySelector("img");
-      const anchor = img ? img.getBoundingClientRect() : rect;
-      let top = anchor.bottom - tooltipRect.height - 10;
-      if (left < 4) left = 4;
-      if (left + tooltipRect.width > window.innerWidth - 4) {
-        left = window.innerWidth - tooltipRect.width - 4;
-      }
-      if (top < rect.top + 4) {
-        top = rect.top + 4;
-      }
-      cardTooltip.style.left = left + "px";
-      cardTooltip.style.top = top + "px";
-    });
-  });
-  card.addEventListener("mouseleave", () => {
+  let tooltipTimer = null;
+  const show = () => {
+    if (tooltipTimer) clearTimeout(tooltipTimer);
+    tooltipTimer = setTimeout(() => {
+      cardTooltip.textContent = card.dataset.filename;
+      cardTooltip.setAttribute("aria-hidden", "false");
+      cardTooltip.classList.add("visible");
+      requestAnimationFrame(() => {
+        const rect = card.getBoundingClientRect();
+        const tooltipRect = cardTooltip.getBoundingClientRect();
+        let left = rect.left + rect.width / 2 - tooltipRect.width / 2;
+        const img = card.querySelector("img");
+        const anchor = img ? img.getBoundingClientRect() : rect;
+        let top = anchor.bottom - tooltipRect.height - 10;
+        if (left < 4) left = 4;
+        if (left + tooltipRect.width > window.innerWidth - 4) left = window.innerWidth - tooltipRect.width - 4;
+        if (top < rect.top + 4) top = rect.top + 4;
+        cardTooltip.style.left = left + "px";
+        cardTooltip.style.top = top + "px";
+      });
+    }, 450);
+  };
+  const hide = () => {
+    if (tooltipTimer) clearTimeout(tooltipTimer);
+    tooltipTimer = null;
     cardTooltip.classList.remove("visible");
+    cardTooltip.setAttribute("aria-hidden", "true");
+  };
+  card.addEventListener("mouseenter", show);
+  card.addEventListener("focusin", show);
+  card.addEventListener("mouseleave", hide);
+  card.addEventListener("focusout", event => {
+    if (!card.contains(event.relatedTarget)) hide();
+  });
+  document.addEventListener("keydown", event => {
+    if (event.key === "Escape") hide();
   });
 }
 
@@ -1068,7 +1650,16 @@ function _confirmLightboxRename() {
 // ── Keyboard shortcuts ───────────────────────────────────────────────────────
 function attachKeyboard(card) {
   card.addEventListener("keydown", e => {
+    // Inner controls own their own keys (Enter on Rename must not also
+    // toggle the card's selection).
+    if (e.target !== card) return;
     const col = getCardColumn(card);
+    // Enter/Space toggle multi-select, mirroring the click on the card.
+    if (e.key === "Enter" || e.key === " " || e.key === "Spacebar") {
+      e.preventDefault();
+      toggleSelect(card);
+      return;
+    }
     if (col === "unsorted") {
       if (e.key === "ArrowLeft") { e.preventDefault(); moveCard(card, "keep"); }
       if (e.key === "ArrowRight") { e.preventDefault(); moveCard(card, "trash"); }
@@ -1115,6 +1706,20 @@ function suggestSingle(card) {
 }
 
 // ── AI Suggest (batch) ──────────────────────────────────────────────────────
+function updateSuggestProgress(processed, total, failures, state) {
+  const safeTotal = Math.max(total || 0, 1);
+  const percent = Math.min(100, Math.round((processed / safeTotal) * 100));
+  suggestProgressFill.style.width = percent + "%";
+  if (suggestProgressBar) {
+    suggestProgressBar.setAttribute("aria-valuenow", String(percent));
+    suggestProgressBar.setAttribute("aria-valuetext", `${processed} of ${total} processed`);
+  }
+  suggestProgressText.textContent = state || `${processed} of ${total} processed`;
+  if (suggestProgressFailure) {
+    suggestProgressFailure.textContent = failures ? `${failures} failed` : "";
+  }
+}
+
 function suggestBatch(fingerprints) {
   if (fingerprints.length === 0) return;
 
@@ -1130,35 +1735,43 @@ function suggestBatch(fingerprints) {
   let failedCount = 0;
 
   function abortBatch(message) {
-    suggestProgressFill.style.width = "100%";
-    suggestProgressText.textContent = message;
-    statusMsg.textContent = message;
+    updateSuggestProgress(completed, fingerprints.length, failedCount, message);
+    announce(message, { error: true, persistent: true, title: "Suggestions stopped", timeout: 0 });
     setTimeout(() => { suggestProgress.hidden = true; suggestAllBtn.disabled = false; }, 4000);
   }
 
   function processChunk(chunkIdx) {
     if (_suggestCancelled) {
-      suggestProgressText.textContent = `Cancelled (${completed} processed)`;
+      updateSuggestProgress(completed, fingerprints.length, failedCount, `Cancelled after ${completed} processed`);
+      announce(`Suggestions cancelled after ${completed} processed.`, { type: "warning" });
       setTimeout(() => { suggestProgress.hidden = true; suggestAllBtn.disabled = false; }, 1500);
       return;
     }
     if (chunkIdx >= chunks.length) {
-      suggestProgressFill.style.width = "100%";
+      updateSuggestProgress(fingerprints.length, fingerprints.length, failedCount);
       if (completed === 0 && firstError) {
-        suggestProgressText.textContent = firstError;
-        statusMsg.textContent = firstError;
+        updateSuggestProgress(completed, fingerprints.length, failedCount, firstError);
+        announce(firstError, { error: true, persistent: true, title: "Suggestions unavailable", timeout: 0 });
         setTimeout(() => { suggestProgress.hidden = true; suggestAllBtn.disabled = false; }, 4000);
       } else if (completed === 0) {
-        suggestProgressText.textContent = providerErrorCopy();
+        updateSuggestProgress(completed, fingerprints.length, failedCount, providerErrorCopy());
+        announce(providerErrorCopy(), { error: true, persistent: true, title: "Suggestions unavailable", timeout: 0 });
         setTimeout(() => { suggestProgress.hidden = true; suggestAllBtn.disabled = false; }, 3000);
       } else {
         if (failedCount > 0) {
-          suggestProgressText.textContent = `Done! ${completed} processed — ${failedCount} file${failedCount > 1 ? "s" : ""} failed`;
+          const result = `Done. ${completed} processed — ${failedCount} file${failedCount > 1 ? "s" : ""} failed`;
+          updateSuggestProgress(completed, fingerprints.length, failedCount, result);
+          showFeedbackBanner("Some suggestions failed", result, {
+            type: "warning",
+            details: [`${failedCount} screenshot${failedCount > 1 ? "s" : ""} could not be named.`],
+          });
         } else {
-          suggestProgressText.textContent = `Done! ${completed} processed`;
+          const result = `Done. ${completed} processed`;
+          updateSuggestProgress(completed, fingerprints.length, failedCount, result);
+          announce(result, { type: "success" });
         }
         if (firstError) {
-          statusMsg.textContent = firstError;
+          announce(firstError, { error: true, persistent: true, title: "Suggestion warning", timeout: 0 });
         }
         setTimeout(() => { suggestProgress.hidden = true; suggestAllBtn.disabled = false; }, 2500);
       }
@@ -1194,16 +1807,17 @@ function suggestBatch(fingerprints) {
             card.insertBefore(badge, actions);
             setCardActions(card, getCardColumn(card));
           }
-          completed++;
         }
+        completed += chunk.length;
         const nextIdx = chunkIdx + 1;
-        const pct = Math.round((Math.min((nextIdx) * chunkSize, fingerprints.length) / fingerprints.length) * 100);
-        suggestProgressFill.style.width = pct + "%";
-        suggestProgressText.textContent = `${Math.min(nextIdx * chunkSize, fingerprints.length)} / ${fingerprints.length}`;
+        updateSuggestProgress(completed, fingerprints.length, failedCount);
         processChunk(nextIdx);
       })
       .catch(() => {
         if (!firstError) firstError = providerErrorCopy();
+        failedCount += chunk.length;
+        completed += chunk.length;
+        updateSuggestProgress(completed, fingerprints.length, failedCount);
         const nextIdx = chunkIdx + 1;
         processChunk(nextIdx);
       });
@@ -1215,21 +1829,27 @@ function suggestBatch(fingerprints) {
     .then(r => r.json())
     .then(h => {
       if (!h.ok) {
-        statusMsg.textContent = h.error || providerErrorCopy();
+        _setLLMStatus("error");
+        announce(h.error || providerErrorCopy(), {
+          error: true,
+          persistent: true,
+          title: "Local AI is offline",
+          timeout: 0,
+        });
         suggestAllBtn.disabled = false;
         suggestProgress.hidden = true;
         suggestProgressFill.style.width = "0%";
-        suggestProgressText.textContent = "0 / " + fingerprints.length;
+        updateSuggestProgress(0, fingerprints.length, 0, "Waiting for local AI");
         return;
       }
       suggestAllBtn.disabled = true;
       suggestProgress.hidden = false;
-      suggestProgressFill.style.width = "0%";
-      suggestProgressText.textContent = `0 / ${fingerprints.length}`;
+      updateSuggestProgress(0, fingerprints.length, 0);
       processChunk(0);
     })
     .catch(() => {
-      statusMsg.textContent = providerErrorCopy();
+      _setLLMStatus("error");
+      announce(providerErrorCopy(), { error: true, persistent: true, title: "Local AI is offline", timeout: 0 });
       suggestAllBtn.disabled = false;
       suggestProgress.hidden = true;
     });
@@ -1248,14 +1868,15 @@ function acceptSuggestion(card) {
     .then(r => r.json())
     .then(data => {
       if (!data.ok) {
-        alert(data.error || "Failed to accept suggestion");
+        announce(data.error || "Failed to accept suggestion.", { error: true, persistent: true, title: "Suggestion not accepted", timeout: 0 });
         return;
       }
       const oldName = card.dataset.filename;
       const newName = data.new_name;
       applyRenameToCard(card, oldName, newName);
+      announce(`Renamed to ${newName}.`, { type: "success" });
     })
-    .catch(() => alert("Network error — please try again."));
+    .catch(() => announce("Network error — suggestion was not accepted.", { error: true, persistent: true, title: "Suggestion failed", timeout: 0 }));
 }
 
 // ── Reject suggestion (dismiss, mark as ignored) ─────────────────────────────
@@ -1270,7 +1891,10 @@ function rejectSuggestion(card) {
   })
     .then(r => r.json())
     .then(data => {
-      if (!data.ok) return;
+      if (!data.ok) {
+        announce(data.error || "Could not dismiss the suggestion.", { error: true });
+        return;
+      }
       card.dataset.memoryStatus = "ignored";
       card.dataset.suggestedName = "";
       const badge = card.querySelector(".suggestion-badge");
@@ -1279,8 +1903,9 @@ function rejectSuggestion(card) {
       card.classList.remove("category-hint-keep", "category-hint-trash");
       delete card.dataset.suggestedCategory;
       setCardActions(card, getCardColumn(card));
+      announce("Suggestion dismissed.", { type: "success" });
     })
-    .catch(() => {});
+    .catch(() => announce("Network error — suggestion was not dismissed.", { error: true }));
 }
 
 // ── Edit suggestion (open rename modal pre-filled with suggested name) ────────
@@ -1288,7 +1913,7 @@ function editSuggestion(card) {
   renameTarget = card;
   renameInput.value = card.dataset.suggestedName || card.dataset.filename;
   renameError.textContent = "";
-  renameModal.hidden = false;
+  openOverlay(renameModal, card, "#rename-input");
   const dotIdx = renameInput.value.lastIndexOf(".");
   renameInput.focus();
   if (dotIdx > 0) {
@@ -1309,7 +1934,7 @@ suggestAllBtn.addEventListener("click", () => {
     .map(c => c.dataset.fingerprint)
     .filter(Boolean);
   if (newFps.length === 0) {
-    statusMsg.textContent = "No new screenshots to suggest names for.";
+    announce("No new screenshots to suggest names for.");
     return;
   }
   closeSettingsMenu();
@@ -1317,21 +1942,57 @@ suggestAllBtn.addEventListener("click", () => {
 });
 
 // ── Settings dropdown ──────────────────────────────────────────────────────────
-settingsBtn.addEventListener("click", () => {
-  if (!settingsMenu.hidden) { closeSettingsMenu(); return; }
-  // Load current settings into form
+let settingsSnapshot = "";
+
+function readSettingsForm() {
+  return JSON.stringify({
+    llm_provider: settingsProvider.value,
+    llm_model: settingsModel.value.trim(),
+    auto_suggest: settingsAuto.checked,
+    prune_max_age_days: document.getElementById("settings-prune-age")?.value || "",
+    tracked_folders: trackedFoldersWorkingCopy,
+  });
+}
+
+function updateSettingsDirty() {
+  const dirty = readSettingsForm() !== settingsSnapshot;
+  settingsSave.disabled = !dirty;
+  settingsMenu.classList.toggle("is-dirty", dirty);
+  if (settingsSaveStatus && !dirty) settingsSaveStatus.textContent = "";
+  return dirty;
+}
+
+function resetSettingsForm() {
   settingsProvider.value = llmSettings.llm_provider || "litert";
   settingsModel.value = llmSettings.llm_model || "gemma4-e2b";
   settingsModel.placeholder = LLM_PROVIDER_MODELS[settingsProvider.value] || "gemma4-e2b";
   settingsAuto.checked = llmSettings.auto_suggest || false;
   const pruneAge = document.getElementById("settings-prune-age");
   if (pruneAge) pruneAge.value = llmSettings.prune_max_age_days || 90;
-  // Tracked folders working copy
   trackedFoldersWorkingCopy = [...(llmSettings.tracked_folders || [])];
   trackedFolderInfo = llmSettings.tracked_folder_info || [];
   showTrackedError("");
   renderTrackedFolders();
-  settingsMenu.hidden = false;
+  settingsSnapshot = readSettingsForm();
+  if (settingsSaveStatus) settingsSaveStatus.textContent = "";
+  updateSettingsDirty();
+}
+
+function positionSettingsMenu() {
+  if (!appbar || !settingsMenu) return;
+  const compact = window.matchMedia && window.matchMedia("(max-width: 1024px)").matches;
+  settingsMenu.style.top = compact ? "" : `${appbar.getBoundingClientRect().bottom + 8}px`;
+}
+
+settingsBtn.addEventListener("click", () => {
+  if (!settingsMenu.hidden) { closeSettingsMenu(); return; }
+  resetSettingsForm();
+  positionSettingsMenu();
+  openOverlay(settingsMenu, settingsBtn, ".theme-choice");
+  settingsBtn.setAttribute("aria-expanded", "true");
+});
+window.addEventListener("resize", () => {
+  if (!settingsMenu.hidden) positionSettingsMenu();
 });
 
 // When the model field holds a legacy/default id, snap it to the LiteRT form.
@@ -1341,21 +2002,46 @@ settingsProvider.addEventListener("change", () => {
   if (settingsModel.value.trim() === "gemma4-e2b" || settingsModel.value.trim() === "gemma4:e2b") {
     settingsModel.value = def;
   }
+  updateSettingsDirty();
 });
 
-function closeSettingsMenu() {
-  settingsMenu.hidden = true;
+function closeSettingsMenu(options) {
+  const opts = options || {};
+  if (!opts.discard && updateSettingsDirty()) {
+    announce("Settings have unsaved changes — save or close them from the panel.", { type: "warning" });
+    return false;
+  }
+  closeOverlay(settingsMenu);
+  settingsBtn.setAttribute("aria-expanded", "false");
+  return true;
 }
 
-settingsCancel.addEventListener("click", closeSettingsMenu);
-// Dropdown behavior: clicking outside the menu (or the ⚙ button) closes it.
+settingsCancel.addEventListener("click", () => {
+  resetSettingsForm();
+  closeSettingsMenu({ discard: true });
+});
+if (settingsCloseBtn) settingsCloseBtn.addEventListener("click", () => {
+  resetSettingsForm();
+  closeSettingsMenu({ discard: true });
+});
+// Clicking outside a dirty panel leaves it open so changes cannot disappear.
 document.addEventListener("click", e => {
   if (settingsMenu.hidden) return;
   if (settingsMenu.contains(e.target) || settingsBtn.contains(e.target)) return;
   closeSettingsMenu();
 });
 
+[settingsModel, settingsAuto, document.getElementById("settings-prune-age")].filter(Boolean).forEach(control => {
+  control.addEventListener("input", updateSettingsDirty);
+  control.addEventListener("change", updateSettingsDirty);
+});
+document.addEventListener("input", event => {
+  if (settingsMenu.hidden || !settingsMenu.contains(event.target)) return;
+  updateSettingsDirty();
+});
+
 settingsSave.addEventListener("click", () => {
+  if (settingsSave.disabled) return;
   const pruneVal = parseInt(document.getElementById("settings-prune-age")?.value || "90", 10);
   const newSettings = {
     llm_provider: settingsProvider.value,
@@ -1365,6 +2051,9 @@ settingsSave.addEventListener("click", () => {
     tracked_folders: trackedFoldersWorkingCopy,
   };
 
+  settingsSave.disabled = true;
+  settingsSave.textContent = "Saving…";
+  if (settingsSaveStatus) settingsSaveStatus.textContent = "Saving…";
   fetch("/api/settings", {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
@@ -1374,22 +2063,27 @@ settingsSave.addEventListener("click", () => {
     .then(({ status, body }) => {
       if (status === 200 && body.ok) {
         llmSettings = { ...newSettings, tracked_folder_info: body.tracked_folder_info || trackedFolderInfo };
+        settingsSnapshot = readSettingsForm();
+        settingsSave.disabled = true;
+        if (settingsSaveStatus) settingsSaveStatus.textContent = "Saved";
+        settingsSave.textContent = "Save";
+        announce("Settings saved.", { type: "success" });
         closeSettingsMenu();
         refreshLLMServerButton();
         // Reload board to reflect new sources
-        document.querySelectorAll(".card").forEach(c => c.remove());
-        loadingMsg.hidden = false;
-        emptyMsg.hidden = true;
-        fetch("/api/state")
-          .then(r => r.json())
-          .then(state => loadScreenshots(state.decisions || {}))
-          .catch(() => loadScreenshots({}));
+        refreshScreenshots();
       } else {
+        settingsSave.disabled = false;
+        settingsSave.textContent = "Save";
         showTrackedError(body.error || "Failed to save settings");
+        announce(body.error || "Failed to save settings.", { error: true, type: "error" });
       }
     })
     .catch(() => {
+      settingsSave.disabled = false;
+      settingsSave.textContent = "Save";
       showTrackedError("Network error — please try again");
+      announce("Network error — settings were not saved.", { error: true, type: "error" });
     });
 });
 
@@ -1443,14 +2137,31 @@ function updateCounts() {
   countTrash.textContent    = nTrash;
   countKeep.textContent     = nKeep;
 
-  if (nTrash + nKeep === 0) {
-    statusMsg.textContent = `${total} screenshot${total !== 1 ? "s" : ""} \u2014 drag to sort`;
-  } else {
-    statusMsg.textContent = `${nTrash + nKeep}/${total} sorted \u00B7 ${nTrash} to trash`;
-  }
+  // The compact switcher carries the same tallies as the column headers so the
+  // hidden columns stay countable at narrow widths (PLAN 6.4).
+  compactCountKeep.textContent     = nKeep;
+  compactCountUnsorted.textContent = nUnsorted;
+  compactCountTrash.textContent    = nTrash;
+
+  // #sort-summary is the stable progress statement and the meter renders the
+  // same figure visually; #status-msg is reserved for transient notices.
+  const progress = SsDcl.progressSummary({ keep: nKeep, trash: nTrash, unsorted: nUnsorted, total: total });
+  sortSummary.textContent = progress.summary;
+  progressMeterFill.style.width = progress.percent + "%";
+  progressMeter.setAttribute("aria-valuenow", String(progress.percent));
+  progressMeter.setAttribute("aria-valuetext", progress.summary);
+
+  // The primary action names itself once there is something to clean up.
+  doneBtn.textContent = SsDcl.doneLabel(nTrash);
 
   undoBtn.disabled = undoStack.length === 0;
   doneBtn.disabled = nTrash === 0;
+
+  if (totalCards > 0 && nUnsorted === 0) {
+    setBoardState("sorted");
+  } else if (totalCards > 0) {
+    [allSortedMsg, scanErrorMsg].forEach(node => { if (node) node.hidden = true; });
+  }
 }
 
 // ── Rename modal ──────────────────────────────────────────────────────────────
@@ -1458,7 +2169,7 @@ function openRenameModal(card) {
   renameTarget = card;
   renameInput.value = card.dataset.filename;
   renameError.textContent = "";
-  renameModal.hidden = false;
+  openOverlay(renameModal, card, "#rename-input");
   const dotIdx = card.dataset.filename.lastIndexOf(".");
   renameInput.focus();
   if (dotIdx > 0) {
@@ -1467,7 +2178,7 @@ function openRenameModal(card) {
 }
 
 function closeRenameModal() {
-  renameModal.hidden = true;
+  closeOverlay(renameModal);
   renameTarget = null;
 }
 
@@ -1530,17 +2241,16 @@ doneBtn.addEventListener("click", () => {
   if (nTrash === 0) return;
 
   modalTitle.textContent = `Move ${nTrash} screenshot${nTrash !== 1 ? "s" : ""} to Trash?`;
-  confirmModal.hidden = false;
+  openOverlay(confirmModal, doneBtn, "#modal-cancel");
 });
 
 function closeModal() {
-  confirmModal.hidden = true;
+  closeOverlay(confirmModal);
 }
 
 modalCancel.addEventListener("click", closeModal);
-confirmModal.addEventListener("click", e => {
-  if (e.target === confirmModal) closeModal();
-});
+// The destructive confirmation has no backdrop dismissal: an accidental
+// click outside should never silently discard an important decision prompt.
 
 modalConfirm.addEventListener("click", () => {
   closeModal();
@@ -1551,7 +2261,7 @@ modalConfirm.addEventListener("click", () => {
   if (toTrash.length === 0) return;
 
   doneBtn.disabled = true;
-  statusMsg.textContent = "Moving to Trash\u2026";
+  announce("Moving to Trash\u2026");
 
   fetch("/api/done", {
     method: "POST",
@@ -1560,9 +2270,7 @@ modalConfirm.addEventListener("click", () => {
   })
     .then(r => r.json())
     .then(data => {
-      if (!data.ok && data.errors && data.errors.length > 0) {
-        alert("Some files could not be moved:\n" + data.errors.join("\n"));
-      }
+      const reportedErrors = data.errors || [];
 
       // Prefer structured errors_detail if present
       const failedKeys = new Set();
@@ -1574,7 +2282,7 @@ modalConfirm.addEventListener("click", () => {
         });
       } else {
         // Legacy fallback: parse "filename: error" strings
-        (data.errors || []).forEach(e => {
+        reportedErrors.forEach(e => {
           const parts = e.split(":");
           const name = parts.length > 1 ? parts[0].trim() : e.trim();
           if (name) failedKeys.add(name);
@@ -1591,6 +2299,16 @@ modalConfirm.addEventListener("click", () => {
         }
       });
 
+      if (!data.ok || reportedErrors.length > 0 || details.length > 0) {
+        showFeedbackBanner(
+          "Some screenshots stayed in Trash",
+          "Review the details and try again after resolving the file errors.",
+          { type: "error", details: reportedErrors.map(String).concat(details.map(d => d.error || `${d.name || "File"}: could not be moved`)) },
+        );
+      } else {
+        announce(`Moved ${toTrash.length} screenshot${toTrash.length !== 1 ? "s" : ""} to Trash.`, { type: "success" });
+      }
+
       undoStack.length = 0;
       clearSelection();
 
@@ -1599,13 +2317,13 @@ modalConfirm.addEventListener("click", () => {
 
       const remaining = document.querySelectorAll(".card").length;
       if (remaining === 0) {
-        emptyMsg.hidden = false;
-        statusMsg.textContent = "All done!";
+        setBoardState("empty");
+        announce("All done!", { type: "success" });
         doneBtn.disabled = true;
       }
     })
     .catch(() => {
-      alert("Network error \u2014 please try again.");
+      announce("Network error — screenshots were not moved.", { error: true, persistent: true, title: "Trash operation failed", timeout: 0 });
       doneBtn.disabled = false;
       updateCounts();
     });

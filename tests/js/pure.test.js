@@ -163,3 +163,54 @@ test("sourceQuery: Desktop is empty, tracked is encoded", () => {
   assert.equal(SsDcl.sourceQuery("/tmp/extra"), "?source=%2Ftmp%2Fextra");
   assert.equal(SsDcl.sourceQuery("/root/a|b"), "?source=%2Froot%2Fa%7Cb");
 });
+
+// ── progressSummary ─────────────────────────────────────────────────────────
+
+test("progressSummary: counts sorted work against the whole board", () => {
+  assert.deepEqual(SsDcl.progressSummary({ keep: 4, trash: 2, unsorted: 6, total: 12 }), {
+    summary: "6 of 12 sorted",
+    percent: 50,
+    sorted: 6,
+    total: 12,
+  });
+});
+
+test("progressSummary: rounds the meter to a whole percent", () => {
+  const progress = SsDcl.progressSummary({ keep: 1, trash: 0, unsorted: 2, total: 3 });
+  assert.equal(progress.percent, 33);
+  assert.equal(progress.summary, "1 of 3 sorted");
+});
+
+test("progressSummary: an empty board reads as nothing to sort", () => {
+  assert.deepEqual(SsDcl.progressSummary({ keep: 0, trash: 0, unsorted: 0, total: 0 }), {
+    summary: "No screenshots to sort",
+    percent: 0,
+    sorted: 0,
+    total: 0,
+  });
+});
+
+test("progressSummary: tolerates missing and null counts", () => {
+  assert.equal(SsDcl.progressSummary().summary, "No screenshots to sort");
+  assert.equal(SsDcl.progressSummary(null).percent, 0);
+  assert.equal(SsDcl.progressSummary({}).total, 0);
+});
+
+test("progressSummary: a fully sorted board reports 100 percent", () => {
+  const progress = SsDcl.progressSummary({ keep: 3, trash: 1, unsorted: 0, total: 4 });
+  assert.equal(progress.percent, 100);
+  assert.equal(progress.summary, "4 of 4 sorted");
+});
+
+// ── doneLabel ───────────────────────────────────────────────────────────────
+
+test("doneLabel: names the action and its size once Trash holds something", () => {
+  assert.equal(SsDcl.doneLabel(3), "Clean up 3");
+  assert.equal(SsDcl.doneLabel(1), "Clean up 1");
+});
+
+test("doneLabel: falls back to the plain label on an empty Trash", () => {
+  assert.equal(SsDcl.doneLabel(0), "Done");
+  assert.equal(SsDcl.doneLabel(), "Done");
+  assert.equal(SsDcl.doneLabel(null), "Done");
+});

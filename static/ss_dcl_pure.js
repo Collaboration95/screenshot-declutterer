@@ -62,6 +62,29 @@
     return chunks;
   }
 
+  // Stable app-bar progress statement (PLAN 6.2): one sentence plus the meter
+  // percentage, so the summary never flickers between transient messages.
+  function progressSummary(counts) {
+    const total = (counts && counts.total) || 0;
+    if (total <= 0) {
+      return { summary: "No screenshots to sort", percent: 0, sorted: 0, total: 0 };
+    }
+    const sorted = ((counts && counts.keep) || 0) + ((counts && counts.trash) || 0);
+    return {
+      summary: `${sorted} of ${total} sorted`,
+      percent: Math.round((sorted / total) * 100),
+      sorted,
+      total,
+    };
+  }
+
+  // Contextual primary copy (PLAN 6.2): the quiet Done button names the action
+  // and its size once Trash holds something.
+  function doneLabel(trashCount) {
+    const n = trashCount || 0;
+    return n > 0 ? `Clean up ${n}` : "Done";
+  }
+
   // ── Tracking folders helpers ──────────────────────────────────────
   const DEFAULT_SOURCE = "Desktop";
   function _enc(s) {
@@ -122,6 +145,8 @@
     Path_name,
     computeCounts,
     chunked,
+    progressSummary,
+    doneLabel,
     DEFAULT_SOURCE,
     decisionKey,
     parseDecisionKey,

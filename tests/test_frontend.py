@@ -106,19 +106,53 @@ def test_static_css_served(client):
     assert b"kanban" in r.data
 
 
-def test_unsorted_card_actions_use_ordered_rows(client):
-    """Triage controls must have dedicated rows for the reference layout."""
+def test_card_actions_separate_primary_from_secondary(client):
+    """The decision buttons must outrank the file utilities (PLAN 6.1/6.3)."""
     c, _ = client
     js = c.get("/static/app.js").data
     css = c.get("/static/style.css").data
-    assert b"card-actions-triage" in js
-    assert b"makeActionRow(renameBtn, revealBtn, previewBtn)" in js
-    assert b"makeActionRow(suggestBtn)" in js
-    assert b"makeActionRow(keepBtn, trashBtn)" in js
-    assert b".card-actions-triage" in css
-    assert b".card-action-row" in css
-    assert b"gap: 25px" in css
-    assert b"gap: 12px" in css
+    assert b"card-action-primary" in js
+    assert b"card-action-secondary" in js
+    assert b".card-action-primary" in css
+    assert b".card-action-secondary" in css
+
+
+def test_action_bar_is_reachable_by_hover_and_keyboard_focus(client):
+    """Both pointers and keyboards must expose the same card controls."""
+    c, _ = client
+    css = c.get("/static/style.css").data
+    assert b".card:hover .card-actions" in css
+    assert b".card:focus-within .card-actions" in css
+
+
+def test_category_hints_render_as_labelled_badges(client):
+    """A categorised card names its suggestion instead of tinting silently."""
+    c, _ = client
+    js = c.get("/static/app.js").data
+    assert b"Likely keep" in js
+    assert b"Likely trash" in js
+
+
+def test_progress_summary_and_meter_share_one_source(client):
+    """#sort-summary and the meter both render the pure helper's figures."""
+    c, _ = client
+    js = c.get("/static/app.js").data
+    html = c.get("/").data
+    assert b"SsDcl.progressSummary" in js
+    assert b"SsDcl.doneLabel" in js
+    for element_id in (b"sort-summary", b"progress-meter", b"progress-meter-fill"):
+        assert b'id="' + element_id + b'"' in html
+
+
+def test_compact_switcher_shows_one_column_at_a_time(client):
+    """Below the compact breakpoint the switcher picks the visible column."""
+    c, _ = client
+    js = c.get("/static/app.js").data
+    html = c.get("/").data
+    assert b"setCompactColumn" in js
+    assert b"dataset.compactColumn" in js
+    for column in (b"keep", b"unsorted", b"trash"):
+        assert b'data-column-target="' + column + b'"' in html
 
 
 def test_app_js_sets_fingerprint_dataset(client):
@@ -167,6 +201,95 @@ def test_index_has_suggest_progress_bar(client):
     assert 'id="suggest-progress"' in html
     assert 'id="suggest-progress-fill"' in html
     assert 'id="suggest-progress-text"' in html
+
+
+def test_phase3_settings_is_grouped_and_theme_choice_is_explicit(client):
+    """Settings exposes the four planned sections and a real three-way choice."""
+    c, _ = client
+    html = c.get("/").data.decode()
+    js = c.get("/static/app.js").data.decode()
+    for heading in ("Appearance", "Local AI", "Sources", "Memory"):
+        assert heading in html
+    assert 'id="theme-toggle"' in html
+    for mode in ("auto", "light", "dark"):
+        assert f'data-theme-choice="{mode}"' in html
+    assert 'role="radiogroup"' in html
+    assert 'id="settings-save-status"' in html
+    assert "settingsSave.disabled = !dirty" in js
+    assert "function selectTheme(mode)" in js
+
+
+def test_phase3_transient_surfaces_share_accessible_overlay_contract(client):
+    """Dialogs expose modal names/descriptions and share focus containment."""
+    c, _ = client
+    html = c.get("/").data.decode()
+    js = c.get("/static/app.js").data.decode()
+    for dialog_id in ("confirm-modal", "rename-modal", "settings-menu", "lightbox"):
+        assert f'id="{dialog_id}"' in html
+    assert html.count('aria-modal="true"') >= 4
+    assert 'aria-describedby="modal-desc"' in html
+    assert 'aria-describedby="rename-desc"' in html
+    assert "function openOverlay(" in js
+    assert "function closeOverlay(" in js
+    assert "function trapOverlayFocus(" in js
+    assert "requestAnimationFrame(() => returnFocus.focus" in js
+
+
+def test_phase3_lightbox_has_visible_navigation_and_position(client):
+    c, _ = client
+    html = c.get("/").data.decode()
+    js = c.get("/static/app.js").data.decode()
+    for control_id in (
+        "lightbox-prev",
+        "lightbox-next",
+        "lightbox-position",
+        "lightbox-rename-btn",
+    ):
+        assert f'id="{control_id}"' in html
+    assert 'aria-label="Previous screenshot"' in html
+    assert 'aria-label="Next screenshot"' in html
+    assert "function _syncLightboxNavigation()" in js
+    assert "lightboxPrev.disabled" in js
+    assert "lightboxNext.disabled" in js
+
+
+def test_phase3_feedback_and_intentional_states_are_in_the_shell(client):
+    c, _ = client
+    html = c.get("/").data.decode()
+    js = c.get("/static/app.js").data.decode()
+    for element_id in (
+        "toast-region",
+        "feedback-banner",
+        "feedback-banner-close",
+        "all-sorted-msg",
+        "scan-error-msg",
+        "retry-scan-btn",
+    ):
+        assert f'id="{element_id}"' in html
+    assert 'role="tooltip"' in html
+    assert "function showToast(" in js
+    assert "function showFeedbackBanner(" in js
+    assert 'setBoardState("sorted")' in js
+    assert "persistent: true" in js
+    assert "alert(" not in js
+
+
+def test_phase3_shared_menu_and_activity_surfaces_are_styled(client):
+    c, _ = client
+    html = c.get("/").data
+    css = c.get("/static/style.css").data
+    assert b'id="llm-menu"' in html
+    assert b'role="menu"' in html
+    assert b'aria-haspopup="menu"' in html
+    assert b'role="progressbar"' in html
+    for marker in (
+        b".popover",
+        b".menu-item",
+        b".toast-region",
+        b".feedback-banner",
+        b".activity-panel",
+    ):
+        assert marker in css
 
 
 def test_index_has_settings_menu(client):
@@ -378,38 +501,49 @@ def test_rename_handlers_remove_suggestion_badge(client):
 # ── Phase 4B: Dark mode ─────────────────────────────────────────────────────
 
 
-def test_index_has_theme_toggle(client):
-    """#theme-toggle button exists in HTML."""
+def test_index_has_explicit_theme_choices(client):
+    """Settings exposes explicit System, Light, and Dark theme choices."""
     c, _ = client
     html = c.get("/").data.decode()
-    assert 'id="theme-toggle"' in html
+    assert 'role="radiogroup" aria-label="Color theme"' in html
+    for mode in ("auto", "light", "dark"):
+        assert f'data-theme-choice="{mode}"' in html
 
 
 def test_app_js_has_theme_cycle(client):
-    """JS must define cycleTheme or THEME_KEY for theme management."""
+    """JS must drive the theme through the shared theme-init.js helpers."""
     c, _ = client
     r = c.get("/static/app.js")
     assert r.status_code == 200
-    assert b"THEME_KEY" in r.data
+    assert b"SsDclTheme" in r.data
     assert b"function cycleTheme(" in r.data
 
 
+def test_app_js_supports_keyboard_theme_choice(client):
+    """The explicit radio choices support the standard arrow-key navigation."""
+    c, _ = client
+    source = c.get("/static/app.js").data
+    assert b"ArrowLeft" in source
+    assert b"ArrowRight" in source
+    assert b"function selectTheme(" in source
+
+
 def test_css_has_dark_variables(client):
-    """CSS must have [data-theme="dark"] block with --bg-body."""
+    """CSS must re-declare the semantic palette in the dark block."""
     c, _ = client
     r = c.get("/static/style.css")
     assert r.status_code == 200
     assert b'[data-theme="dark"]' in r.data
-    assert b"--bg-body" in r.data
+    assert b"--surface-canvas" in r.data
 
 
 def test_css_has_light_variables(client):
-    """CSS must have :root block with CSS custom properties."""
+    """CSS must declare the semantic palette in the :root block."""
     c, _ = client
     r = c.get("/static/style.css")
     assert r.status_code == 200
     assert b":root {" in r.data
-    assert b"--bg-body" in r.data
+    assert b"--surface-canvas" in r.data
 
 
 # ── Phase 4C/4D: Frontend hints + failure count ──────────────────────────────
@@ -605,7 +739,6 @@ PHASE0_SURFACE_IDS = (
     "settings-model",
     "settings-auto",
     "settings-prune-age",
-    "theme-toggle",
     "tracked-folders-list",
     "add-folder-btn",
     "tracked-folders-error",
