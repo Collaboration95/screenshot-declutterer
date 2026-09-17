@@ -386,30 +386,30 @@ def test_index_has_theme_toggle(client):
 
 
 def test_app_js_has_theme_cycle(client):
-    """JS must define cycleTheme or THEME_KEY for theme management."""
+    """JS must drive the theme through the shared theme-init.js helpers."""
     c, _ = client
     r = c.get("/static/app.js")
     assert r.status_code == 200
-    assert b"THEME_KEY" in r.data
+    assert b"SsDclTheme" in r.data
     assert b"function cycleTheme(" in r.data
 
 
 def test_css_has_dark_variables(client):
-    """CSS must have [data-theme="dark"] block with --bg-body."""
+    """CSS must re-declare the semantic palette in the dark block."""
     c, _ = client
     r = c.get("/static/style.css")
     assert r.status_code == 200
     assert b'[data-theme="dark"]' in r.data
-    assert b"--bg-body" in r.data
+    assert b"--surface-canvas" in r.data
 
 
 def test_css_has_light_variables(client):
-    """CSS must have :root block with CSS custom properties."""
+    """CSS must declare the semantic palette in the :root block."""
     c, _ = client
     r = c.get("/static/style.css")
     assert r.status_code == 200
     assert b":root {" in r.data
-    assert b"--bg-body" in r.data
+    assert b"--surface-canvas" in r.data
 
 
 # ── Phase 4C/4D: Frontend hints + failure count ──────────────────────────────
