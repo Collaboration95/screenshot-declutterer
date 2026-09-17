@@ -73,6 +73,7 @@ const settingsSaveStatus = document.getElementById("settings-save-status");
 const settingsLLMStatus = document.getElementById("settings-llm-status");
 const settingsLLMStatusText = document.getElementById("settings-llm-status-text");
 const settingsLLMAction = document.getElementById("settings-llm-action");
+const appbar = document.querySelector(".appbar");
 const trackedFoldersList = document.getElementById("tracked-folders-list");
 const addFolderBtn    = document.getElementById("add-folder-btn");
 const trackedFoldersError = document.getElementById("tracked-folders-error");
@@ -568,6 +569,7 @@ function loadScreenshots(savedDecisions) {
                      : cardsUnsorted;
         target.appendChild(makeCard(f.name, f.source, col, f.fingerprint, f.memory_status, f.suggested_name, f.suggested_category));
       });
+      setBoardState("board");
       updateCounts();
       saveState();
 
@@ -1976,10 +1978,21 @@ function resetSettingsForm() {
   updateSettingsDirty();
 }
 
+function positionSettingsMenu() {
+  if (!appbar || !settingsMenu) return;
+  const compact = window.matchMedia && window.matchMedia("(max-width: 1024px)").matches;
+  settingsMenu.style.top = compact ? "" : `${appbar.getBoundingClientRect().bottom + 8}px`;
+}
+
 settingsBtn.addEventListener("click", () => {
   if (!settingsMenu.hidden) { closeSettingsMenu(); return; }
   resetSettingsForm();
+  positionSettingsMenu();
   openOverlay(settingsMenu, settingsBtn, ".theme-choice");
+  settingsBtn.setAttribute("aria-expanded", "true");
+});
+window.addEventListener("resize", () => {
+  if (!settingsMenu.hidden) positionSettingsMenu();
 });
 
 // When the model field holds a legacy/default id, snap it to the LiteRT form.
@@ -1999,6 +2012,7 @@ function closeSettingsMenu(options) {
     return false;
   }
   closeOverlay(settingsMenu);
+  settingsBtn.setAttribute("aria-expanded", "false");
   return true;
 }
 

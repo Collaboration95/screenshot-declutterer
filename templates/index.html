@@ -3,6 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="theme-color" content="#F7F6E8" id="theme-color-meta" />
   <title>Screenshot Declutterer</title>
   <!-- Resolves and applies the stored theme before the stylesheet is even
        fetched, so the first paint is already in the right palette. No inline
@@ -29,7 +30,8 @@
           <span class="sr-only">\u2014 screenshots stay on this Mac</span>
         </span>
         <button type="button" id="llm-server-btn" class="status-pill status-pill-llm is-stopped" hidden
-                data-tooltip="Local AI server \u2014 click to start" aria-label="Manage the LLM server">
+                data-tooltip="Local AI server \u2014 click to start" aria-label="Manage the LLM server"
+                aria-haspopup="menu" aria-expanded="false" aria-controls="llm-menu">
           <span class="status-dot" aria-hidden="true"></span>
           <span class="status-pill-text" id="llm-status-label">AI stopped</span>
         </button>
@@ -60,7 +62,7 @@
           <span>Undo</span>
         </button>
         <button id="done-btn" class="btn btn-primary btn-sm" data-tooltip="Move screenshots to Trash" disabled aria-label="Move screenshots to trash">Done</button>
-        <button id="settings-btn" class="icon-btn" data-tooltip="Settings" aria-label="Open settings">
+        <button id="settings-btn" class="icon-btn" data-tooltip="Settings" aria-label="Open settings" aria-haspopup="dialog" aria-expanded="false" aria-controls="settings-menu">
           <svg class="icon" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" focusable="false">
             <path d="M4 7h7M16 7h4M4 17h4M13 17h7" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" />
             <circle cx="13.5" cy="7" r="2.3" fill="none" stroke="currentColor" stroke-width="1.7" />
@@ -69,6 +71,21 @@
         </button>
       </div>
     </header>
+
+    <div id="llm-menu" class="popover llm-menu" hidden role="menu" aria-labelledby="llm-server-btn">
+      <div class="popover-heading">
+        <div>
+          <p class="popover-eyebrow">Local AI</p>
+          <p class="popover-title">Server status</p>
+        </div>
+        <span class="popover-status" id="llm-menu-status">Stopped</span>
+      </div>
+      <p class="popover-desc" id="llm-menu-desc">AI suggestions run on this Mac and never upload your screenshots.</p>
+      <button type="button" id="llm-menu-action" class="menu-item menu-item-primary" role="menuitem">
+        <span class="menu-item-label">Start local AI</span>
+        <span class="menu-item-shortcut">Enter</span>
+      </button>
+    </div>
 
     <!-- Compact (<=1024px) column switcher: one column at a time with counts,
          so the primary actions never squeeze off screen. -->
@@ -102,8 +119,29 @@
             <span class="column-count" id="count-unsorted">0</span>
           </div>
           <div class="column-cards" id="cards-unsorted"></div>
-          <p id="loading-msg" class="board-state">Loading screenshots\u2026</p>
-          <p id="empty-msg" class="board-state" hidden>No screenshots found on your Desktop or tracked folders.</p>
+          <div id="loading-msg" class="board-state board-state-panel" role="status" aria-live="polite">
+            <span class="state-icon state-icon-loading" aria-hidden="true"></span>
+            <strong>Scanning your screenshots</strong>
+            <span>Looking across Desktop and tracked folders.</span>
+          </div>
+          <div id="empty-msg" class="board-state board-state-panel" hidden>
+            <span class="state-icon" aria-hidden="true">&#8722;</span>
+            <strong>No screenshots to sort</strong>
+            <span>New Screenshot files on Desktop will appear here.</span>
+            <button type="button" id="refresh-btn" class="state-action">Scan again</button>
+          </div>
+          <div id="all-sorted-msg" class="board-state board-state-panel" hidden>
+            <span class="state-icon state-icon-check" aria-hidden="true">&#10003;</span>
+            <strong>Everything is sorted</strong>
+            <span>Review Keep and Trash, or scan again for new screenshots.</span>
+            <button type="button" id="refresh-sorted-btn" class="state-action">Scan again</button>
+          </div>
+          <div id="scan-error-msg" class="board-state board-state-panel board-state-error" hidden role="alert">
+            <span class="state-icon" aria-hidden="true">!</span>
+            <strong>We couldn't scan your screenshots</strong>
+            <span id="scan-error-detail">Check that Desktop is available, then try again.</span>
+            <button type="button" id="retry-scan-btn" class="state-action">Try again</button>
+          </div>
         </section>
 
         <!-- Trash column (right) -->
@@ -127,30 +165,50 @@
   </div>
 
   <!-- Card filename tooltip (shared, positioned via JS) -->
-  <div id="card-tooltip" class="card-tooltip" aria-hidden="true"></div>
+  <div id="card-tooltip" class="card-tooltip" role="tooltip" aria-hidden="true"></div>
+
+  <div id="toast-region" class="toast-region" aria-live="polite" aria-atomic="false"></div>
+  <div id="feedback-banner" class="feedback-banner" hidden role="alert" aria-labelledby="feedback-banner-title">
+    <span class="feedback-banner-icon" aria-hidden="true">!</span>
+    <div class="feedback-banner-copy">
+      <strong id="feedback-banner-title"></strong>
+      <span id="feedback-banner-message"></span>
+      <details id="feedback-banner-details" hidden>
+        <summary>Show details</summary>
+        <ul id="feedback-banner-list"></ul>
+      </details>
+    </div>
+    <button type="button" id="feedback-banner-close" class="feedback-dismiss" aria-label="Dismiss message">&times;</button>
+  </div>
 
   <!-- Lightbox -->
-  <div id="lightbox" class="lightbox" hidden role="dialog" aria-label="Image preview">
+  <div id="lightbox" class="lightbox" hidden role="dialog" aria-modal="true" aria-labelledby="lightbox-title" aria-describedby="lightbox-description" tabindex="-1">
     <div class="lightbox-backdrop"></div>
     <div class="lightbox-content">
+      <span id="lightbox-title" class="sr-only">Image preview</span>
+      <span id="lightbox-description" class="sr-only">Use the previous and next buttons or arrow keys to browse screenshots.</span>
       <img class="lightbox-img" id="lightbox-img" src="" alt="" decoding="async" />
       <div class="lightbox-bar">
         <div class="lightbox-bar-top">
+          <button class="lightbox-nav lightbox-prev" id="lightbox-prev" type="button" data-tooltip="Previous screenshot" aria-label="Previous screenshot"><span aria-hidden="true">&#8592;</span></button>
+          <span class="lightbox-position" id="lightbox-position" aria-live="polite"></span>
           <span class="lightbox-filename" id="lightbox-filename" role="button" tabindex="0" aria-label="Click to rename"></span>
+          <button class="lightbox-rename-btn" id="lightbox-rename-btn" type="button" data-tooltip="Rename screenshot" aria-label="Rename screenshot">Rename</button>
           <button class="lightbox-reveal-btn" id="lightbox-reveal-btn" type="button" data-tooltip="Reveal in Finder" aria-label="Reveal in Finder">Finder</button>
+          <button class="lightbox-nav lightbox-next" id="lightbox-next" type="button" data-tooltip="Next screenshot" aria-label="Next screenshot"><span aria-hidden="true">&#8594;</span></button>
         </div>
         <input class="lightbox-rename-input" id="lightbox-rename-input" type="text" autocomplete="off" spellcheck="false" hidden aria-label="Rename filename" />
         <p id="lightbox-rename-error" class="lightbox-rename-error" role="alert"></p>
       </div>
     </div>
-    <button class="lightbox-close" id="lightbox-close" aria-label="Close">&times;</button>
+    <button class="lightbox-close" id="lightbox-close" type="button" aria-label="Close preview">&times;</button>
   </div>
 
   <!-- Confirm modal -->
-  <div id="confirm-modal" class="modal-overlay" hidden role="dialog" aria-labelledby="modal-title">
+  <div id="confirm-modal" class="modal-overlay" hidden role="dialog" aria-modal="true" aria-labelledby="modal-title" aria-describedby="modal-desc" tabindex="-1" data-dialog="confirm">
     <div class="modal">
       <p class="modal-title" id="modal-title">Move screenshots to Trash?</p>
-      <p class="modal-desc">This uses macOS Trash &mdash; you can recover files if needed.</p>
+      <p class="modal-desc" id="modal-desc">This uses macOS Trash &mdash; you can recover files if needed.</p>
       <div class="modal-actions">
         <button class="modal-btn modal-cancel" id="modal-cancel">Cancel</button>
         <button class="modal-btn modal-confirm" id="modal-confirm">Move to Trash</button>
@@ -159,8 +217,12 @@
   </div>
 
   <!-- Suggest progress bar -->
-  <div id="suggest-progress" class="suggest-progress" hidden>
-    <div class="suggest-progress-bar">
+  <div id="suggest-progress" class="suggest-progress activity-panel" hidden role="status" aria-live="polite" aria-atomic="true">
+    <div class="activity-panel-heading">
+      <span class="activity-panel-title">Naming screenshots</span>
+      <span class="suggest-progress-failure" id="suggest-progress-failure"></span>
+    </div>
+    <div class="suggest-progress-bar" role="progressbar" aria-labelledby="suggest-progress-text" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
       <div class="suggest-progress-fill" id="suggest-progress-fill"></div>
     </div>
     <span class="suggest-progress-text" id="suggest-progress-text"></span>
@@ -168,10 +230,10 @@
   </div>
 
   <!-- Rename modal -->
-  <div id="rename-modal" class="modal-overlay" hidden role="dialog" aria-labelledby="rename-title">
+  <div id="rename-modal" class="modal-overlay" hidden role="dialog" aria-modal="true" aria-labelledby="rename-title" aria-describedby="rename-desc" tabindex="-1" data-dialog="rename">
     <div class="modal">
       <p class="modal-title" id="rename-title">Rename Screenshot</p>
-      <p class="modal-desc">Enter a new filename (extension will be preserved if unchanged).</p>
+      <p class="modal-desc" id="rename-desc">Enter a new filename (extension will be preserved if unchanged).</p>
       <input id="rename-input" type="text" class="rename-input" autocomplete="off" spellcheck="false" />
       <p id="rename-error" class="rename-error"></p>
       <div class="modal-actions">
@@ -242,20 +304,20 @@
           <p id="tracked-folders-error" class="tracked-error" role="alert"></p>
         </div>
       </section>
-    </div>
-    <section class="settings-section settings-section-advanced" aria-labelledby="settings-memory-heading">
-      <div class="settings-section-heading">
-        <h2 id="settings-memory-heading">Memory</h2>
-        <p>Older learned decisions are pruned automatically to keep local state tidy.</p>
-      </div>
-      <div class="settings-field">
-        <label for="settings-prune-age">Prune memory after</label>
-        <div class="settings-input-with-suffix">
-          <input id="settings-prune-age" type="number" min="1" max="730" class="rename-input" />
-          <span>days</span>
+      <section class="settings-section settings-section-advanced" aria-labelledby="settings-memory-heading">
+        <div class="settings-section-heading">
+          <h2 id="settings-memory-heading">Memory</h2>
+          <p>Older learned decisions are pruned automatically to keep local state tidy.</p>
         </div>
-      </div>
-    </section>
+        <div class="settings-field">
+          <label for="settings-prune-age">Prune memory after</label>
+          <div class="settings-input-with-suffix">
+            <input id="settings-prune-age" type="number" min="1" max="730" class="rename-input" />
+            <span>days</span>
+          </div>
+        </div>
+      </section>
+    </div>
     <button id="suggest-all-btn" class="menu-item menu-item-ai" data-tooltip="Suggest names for all new screenshots" aria-label="Suggest names for all new screenshots" type="button"><span aria-hidden="true">&#10024;</span> Suggest All</button>
     <div class="settings-actions settings-sticky-footer">
       <span class="settings-save-status" id="settings-save-status" role="status" aria-live="polite"></span>

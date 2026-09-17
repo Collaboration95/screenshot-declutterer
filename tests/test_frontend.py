@@ -203,6 +203,95 @@ def test_index_has_suggest_progress_bar(client):
     assert 'id="suggest-progress-text"' in html
 
 
+def test_phase3_settings_is_grouped_and_theme_choice_is_explicit(client):
+    """Settings exposes the four planned sections and a real three-way choice."""
+    c, _ = client
+    html = c.get("/").data.decode()
+    js = c.get("/static/app.js").data.decode()
+    for heading in ("Appearance", "Local AI", "Sources", "Memory"):
+        assert heading in html
+    assert 'id="theme-toggle"' in html
+    for mode in ("auto", "light", "dark"):
+        assert f'data-theme-choice="{mode}"' in html
+    assert 'role="radiogroup"' in html
+    assert 'id="settings-save-status"' in html
+    assert "settingsSave.disabled = !dirty" in js
+    assert "function selectTheme(mode)" in js
+
+
+def test_phase3_transient_surfaces_share_accessible_overlay_contract(client):
+    """Dialogs expose modal names/descriptions and share focus containment."""
+    c, _ = client
+    html = c.get("/").data.decode()
+    js = c.get("/static/app.js").data.decode()
+    for dialog_id in ("confirm-modal", "rename-modal", "settings-menu", "lightbox"):
+        assert f'id="{dialog_id}"' in html
+    assert html.count('aria-modal="true"') >= 4
+    assert 'aria-describedby="modal-desc"' in html
+    assert 'aria-describedby="rename-desc"' in html
+    assert "function openOverlay(" in js
+    assert "function closeOverlay(" in js
+    assert "function trapOverlayFocus(" in js
+    assert "requestAnimationFrame(() => returnFocus.focus" in js
+
+
+def test_phase3_lightbox_has_visible_navigation_and_position(client):
+    c, _ = client
+    html = c.get("/").data.decode()
+    js = c.get("/static/app.js").data.decode()
+    for control_id in (
+        "lightbox-prev",
+        "lightbox-next",
+        "lightbox-position",
+        "lightbox-rename-btn",
+    ):
+        assert f'id="{control_id}"' in html
+    assert 'aria-label="Previous screenshot"' in html
+    assert 'aria-label="Next screenshot"' in html
+    assert "function _syncLightboxNavigation()" in js
+    assert "lightboxPrev.disabled" in js
+    assert "lightboxNext.disabled" in js
+
+
+def test_phase3_feedback_and_intentional_states_are_in_the_shell(client):
+    c, _ = client
+    html = c.get("/").data.decode()
+    js = c.get("/static/app.js").data.decode()
+    for element_id in (
+        "toast-region",
+        "feedback-banner",
+        "feedback-banner-close",
+        "all-sorted-msg",
+        "scan-error-msg",
+        "retry-scan-btn",
+    ):
+        assert f'id="{element_id}"' in html
+    assert 'role="tooltip"' in html
+    assert "function showToast(" in js
+    assert "function showFeedbackBanner(" in js
+    assert 'setBoardState("sorted")' in js
+    assert "persistent: true" in js
+    assert "alert(" not in js
+
+
+def test_phase3_shared_menu_and_activity_surfaces_are_styled(client):
+    c, _ = client
+    html = c.get("/").data
+    css = c.get("/static/style.css").data
+    assert b'id="llm-menu"' in html
+    assert b'role="menu"' in html
+    assert b'aria-haspopup="menu"' in html
+    assert b'role="progressbar"' in html
+    for marker in (
+        b".popover",
+        b".menu-item",
+        b".toast-region",
+        b".feedback-banner",
+        b".activity-panel",
+    ):
+        assert marker in css
+
+
 def test_index_has_settings_menu(client):
     c, _ = client
     html = c.get("/").data.decode()
