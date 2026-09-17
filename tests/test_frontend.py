@@ -543,3 +543,81 @@ def test_css_has_empty_column_hints(client):
     assert b"column-cards:empty" in r.data
     assert b"Drop here to keep" in r.data
     assert b"Drop here to trash" in r.data
+
+
+# ── Phase 0 inventory (docs/ui-inventory-phase0.md) ──────────────────────────
+# Mirrors the surface inventory recorded for the UI revamp. When a surface is
+# renamed or replaced, update both the document and this list together.
+
+PHASE0_SURFACE_IDS = (
+    # Application shell
+    "llm-server-btn",
+    "status-msg",
+    "sort-select",
+    "undo-btn",
+    "done-btn",
+    "settings-btn",
+    # Board
+    "col-keep",
+    "cards-keep",
+    "count-keep",
+    "col-unsorted",
+    "cards-unsorted",
+    "count-unsorted",
+    "loading-msg",
+    "empty-msg",
+    "col-trash",
+    "cards-trash",
+    "count-trash",
+    # Batch bar and tooltip
+    "batch-bar",
+    "batch-count",
+    "batch-keep-btn",
+    "batch-trash-btn",
+    "batch-clear-btn",
+    "card-tooltip",
+    # Lightbox
+    "lightbox",
+    "lightbox-img",
+    "lightbox-filename",
+    "lightbox-reveal-btn",
+    "lightbox-rename-input",
+    "lightbox-rename-error",
+    "lightbox-close",
+    # Dialogs and progress
+    "confirm-modal",
+    "modal-title",
+    "modal-cancel",
+    "modal-confirm",
+    "rename-modal",
+    "rename-title",
+    "rename-input",
+    "rename-error",
+    "rename-cancel",
+    "rename-confirm",
+    "suggest-progress",
+    "suggest-progress-fill",
+    "suggest-progress-text",
+    "suggest-cancel-btn",
+    # Settings panel
+    "settings-menu",
+    "settings-provider",
+    "settings-model",
+    "settings-auto",
+    "settings-prune-age",
+    "theme-toggle",
+    "tracked-folders-list",
+    "add-folder-btn",
+    "tracked-folders-error",
+    "suggest-all-btn",
+    "settings-cancel",
+    "settings-save",
+)
+
+
+def test_phase0_inventory_surface_ids_exist(client):
+    """Every surface recorded in the Phase 0 inventory is still in the shell."""
+    c, _ = client
+    html = c.get("/").data.decode()
+    missing = [element for element in PHASE0_SURFACE_IDS if f'id="{element}"' not in html]
+    assert missing == []

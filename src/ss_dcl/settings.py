@@ -11,10 +11,11 @@ from pathlib import Path
 from typing import Any
 
 from ss_dcl.memory import atomic_write
+from ss_dcl.paths import state_dir
 
 logger = logging.getLogger(__name__)
 
-SETTINGS_FILE = Path.home() / ".ss-dcl" / "settings.json"
+SETTINGS_FILE = state_dir() / "settings.json"
 DEFAULT_LLM_MODEL = "gemma4-e2b"
 # Default DESKTOP for validation (mirrors app.DESKTOP)
 _DEFAULT_DESKTOP = Path(os.environ.get("SS_DCL_DESKTOP", str(Path.home() / "Desktop")))

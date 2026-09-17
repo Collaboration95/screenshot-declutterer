@@ -13,9 +13,12 @@ Single-file backend + single-file frontend. Zero build steps.
 ```
 src/ss_dcl/app.py        Flask backend (all routes, scanning, thumbnails, state, trash, rename, port detection)
 src/ss_dcl/memory.py    Persistent file memory store (fingerprint-keyed identity, status tracking, atomic persistence)
+src/ss_dcl/paths.py      Runtime-root indirection for state/cache dirs (SS_DCL_HOME override)
 static/app.js            Frontend JS (Kanban, drag-and-drop, undo, lightbox, rename modal, confirm modal)
 static/style.css         All CSS (Kanban layout, cards, lightbox, rename modal, confirm modal)
 templates/index.html     SPA shell — three-column layout + lightbox + rename modal + confirm modal
+tools/demo_fixtures.py   Deterministic non-personal demo workspace generator (documentation/baselines)
+tools/capture_ui_baseline.py  Headless-Chrome capture of the canonical UI baseline matrix
 tests/conftest.py        Shared pytest fixtures and helpers
 tests/test_routes_*.py   Route-specific test files (index, screenshots, image, thumb, state, done, rename, memory split into records/suggest/prune/persistence)
 tests/test_memory.py     Memory store unit tests (fingerprint, CRUD, persistence, status transitions, edge cases)
@@ -98,6 +101,10 @@ All in `static/app.js`:
 | LITERT_SERVE_CMD | `litert-lm serve` (env `LITERT_SERVE_CMD`; PATH → venv fallback) |
 | LITERT_PIDFILE | `~/.ss-dcl/litert.pid` |
 | LITERT_LOG_FILE | `~/.ss-dcl/litert.log` |
+
+State, cache, and log paths all resolve through `ss_dcl/paths.py`; setting `SS_DCL_HOME` relocates
+that whole runtime root (used with `SS_DCL_DESKTOP` by the demo fixture/capture tooling so
+documentation runs never read the real Desktop or write real state).
 
 ## Logging
 
