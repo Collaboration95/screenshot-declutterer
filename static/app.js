@@ -44,6 +44,18 @@ const lightboxRenameInput = document.getElementById("lightbox-rename-input");
 const lightboxRenameError = document.getElementById("lightbox-rename-error");
 const lightboxBar = document.querySelector(".lightbox-bar");
 const cardTooltip = document.getElementById("card-tooltip");
+const lightboxPrev = document.getElementById("lightbox-prev");
+const lightboxNext = document.getElementById("lightbox-next");
+const lightboxPosition = document.getElementById("lightbox-position");
+const lightboxRenameBtn = document.getElementById("lightbox-rename-btn");
+
+const toastRegion = document.getElementById("toast-region");
+const feedbackBanner = document.getElementById("feedback-banner");
+const feedbackBannerTitle = document.getElementById("feedback-banner-title");
+const feedbackBannerMessage = document.getElementById("feedback-banner-message");
+const feedbackBannerDetails = document.getElementById("feedback-banner-details");
+const feedbackBannerList = document.getElementById("feedback-banner-list");
+const feedbackBannerClose = document.getElementById("feedback-banner-close");
 
 const confirmModal = document.getElementById("confirm-modal");
 const modalTitle   = document.getElementById("modal-title");
@@ -56,16 +68,35 @@ const settingsModel   = document.getElementById("settings-model");
 const settingsAuto    = document.getElementById("settings-auto");
 const settingsCancel  = document.getElementById("settings-cancel");
 const settingsSave    = document.getElementById("settings-save");
+const settingsCloseBtn = document.getElementById("settings-close-btn");
+const settingsSaveStatus = document.getElementById("settings-save-status");
+const settingsLLMStatus = document.getElementById("settings-llm-status");
+const settingsLLMStatusText = document.getElementById("settings-llm-status-text");
+const settingsLLMAction = document.getElementById("settings-llm-action");
 const trackedFoldersList = document.getElementById("tracked-folders-list");
 const addFolderBtn    = document.getElementById("add-folder-btn");
 const trackedFoldersError = document.getElementById("tracked-folders-error");
 
 const llmServerBtn    = document.getElementById("llm-server-btn");
 const llmStatusLabel  = document.getElementById("llm-status-label");
+const llmMenu         = document.getElementById("llm-menu");
+const llmMenuAction   = document.getElementById("llm-menu-action");
+const llmMenuStatus   = document.getElementById("llm-menu-status");
+const llmMenuDesc     = document.getElementById("llm-menu-desc");
 
 const sortSummary        = document.getElementById("sort-summary");
 const progressMeter      = document.getElementById("progress-meter");
 const progressMeterFill  = document.getElementById("progress-meter-fill");
+const allSortedMsg = document.getElementById("all-sorted-msg");
+const scanErrorMsg = document.getElementById("scan-error-msg");
+const scanErrorDetail = document.getElementById("scan-error-detail");
+const refreshButtons = [
+  document.getElementById("refresh-btn"),
+  document.getElementById("refresh-sorted-btn"),
+  document.getElementById("retry-scan-btn"),
+].filter(Boolean);
+const suggestProgressFailure = document.getElementById("suggest-progress-failure");
+const suggestProgressBar = suggestProgress ? suggestProgress.querySelector('[role="progressbar"]') : null;
 
 const kanban         = document.getElementById("kanban");
 const columnSwitcher = document.getElementById("column-switcher");
@@ -95,6 +126,7 @@ const columns = [colTrash, colUnsorted, colKeep];
 // declaring a second copy that could drift.
 const THEME_KEY = SsDclTheme.THEME_STORAGE_KEY;
 const themeChoices = [...document.querySelectorAll("[data-theme-choice]")];
+const themeColorMeta = document.getElementById("theme-color-meta");
 
 function getSavedTheme() {
   return SsDclTheme.readMode(window);
@@ -111,6 +143,9 @@ function _updateThemeLabel() {
     choice.setAttribute("aria-checked", String(selected));
     choice.classList.toggle("is-selected", selected);
   });
+  if (themeColorMeta) {
+    themeColorMeta.content = SsDclTheme.effectiveTheme(mode, window) === "dark" ? "#171815" : "#F7F6E8";
+  }
 }
 
 function cycleTheme() {
@@ -141,12 +176,16 @@ function selectTheme(mode) {
   SsDclTheme.writeMode(mode, window);
   applyTheme(mode);
   _updateThemeLabel();
+  announce(`Theme set to ${mode === "auto" ? "System" : mode === "dark" ? "Dark" : "Light"}.`, { type: "success", timeout: 3000 });
 }
 
 // With "auto" selected the board has to follow the OS live.
 if (typeof window.matchMedia === "function") {
   window.matchMedia(SsDclTheme.DARK_QUERY).addEventListener("change", () => {
-    if (getSavedTheme() === "auto") applyTheme("auto");
+    if (getSavedTheme() === "auto") {
+      applyTheme("auto");
+      _updateThemeLabel();
+    }
   });
 }
 
@@ -171,6 +210,74 @@ function providerErrorCopy() {
 // carries a short-lived notice: it clears itself instead of overwriting the
 // summary indefinitely (PLAN 6.2).
 let _statusTimer = null;
+let _toastId = 0;
+
+function _toastType(options) {
+  const opts = options || {};
+  return opts.error ? "error" : (opts.type || "info");
+}
+
+function showToast(message, options) {
+  if (!toastRegion || !message) return;
+  const opts = options || {};
+  const toast = document.createElement("div");
+  const type = _toastType(opts);
+  toast.className = `toast toast-${type}`;
+  toast.dataset.toastId = String(++_toastId);
+  toast.setAttribute("role", type === "error" ? "alert" : "status");
+
+  const iconEl = document.createElement("span");
+  iconEl.className = "toast-icon";
+  iconEl.setAttribute("aria-hidden", "true");
+  iconEl.textContent = type === "success" ? "✓" : type === "error" ? "!" : type === "warning" ? "!" : "i";
+  const copy = document.createElement("span");
+  copy.className = "toast-copy";
+  copy.textContent = message;
+  const close = document.createElement("button");
+  close.type = "button";
+  close.className = "toast-dismiss";
+  close.setAttribute("aria-label", "Dismiss notification");
+  close.textContent = "×";
+  close.addEventListener("click", () => toast.remove());
+  toast.append(iconEl, copy, close);
+  toastRegion.appendChild(toast);
+
+  const timeout = opts.timeout === undefined ? (type === "error" ? 0 : 6500) : opts.timeout;
+  if (timeout > 0) {
+    let timer = setTimeout(() => toast.remove(), timeout);
+    const pause = () => { clearTimeout(timer); };
+    const resume = () => { timer = setTimeout(() => toast.remove(), timeout); };
+    toast.addEventListener("mouseenter", pause);
+    toast.addEventListener("focusin", pause);
+    toast.addEventListener("mouseleave", resume);
+    toast.addEventListener("focusout", resume);
+  }
+  return toast;
+}
+
+function showFeedbackBanner(title, message, options) {
+  if (!feedbackBanner) return;
+  const opts = options || {};
+  feedbackBanner.className = `feedback-banner feedback-${opts.type || (opts.error ? "error" : "warning")}`;
+  feedbackBannerTitle.textContent = title || "Something needs your attention";
+  feedbackBannerMessage.textContent = message || "";
+  feedbackBannerList.textContent = "";
+  const details = opts.details || [];
+  feedbackBannerDetails.hidden = details.length === 0;
+  details.forEach(detail => {
+    const item = document.createElement("li");
+    item.textContent = detail;
+    feedbackBannerList.appendChild(item);
+  });
+  feedbackBanner.hidden = false;
+  if (feedbackBannerClose) feedbackBannerClose.focus({ preventScroll: true });
+}
+
+function hideFeedbackBanner() {
+  if (feedbackBanner) feedbackBanner.hidden = true;
+}
+
+if (feedbackBannerClose) feedbackBannerClose.addEventListener("click", hideFeedbackBanner);
 
 function announce(message, options) {
   const opts = options || {};
@@ -179,11 +286,15 @@ function announce(message, options) {
   statusMsg.textContent = message || "";
   statusMsg.classList.toggle("is-error", !!opts.error);
   if (!message) return;
-  _statusTimer = setTimeout(() => {
-    statusMsg.textContent = "";
-    statusMsg.classList.remove("is-error");
-    _statusTimer = null;
-  }, opts.timeout || 8000);
+  showToast(message, opts);
+  if (opts.persistent) showFeedbackBanner(opts.title, message, opts);
+  if (opts.timeout !== 0) {
+    _statusTimer = setTimeout(() => {
+      statusMsg.textContent = "";
+      statusMsg.classList.remove("is-error");
+      _statusTimer = null;
+    }, opts.timeout || 8000);
+  }
 }
 
 // ── Managed LiteRT server status pill ───────────────────────────────────────
@@ -208,6 +319,19 @@ function _setLLMStatus(state, labelOverride) {
   llmServerBtn.disabled = state === "starting";
   llmServerBtn.setAttribute("aria-label", copy.hint);
   llmServerBtn.dataset.tooltip = copy.hint;
+  llmServerBtn.setAttribute("aria-expanded", String(!llmMenu.hidden));
+  if (llmMenuStatus) llmMenuStatus.textContent = copy.label.replace(/^AI /, "");
+  if (llmMenuDesc) llmMenuDesc.textContent = state === "error"
+    ? "The local AI server is unavailable. Start it to enable filename suggestions."
+    : "AI suggestions run on this Mac and never upload your screenshots.";
+  if (llmMenuAction) {
+    llmMenuAction.querySelector(".menu-item-label").textContent = state === "ready" ? "Stop local AI" : "Start local AI";
+    llmMenuAction.disabled = state === "starting";
+  }
+  if (settingsLLMStatus) {
+    settingsLLMStatus.className = `settings-llm-status status-${state}`;
+    settingsLLMStatusText.textContent = copy.hint;
+  }
 }
 
 // Label follows the last health verdict.
@@ -216,11 +340,11 @@ function refreshLLMServerButton() {
   llmServerBtn.disabled = true;
   fetch("/api/llm/health")
     .then(r => r.json())
-    .then(h => _setLLMStatus(h.ok ? "ready" : "stopped"))
+    .then(h => _setLLMStatus(h.ok ? "ready" : (h.error ? "error" : "stopped")))
     .catch(() => _setLLMStatus("error"));
 }
 
-llmServerBtn.addEventListener("click", () => {
+function performLLMControl() {
   const stopping = llmServerState === "ready";
   _setLLMStatus("starting", stopping ? "AI stopping…" : "AI starting…");
   fetch(stopping ? "/api/llm/stop" : "/api/llm/start", { method: "POST" })
@@ -233,6 +357,34 @@ llmServerBtn.addEventListener("click", () => {
       announce("Couldn't reach the server controller.", { error: true });
       refreshLLMServerButton();
     });
+}
+
+function toggleLLMMenu() {
+  if (!llmMenu) return;
+  const opening = llmMenu.hidden;
+  closeCardOverflow();
+  llmMenu.hidden = !opening;
+  llmServerBtn.setAttribute("aria-expanded", String(opening));
+  if (opening) {
+    const action = llmMenu.querySelector("[role=menuitem]");
+    if (action) action.focus();
+  }
+}
+
+llmServerBtn.addEventListener("click", toggleLLMMenu);
+if (llmMenuAction) {
+  llmMenuAction.addEventListener("click", () => {
+    llmMenu.hidden = true;
+    llmServerBtn.setAttribute("aria-expanded", "false");
+    performLLMControl();
+  });
+}
+if (settingsLLMAction) settingsLLMAction.addEventListener("click", performLLMControl);
+document.addEventListener("click", event => {
+  if (!llmMenu || llmMenu.hidden) return;
+  if (llmMenu.contains(event.target) || llmServerBtn.contains(event.target)) return;
+  llmMenu.hidden = true;
+  llmServerBtn.setAttribute("aria-expanded", "false");
 });
 
 function fileKey(source, filename) {
@@ -288,6 +440,7 @@ function renderTrackedFolders() {
       trackedFoldersWorkingCopy.splice(idx, 1);
       trackedFoldersError.textContent = "";
       renderTrackedFolders();
+      updateSettingsDirty();
     });
     row.appendChild(pathSpan);
     row.appendChild(removeBtn);
@@ -329,6 +482,7 @@ if (addFolderBtn) {
         }
         trackedFoldersWorkingCopy.push(newPath);
         renderTrackedFolders();
+        updateSettingsDirty();
       })
       .catch(() => {
         addFolderBtn.disabled = false;
@@ -339,26 +493,51 @@ if (addFolderBtn) {
 }
 
 // ── Bootstrap ────────────────────────────────────────────────────────────────
+function setBoardState(state, detail) {
+  [loadingMsg, emptyMsg, allSortedMsg, scanErrorMsg].forEach(node => {
+    if (node) node.hidden = true;
+  });
+  if (state === "loading" && loadingMsg) loadingMsg.hidden = false;
+  if (state === "empty" && emptyMsg) emptyMsg.hidden = false;
+  if (state === "sorted" && allSortedMsg) allSortedMsg.hidden = false;
+  if (state === "error" && scanErrorMsg) {
+    scanErrorMsg.hidden = false;
+    if (scanErrorDetail) scanErrorDetail.textContent = detail || "Check that Desktop is available, then try again.";
+  }
+}
+
+function refreshScreenshots() {
+  document.querySelectorAll(".card").forEach(card => card.remove());
+  totalCards = 0;
+  currentFileKeys = new Set();
+  setBoardState("loading");
+  fetch("/api/state")
+    .then(r => r.json())
+    .then(state => loadScreenshots(state.decisions || {}))
+    .catch(() => loadScreenshots({}));
+}
+
 function init() {
   loadSettings().then(() => {
     refreshLLMServerButton();
-    fetch("/api/state")
-      .then(r => r.json())
-      .then(state => loadScreenshots(state.decisions || {}))
-      .catch(() => loadScreenshots({}));
+    refreshScreenshots();
   });
 }
 
 function loadScreenshots(savedDecisions) {
   clearSelection();
+  setBoardState("loading");
   fetch(`/api/screenshots?sort=${encodeURIComponent(currentSort)}`)
-    .then(r => r.json())
-    .then(files => {
-      loadingMsg.hidden = true;
+    .then(r => r.json().then(body => ({ ok: r.ok, body })))
+    .then(({ ok, body: files }) => {
+      if (!ok || !Array.isArray(files)) {
+        const detail = files && (files.error || files.message);
+        throw new Error(detail || "The screenshot scan failed.");
+      }
       if (files.length === 0) {
-        emptyMsg.hidden = false;
         totalCards = 0;
         currentFileKeys = new Set();
+        setBoardState("empty");
         updateCounts();
         return;
       }
@@ -400,11 +579,21 @@ function loadScreenshots(savedDecisions) {
         if (newFps.length > 0) suggestBatch(newFps);
       }
     })
-    .catch(() => {
-      loadingMsg.hidden = true;
-      announce("Failed to load screenshots.", { error: true });
+    .catch(error => {
+      totalCards = 0;
+      currentFileKeys = new Set();
+      setBoardState("error", error.message);
+      updateCounts();
+      announce(error.message || "Failed to load screenshots.", {
+        error: true,
+        persistent: true,
+        title: "Scan failed",
+        timeout: 0,
+      });
     });
 }
+
+refreshButtons.forEach(button => button.addEventListener("click", refreshScreenshots));
 
 init();
 
@@ -554,6 +743,16 @@ function makeCard(filename, source, column, fingerprint, memoryStatus, suggested
   img.alt = filename;
   img.loading = "lazy";
   img.decoding = "async";
+  img.addEventListener("error", () => {
+    card.classList.add("image-error");
+    img.hidden = true;
+    const fallback = thumb.querySelector(".card-image-error") || document.createElement("div");
+    fallback.className = "card-image-error";
+    fallback.textContent = "Preview unavailable";
+    fallback.setAttribute("role", "img");
+    fallback.setAttribute("aria-label", `${filename}: preview unavailable`);
+    if (!fallback.parentElement) thumb.insertBefore(fallback, select);
+  });
 
   // Persistent selection affordance at the top-left of the thumbnail (PLAN
   // 6.4 #4). It is a real button so assistive tech can find and name it, but it
@@ -1096,6 +1295,64 @@ function buildBatchDragGhost(cards, total) {
   return { canvas, offsetX: half, offsetY: half };
 }
 
+// ── Shared overlay contract ────────────────────────────────────────────────
+// Settings, rename, confirmation, and the lightbox all use the same small
+// focus manager. The DOM remains a fallback-friendly div overlay, while the
+// aria-modal contract and keyboard loop provide native-dialog behaviour.
+let activeOverlay = null;
+let overlayReturnFocus = null;
+
+function overlayFocusable(dialog) {
+  return [...dialog.querySelectorAll(
+    "button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [href], [tabindex]:not([tabindex='-1'])"
+  )].filter(node => !node.hidden && node.offsetParent !== null);
+}
+
+function openOverlay(dialog, trigger, firstSelector) {
+  if (!dialog) return;
+  if (activeOverlay && activeOverlay !== dialog) closeOverlay(activeOverlay, { restore: false });
+  overlayReturnFocus = trigger || document.activeElement;
+  activeOverlay = dialog;
+  dialog.hidden = false;
+  const first = (firstSelector && dialog.querySelector(firstSelector)) || overlayFocusable(dialog)[0] || dialog;
+  requestAnimationFrame(() => first.focus({ preventScroll: true }));
+}
+
+function closeOverlay(dialog, options) {
+  if (!dialog) return;
+  const opts = options || {};
+  dialog.hidden = true;
+  if (activeOverlay === dialog) activeOverlay = null;
+  const returnFocus = overlayReturnFocus;
+  overlayReturnFocus = null;
+  if (opts.restore !== false && returnFocus && document.contains(returnFocus) && !returnFocus.disabled) {
+    requestAnimationFrame(() => returnFocus.focus({ preventScroll: true }));
+  }
+}
+
+function trapOverlayFocus(dialog, event) {
+  if (event.key !== "Tab" || activeOverlay !== dialog) return;
+  const focusable = overlayFocusable(dialog);
+  if (focusable.length === 0) {
+    event.preventDefault();
+    dialog.focus();
+    return;
+  }
+  const first = focusable[0];
+  const last = focusable[focusable.length - 1];
+  if (event.shiftKey && document.activeElement === first) {
+    event.preventDefault();
+    last.focus();
+  } else if (!event.shiftKey && document.activeElement === last) {
+    event.preventDefault();
+    first.focus();
+  }
+}
+
+[confirmModal, renameModal, settingsMenu, lightbox].forEach(dialog => {
+  if (dialog) dialog.addEventListener("keydown", event => trapOverlayFocus(dialog, event));
+});
+
 // ── Preview / Lightbox ───────────────────────────────────────────────────────
 function attachPreview(card) {
   card.addEventListener("dblclick", e => {
@@ -1111,11 +1368,27 @@ function openLightbox(card) {
   lightboxImg.src = `/api/image/${encodeURIComponent(card.dataset.filename)}${SsDcl.sourceQuery(src)}`;
   lightboxImg.alt = card.dataset.filename;
   _updateLightboxBar(card.dataset.filename);
-  lightbox.hidden = false;
+  openOverlay(lightbox, card, "#lightbox-close");
+  _syncLightboxNavigation();
+}
+
+function lightboxCards() {
+  return [...document.querySelectorAll(".card")];
+}
+
+function _syncLightboxNavigation() {
+  const allCards = lightboxCards();
+  const current = lightbox.dataset.currentFilename;
+  const currentSource = lightbox.dataset.currentSource || "Desktop";
+  const idx = allCards.findIndex(c => c.dataset.filename === current && (c.dataset.source || "Desktop") === currentSource);
+  const position = idx >= 0 ? idx + 1 : 0;
+  if (lightboxPosition) lightboxPosition.textContent = `${position} of ${allCards.length}`;
+  if (lightboxPrev) lightboxPrev.disabled = idx <= 0;
+  if (lightboxNext) lightboxNext.disabled = idx < 0 || idx >= allCards.length - 1;
 }
 
 function _lightboxNavigate(direction) {
-  const allCards = [...document.querySelectorAll(".card")];
+  const allCards = lightboxCards();
   const current = lightbox.dataset.currentFilename;
   const currentSource = lightbox.dataset.currentSource || "Desktop";
   const idx = allCards.findIndex(c => c.dataset.filename === current && (c.dataset.source || "Desktop") === currentSource);
@@ -1130,19 +1403,24 @@ function _lightboxNavigate(direction) {
   lightboxImg.src = `/api/image/${encodeURIComponent(nextName)}${SsDcl.sourceQuery(nextSource)}`;
   lightboxImg.alt = nextName;
   _updateLightboxBar(nextName);
+  _syncLightboxNavigation();
 }
 
 function closeLightbox() {
-  lightbox.hidden = true;
+  closeOverlay(lightbox);
   lightboxImg.src = "";
   lightboxRenameInput.hidden = true;
   lightboxRenameInput.classList.remove("error");
   lightboxRenameError.textContent = "";
   lightboxFilename.hidden = false;
+  if (lightboxPosition) lightboxPosition.textContent = "";
 }
 
 document.getElementById("lightbox-close").addEventListener("click", closeLightbox);
 document.querySelector(".lightbox-backdrop").addEventListener("click", closeLightbox);
+if (lightboxPrev) lightboxPrev.addEventListener("click", () => _lightboxNavigate(-1));
+if (lightboxNext) lightboxNext.addEventListener("click", () => _lightboxNavigate(1));
+if (lightboxRenameBtn) lightboxRenameBtn.addEventListener("click", _startLightboxRename);
 
 // ── Reveal in Finder ────────────────────────────────────────────────────────
 function revealInFinder(filename, source) {
@@ -1176,31 +1454,42 @@ document.getElementById("lightbox-reveal-btn").addEventListener("click", () => {
 
 // ── Card tooltip ───────────────────────────────────────────────────────────
 function attachTooltip(card) {
-  card.addEventListener("mouseenter", () => {
-    cardTooltip.textContent = card.dataset.filename;
-    cardTooltip.classList.add("visible");
-    requestAnimationFrame(() => {
-      const rect = card.getBoundingClientRect();
-      const tooltipRect = cardTooltip.getBoundingClientRect();
-      let left = rect.left + rect.width / 2 - tooltipRect.width / 2;
-      // Anchor above the card image, not the card's bottom edge, so the
-      // tooltip never overlaps the suggestion badge below the image.
-      const img = card.querySelector("img");
-      const anchor = img ? img.getBoundingClientRect() : rect;
-      let top = anchor.bottom - tooltipRect.height - 10;
-      if (left < 4) left = 4;
-      if (left + tooltipRect.width > window.innerWidth - 4) {
-        left = window.innerWidth - tooltipRect.width - 4;
-      }
-      if (top < rect.top + 4) {
-        top = rect.top + 4;
-      }
-      cardTooltip.style.left = left + "px";
-      cardTooltip.style.top = top + "px";
-    });
-  });
-  card.addEventListener("mouseleave", () => {
+  let tooltipTimer = null;
+  const show = () => {
+    if (tooltipTimer) clearTimeout(tooltipTimer);
+    tooltipTimer = setTimeout(() => {
+      cardTooltip.textContent = card.dataset.filename;
+      cardTooltip.setAttribute("aria-hidden", "false");
+      cardTooltip.classList.add("visible");
+      requestAnimationFrame(() => {
+        const rect = card.getBoundingClientRect();
+        const tooltipRect = cardTooltip.getBoundingClientRect();
+        let left = rect.left + rect.width / 2 - tooltipRect.width / 2;
+        const img = card.querySelector("img");
+        const anchor = img ? img.getBoundingClientRect() : rect;
+        let top = anchor.bottom - tooltipRect.height - 10;
+        if (left < 4) left = 4;
+        if (left + tooltipRect.width > window.innerWidth - 4) left = window.innerWidth - tooltipRect.width - 4;
+        if (top < rect.top + 4) top = rect.top + 4;
+        cardTooltip.style.left = left + "px";
+        cardTooltip.style.top = top + "px";
+      });
+    }, 450);
+  };
+  const hide = () => {
+    if (tooltipTimer) clearTimeout(tooltipTimer);
+    tooltipTimer = null;
     cardTooltip.classList.remove("visible");
+    cardTooltip.setAttribute("aria-hidden", "true");
+  };
+  card.addEventListener("mouseenter", show);
+  card.addEventListener("focusin", show);
+  card.addEventListener("mouseleave", hide);
+  card.addEventListener("focusout", event => {
+    if (!card.contains(event.relatedTarget)) hide();
+  });
+  document.addEventListener("keydown", event => {
+    if (event.key === "Escape") hide();
   });
 }
 
@@ -1415,6 +1704,20 @@ function suggestSingle(card) {
 }
 
 // ── AI Suggest (batch) ──────────────────────────────────────────────────────
+function updateSuggestProgress(processed, total, failures, state) {
+  const safeTotal = Math.max(total || 0, 1);
+  const percent = Math.min(100, Math.round((processed / safeTotal) * 100));
+  suggestProgressFill.style.width = percent + "%";
+  if (suggestProgressBar) {
+    suggestProgressBar.setAttribute("aria-valuenow", String(percent));
+    suggestProgressBar.setAttribute("aria-valuetext", `${processed} of ${total} processed`);
+  }
+  suggestProgressText.textContent = state || `${processed} of ${total} processed`;
+  if (suggestProgressFailure) {
+    suggestProgressFailure.textContent = failures ? `${failures} failed` : "";
+  }
+}
+
 function suggestBatch(fingerprints) {
   if (fingerprints.length === 0) return;
 
@@ -1430,35 +1733,43 @@ function suggestBatch(fingerprints) {
   let failedCount = 0;
 
   function abortBatch(message) {
-    suggestProgressFill.style.width = "100%";
-    suggestProgressText.textContent = message;
-    announce(message, { error: true });
+    updateSuggestProgress(completed, fingerprints.length, failedCount, message);
+    announce(message, { error: true, persistent: true, title: "Suggestions stopped", timeout: 0 });
     setTimeout(() => { suggestProgress.hidden = true; suggestAllBtn.disabled = false; }, 4000);
   }
 
   function processChunk(chunkIdx) {
     if (_suggestCancelled) {
-      suggestProgressText.textContent = `Cancelled (${completed} processed)`;
+      updateSuggestProgress(completed, fingerprints.length, failedCount, `Cancelled after ${completed} processed`);
+      announce(`Suggestions cancelled after ${completed} processed.`, { type: "warning" });
       setTimeout(() => { suggestProgress.hidden = true; suggestAllBtn.disabled = false; }, 1500);
       return;
     }
     if (chunkIdx >= chunks.length) {
-      suggestProgressFill.style.width = "100%";
+      updateSuggestProgress(fingerprints.length, fingerprints.length, failedCount);
       if (completed === 0 && firstError) {
-        suggestProgressText.textContent = firstError;
-        announce(firstError, { error: true });
+        updateSuggestProgress(completed, fingerprints.length, failedCount, firstError);
+        announce(firstError, { error: true, persistent: true, title: "Suggestions unavailable", timeout: 0 });
         setTimeout(() => { suggestProgress.hidden = true; suggestAllBtn.disabled = false; }, 4000);
       } else if (completed === 0) {
-        suggestProgressText.textContent = providerErrorCopy();
+        updateSuggestProgress(completed, fingerprints.length, failedCount, providerErrorCopy());
+        announce(providerErrorCopy(), { error: true, persistent: true, title: "Suggestions unavailable", timeout: 0 });
         setTimeout(() => { suggestProgress.hidden = true; suggestAllBtn.disabled = false; }, 3000);
       } else {
         if (failedCount > 0) {
-          suggestProgressText.textContent = `Done! ${completed} processed — ${failedCount} file${failedCount > 1 ? "s" : ""} failed`;
+          const result = `Done. ${completed} processed — ${failedCount} file${failedCount > 1 ? "s" : ""} failed`;
+          updateSuggestProgress(completed, fingerprints.length, failedCount, result);
+          showFeedbackBanner("Some suggestions failed", result, {
+            type: "warning",
+            details: [`${failedCount} screenshot${failedCount > 1 ? "s" : ""} could not be named.`],
+          });
         } else {
-          suggestProgressText.textContent = `Done! ${completed} processed`;
+          const result = `Done. ${completed} processed`;
+          updateSuggestProgress(completed, fingerprints.length, failedCount, result);
+          announce(result, { type: "success" });
         }
         if (firstError) {
-          announce(firstError, { error: true });
+          announce(firstError, { error: true, persistent: true, title: "Suggestion warning", timeout: 0 });
         }
         setTimeout(() => { suggestProgress.hidden = true; suggestAllBtn.disabled = false; }, 2500);
       }
@@ -1494,16 +1805,17 @@ function suggestBatch(fingerprints) {
             card.insertBefore(badge, actions);
             setCardActions(card, getCardColumn(card));
           }
-          completed++;
         }
+        completed += chunk.length;
         const nextIdx = chunkIdx + 1;
-        const pct = Math.round((Math.min((nextIdx) * chunkSize, fingerprints.length) / fingerprints.length) * 100);
-        suggestProgressFill.style.width = pct + "%";
-        suggestProgressText.textContent = `${Math.min(nextIdx * chunkSize, fingerprints.length)} / ${fingerprints.length}`;
+        updateSuggestProgress(completed, fingerprints.length, failedCount);
         processChunk(nextIdx);
       })
       .catch(() => {
         if (!firstError) firstError = providerErrorCopy();
+        failedCount += chunk.length;
+        completed += chunk.length;
+        updateSuggestProgress(completed, fingerprints.length, failedCount);
         const nextIdx = chunkIdx + 1;
         processChunk(nextIdx);
       });
@@ -1515,21 +1827,27 @@ function suggestBatch(fingerprints) {
     .then(r => r.json())
     .then(h => {
       if (!h.ok) {
-        announce(h.error || providerErrorCopy(), { error: true });
+        _setLLMStatus("error");
+        announce(h.error || providerErrorCopy(), {
+          error: true,
+          persistent: true,
+          title: "Local AI is offline",
+          timeout: 0,
+        });
         suggestAllBtn.disabled = false;
         suggestProgress.hidden = true;
         suggestProgressFill.style.width = "0%";
-        suggestProgressText.textContent = "0 / " + fingerprints.length;
+        updateSuggestProgress(0, fingerprints.length, 0, "Waiting for local AI");
         return;
       }
       suggestAllBtn.disabled = true;
       suggestProgress.hidden = false;
-      suggestProgressFill.style.width = "0%";
-      suggestProgressText.textContent = `0 / ${fingerprints.length}`;
+      updateSuggestProgress(0, fingerprints.length, 0);
       processChunk(0);
     })
     .catch(() => {
-      announce(providerErrorCopy(), { error: true });
+      _setLLMStatus("error");
+      announce(providerErrorCopy(), { error: true, persistent: true, title: "Local AI is offline", timeout: 0 });
       suggestAllBtn.disabled = false;
       suggestProgress.hidden = true;
     });
@@ -1548,14 +1866,15 @@ function acceptSuggestion(card) {
     .then(r => r.json())
     .then(data => {
       if (!data.ok) {
-        alert(data.error || "Failed to accept suggestion");
+        announce(data.error || "Failed to accept suggestion.", { error: true, persistent: true, title: "Suggestion not accepted", timeout: 0 });
         return;
       }
       const oldName = card.dataset.filename;
       const newName = data.new_name;
       applyRenameToCard(card, oldName, newName);
+      announce(`Renamed to ${newName}.`, { type: "success" });
     })
-    .catch(() => alert("Network error — please try again."));
+    .catch(() => announce("Network error — suggestion was not accepted.", { error: true, persistent: true, title: "Suggestion failed", timeout: 0 }));
 }
 
 // ── Reject suggestion (dismiss, mark as ignored) ─────────────────────────────
@@ -1570,7 +1889,10 @@ function rejectSuggestion(card) {
   })
     .then(r => r.json())
     .then(data => {
-      if (!data.ok) return;
+      if (!data.ok) {
+        announce(data.error || "Could not dismiss the suggestion.", { error: true });
+        return;
+      }
       card.dataset.memoryStatus = "ignored";
       card.dataset.suggestedName = "";
       const badge = card.querySelector(".suggestion-badge");
@@ -1579,8 +1901,9 @@ function rejectSuggestion(card) {
       card.classList.remove("category-hint-keep", "category-hint-trash");
       delete card.dataset.suggestedCategory;
       setCardActions(card, getCardColumn(card));
+      announce("Suggestion dismissed.", { type: "success" });
     })
-    .catch(() => {});
+    .catch(() => announce("Network error — suggestion was not dismissed.", { error: true }));
 }
 
 // ── Edit suggestion (open rename modal pre-filled with suggested name) ────────
@@ -1588,7 +1911,7 @@ function editSuggestion(card) {
   renameTarget = card;
   renameInput.value = card.dataset.suggestedName || card.dataset.filename;
   renameError.textContent = "";
-  renameModal.hidden = false;
+  openOverlay(renameModal, card, "#rename-input");
   const dotIdx = renameInput.value.lastIndexOf(".");
   renameInput.focus();
   if (dotIdx > 0) {
@@ -1617,21 +1940,46 @@ suggestAllBtn.addEventListener("click", () => {
 });
 
 // ── Settings dropdown ──────────────────────────────────────────────────────────
-settingsBtn.addEventListener("click", () => {
-  if (!settingsMenu.hidden) { closeSettingsMenu(); return; }
-  // Load current settings into form
+let settingsSnapshot = "";
+
+function readSettingsForm() {
+  return JSON.stringify({
+    llm_provider: settingsProvider.value,
+    llm_model: settingsModel.value.trim(),
+    auto_suggest: settingsAuto.checked,
+    prune_max_age_days: document.getElementById("settings-prune-age")?.value || "",
+    tracked_folders: trackedFoldersWorkingCopy,
+  });
+}
+
+function updateSettingsDirty() {
+  const dirty = readSettingsForm() !== settingsSnapshot;
+  settingsSave.disabled = !dirty;
+  settingsMenu.classList.toggle("is-dirty", dirty);
+  if (settingsSaveStatus && !dirty) settingsSaveStatus.textContent = "";
+  return dirty;
+}
+
+function resetSettingsForm() {
   settingsProvider.value = llmSettings.llm_provider || "litert";
   settingsModel.value = llmSettings.llm_model || "gemma4-e2b";
   settingsModel.placeholder = LLM_PROVIDER_MODELS[settingsProvider.value] || "gemma4-e2b";
   settingsAuto.checked = llmSettings.auto_suggest || false;
   const pruneAge = document.getElementById("settings-prune-age");
   if (pruneAge) pruneAge.value = llmSettings.prune_max_age_days || 90;
-  // Tracked folders working copy
   trackedFoldersWorkingCopy = [...(llmSettings.tracked_folders || [])];
   trackedFolderInfo = llmSettings.tracked_folder_info || [];
   showTrackedError("");
   renderTrackedFolders();
-  settingsMenu.hidden = false;
+  settingsSnapshot = readSettingsForm();
+  if (settingsSaveStatus) settingsSaveStatus.textContent = "";
+  updateSettingsDirty();
+}
+
+settingsBtn.addEventListener("click", () => {
+  if (!settingsMenu.hidden) { closeSettingsMenu(); return; }
+  resetSettingsForm();
+  openOverlay(settingsMenu, settingsBtn, ".theme-choice");
 });
 
 // When the model field holds a legacy/default id, snap it to the LiteRT form.
@@ -1641,21 +1989,45 @@ settingsProvider.addEventListener("change", () => {
   if (settingsModel.value.trim() === "gemma4-e2b" || settingsModel.value.trim() === "gemma4:e2b") {
     settingsModel.value = def;
   }
+  updateSettingsDirty();
 });
 
-function closeSettingsMenu() {
-  settingsMenu.hidden = true;
+function closeSettingsMenu(options) {
+  const opts = options || {};
+  if (!opts.discard && updateSettingsDirty()) {
+    announce("Settings have unsaved changes — save or close them from the panel.", { type: "warning" });
+    return false;
+  }
+  closeOverlay(settingsMenu);
+  return true;
 }
 
-settingsCancel.addEventListener("click", closeSettingsMenu);
-// Dropdown behavior: clicking outside the menu (or the ⚙ button) closes it.
+settingsCancel.addEventListener("click", () => {
+  resetSettingsForm();
+  closeSettingsMenu({ discard: true });
+});
+if (settingsCloseBtn) settingsCloseBtn.addEventListener("click", () => {
+  resetSettingsForm();
+  closeSettingsMenu({ discard: true });
+});
+// Clicking outside a dirty panel leaves it open so changes cannot disappear.
 document.addEventListener("click", e => {
   if (settingsMenu.hidden) return;
   if (settingsMenu.contains(e.target) || settingsBtn.contains(e.target)) return;
   closeSettingsMenu();
 });
 
+[settingsModel, settingsAuto, document.getElementById("settings-prune-age")].filter(Boolean).forEach(control => {
+  control.addEventListener("input", updateSettingsDirty);
+  control.addEventListener("change", updateSettingsDirty);
+});
+document.addEventListener("input", event => {
+  if (settingsMenu.hidden || !settingsMenu.contains(event.target)) return;
+  updateSettingsDirty();
+});
+
 settingsSave.addEventListener("click", () => {
+  if (settingsSave.disabled) return;
   const pruneVal = parseInt(document.getElementById("settings-prune-age")?.value || "90", 10);
   const newSettings = {
     llm_provider: settingsProvider.value,
@@ -1665,6 +2037,9 @@ settingsSave.addEventListener("click", () => {
     tracked_folders: trackedFoldersWorkingCopy,
   };
 
+  settingsSave.disabled = true;
+  settingsSave.textContent = "Saving…";
+  if (settingsSaveStatus) settingsSaveStatus.textContent = "Saving…";
   fetch("/api/settings", {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
@@ -1674,22 +2049,27 @@ settingsSave.addEventListener("click", () => {
     .then(({ status, body }) => {
       if (status === 200 && body.ok) {
         llmSettings = { ...newSettings, tracked_folder_info: body.tracked_folder_info || trackedFolderInfo };
+        settingsSnapshot = readSettingsForm();
+        settingsSave.disabled = true;
+        if (settingsSaveStatus) settingsSaveStatus.textContent = "Saved";
+        settingsSave.textContent = "Save";
+        announce("Settings saved.", { type: "success" });
         closeSettingsMenu();
         refreshLLMServerButton();
         // Reload board to reflect new sources
-        document.querySelectorAll(".card").forEach(c => c.remove());
-        loadingMsg.hidden = false;
-        emptyMsg.hidden = true;
-        fetch("/api/state")
-          .then(r => r.json())
-          .then(state => loadScreenshots(state.decisions || {}))
-          .catch(() => loadScreenshots({}));
+        refreshScreenshots();
       } else {
+        settingsSave.disabled = false;
+        settingsSave.textContent = "Save";
         showTrackedError(body.error || "Failed to save settings");
+        announce(body.error || "Failed to save settings.", { error: true, type: "error" });
       }
     })
     .catch(() => {
+      settingsSave.disabled = false;
+      settingsSave.textContent = "Save";
       showTrackedError("Network error — please try again");
+      announce("Network error — settings were not saved.", { error: true, type: "error" });
     });
 });
 
@@ -1762,6 +2142,12 @@ function updateCounts() {
 
   undoBtn.disabled = undoStack.length === 0;
   doneBtn.disabled = nTrash === 0;
+
+  if (totalCards > 0 && nUnsorted === 0) {
+    setBoardState("sorted");
+  } else if (totalCards > 0) {
+    [allSortedMsg, scanErrorMsg].forEach(node => { if (node) node.hidden = true; });
+  }
 }
 
 // ── Rename modal ──────────────────────────────────────────────────────────────
@@ -1769,7 +2155,7 @@ function openRenameModal(card) {
   renameTarget = card;
   renameInput.value = card.dataset.filename;
   renameError.textContent = "";
-  renameModal.hidden = false;
+  openOverlay(renameModal, card, "#rename-input");
   const dotIdx = card.dataset.filename.lastIndexOf(".");
   renameInput.focus();
   if (dotIdx > 0) {
@@ -1778,7 +2164,7 @@ function openRenameModal(card) {
 }
 
 function closeRenameModal() {
-  renameModal.hidden = true;
+  closeOverlay(renameModal);
   renameTarget = null;
 }
 
@@ -1841,17 +2227,16 @@ doneBtn.addEventListener("click", () => {
   if (nTrash === 0) return;
 
   modalTitle.textContent = `Move ${nTrash} screenshot${nTrash !== 1 ? "s" : ""} to Trash?`;
-  confirmModal.hidden = false;
+  openOverlay(confirmModal, doneBtn, "#modal-cancel");
 });
 
 function closeModal() {
-  confirmModal.hidden = true;
+  closeOverlay(confirmModal);
 }
 
 modalCancel.addEventListener("click", closeModal);
-confirmModal.addEventListener("click", e => {
-  if (e.target === confirmModal) closeModal();
-});
+// The destructive confirmation has no backdrop dismissal: an accidental
+// click outside should never silently discard an important decision prompt.
 
 modalConfirm.addEventListener("click", () => {
   closeModal();
@@ -1871,9 +2256,7 @@ modalConfirm.addEventListener("click", () => {
   })
     .then(r => r.json())
     .then(data => {
-      if (!data.ok && data.errors && data.errors.length > 0) {
-        alert("Some files could not be moved:\n" + data.errors.join("\n"));
-      }
+      const reportedErrors = data.errors || [];
 
       // Prefer structured errors_detail if present
       const failedKeys = new Set();
@@ -1885,7 +2268,7 @@ modalConfirm.addEventListener("click", () => {
         });
       } else {
         // Legacy fallback: parse "filename: error" strings
-        (data.errors || []).forEach(e => {
+        reportedErrors.forEach(e => {
           const parts = e.split(":");
           const name = parts.length > 1 ? parts[0].trim() : e.trim();
           if (name) failedKeys.add(name);
@@ -1902,6 +2285,16 @@ modalConfirm.addEventListener("click", () => {
         }
       });
 
+      if (!data.ok || reportedErrors.length > 0 || details.length > 0) {
+        showFeedbackBanner(
+          "Some screenshots stayed in Trash",
+          "Review the details and try again after resolving the file errors.",
+          { type: "error", details: reportedErrors.map(String).concat(details.map(d => d.error || `${d.name || "File"}: could not be moved`)) },
+        );
+      } else {
+        announce(`Moved ${toTrash.length} screenshot${toTrash.length !== 1 ? "s" : ""} to Trash.`, { type: "success" });
+      }
+
       undoStack.length = 0;
       clearSelection();
 
@@ -1910,13 +2303,13 @@ modalConfirm.addEventListener("click", () => {
 
       const remaining = document.querySelectorAll(".card").length;
       if (remaining === 0) {
-        emptyMsg.hidden = false;
-        announce("All done!");
+        setBoardState("empty");
+        announce("All done!", { type: "success" });
         doneBtn.disabled = true;
       }
     })
     .catch(() => {
-      alert("Network error \u2014 please try again.");
+      announce("Network error — screenshots were not moved.", { error: true, persistent: true, title: "Trash operation failed", timeout: 0 });
       doneBtn.disabled = false;
       updateCounts();
     });
