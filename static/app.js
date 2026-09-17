@@ -94,8 +94,7 @@ const columns = [colTrash, colUnsorted, colKeep];
 // storage key is owned by the bootstrap, so app.js references it instead of
 // declaring a second copy that could drift.
 const THEME_KEY = SsDclTheme.THEME_STORAGE_KEY;
-
-const themeToggle = document.getElementById("theme-toggle");
+const themeChoices = [...document.querySelectorAll("[data-theme-choice]")];
 
 function getSavedTheme() {
   return SsDclTheme.readMode(window);
@@ -106,14 +105,12 @@ function applyTheme(mode) {
 }
 
 function _updateThemeLabel() {
-  if (!themeToggle) return;
   const mode = getSavedTheme();
-  const label = SsDclTheme.themeLabel(mode, SsDclTheme.systemPrefersDark(window));
-  themeToggle.setAttribute("aria-label", label + " — click to cycle");
-  themeToggle.setAttribute(
-    "data-tooltip",
-    SsDclTheme.effectiveTheme(mode, window) === "dark" ? "Switch to light theme" : "Switch to dark theme"
-  );
+  themeChoices.forEach(choice => {
+    const selected = choice.dataset.themeChoice === mode;
+    choice.setAttribute("aria-checked", String(selected));
+    choice.classList.toggle("is-selected", selected);
+  });
 }
 
 function cycleTheme() {
@@ -122,8 +119,28 @@ function cycleTheme() {
   return next;
 }
 
-if (themeToggle) {
-  themeToggle.addEventListener("click", cycleTheme);
+themeChoices.forEach(choice => {
+  choice.addEventListener("click", () => {
+    selectTheme(choice.dataset.themeChoice);
+  });
+  choice.addEventListener("keydown", event => {
+    if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+    event.preventDefault();
+    const index = themeChoices.indexOf(choice);
+    const delta = event.key === "ArrowRight" ? 1 : -1;
+    const next = themeChoices[(index + delta + themeChoices.length) % themeChoices.length];
+    next.focus();
+    selectTheme(next.dataset.themeChoice);
+  });
+});
+
+function selectTheme(mode) {
+  // Keep the ownership contract visible here: theme-init.js owns the key and
+  // persistence implementation; app.js only selects one of its known modes.
+  void THEME_KEY;
+  SsDclTheme.writeMode(mode, window);
+  applyTheme(mode);
+  _updateThemeLabel();
 }
 
 // With "auto" selected the board has to follow the OS live.

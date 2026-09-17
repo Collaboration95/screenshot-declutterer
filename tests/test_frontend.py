@@ -412,11 +412,13 @@ def test_rename_handlers_remove_suggestion_badge(client):
 # ── Phase 4B: Dark mode ─────────────────────────────────────────────────────
 
 
-def test_index_has_theme_toggle(client):
-    """#theme-toggle button exists in HTML."""
+def test_index_has_explicit_theme_choices(client):
+    """Settings exposes explicit System, Light, and Dark theme choices."""
     c, _ = client
     html = c.get("/").data.decode()
-    assert 'id="theme-toggle"' in html
+    assert 'role="radiogroup" aria-label="Color theme"' in html
+    for mode in ("auto", "light", "dark"):
+        assert f'data-theme-choice="{mode}"' in html
 
 
 def test_app_js_has_theme_cycle(client):
@@ -426,6 +428,15 @@ def test_app_js_has_theme_cycle(client):
     assert r.status_code == 200
     assert b"SsDclTheme" in r.data
     assert b"function cycleTheme(" in r.data
+
+
+def test_app_js_supports_keyboard_theme_choice(client):
+    """The explicit radio choices support the standard arrow-key navigation."""
+    c, _ = client
+    source = c.get("/static/app.js").data
+    assert b"ArrowLeft" in source
+    assert b"ArrowRight" in source
+    assert b"function selectTheme(" in source
 
 
 def test_css_has_dark_variables(client):
@@ -639,7 +650,6 @@ PHASE0_SURFACE_IDS = (
     "settings-model",
     "settings-auto",
     "settings-prune-age",
-    "theme-toggle",
     "tracked-folders-list",
     "add-folder-btn",
     "tracked-folders-error",
