@@ -8,9 +8,9 @@ contain no personal content and no file from the real Desktop. Captures run with
 `LITERT_BASE_URL=http://127.0.0.1:1` (LLM offline) and with
 `SS_DCL_DESKTOP` / `SS_DCL_HOME` pointed inside the fixture workspace.
 
-The images are a comparison baseline for later phases. The README media in
-`docs/assets/screenshot-sorted.png` and `docs/assets/screenshot-confirm.png` is
-deliberately left untouched until Phase 5.
+The images are both a comparison baseline and the source for the README's
+current hero media in `docs/assets/screenshot-sorted.png` and
+`docs/assets/screenshot-confirm.png`.
 
 ## Regenerate
 
@@ -54,6 +54,6 @@ uv run python tools/capture_ui_baseline.py --force
 ## Environment used for this capture
 
 - Chrome: `Chrome/153.0.8010.48`
-- App served from: `http://127.0.0.1:5311`
+- App served from: `http://127.0.0.1:53561`
 - Viewports: 1440x900 (primary), 1280x800 (secondary), 1024x768 (compact)
 - Themes: light, dark
