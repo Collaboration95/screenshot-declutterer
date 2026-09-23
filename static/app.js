@@ -221,6 +221,8 @@ function _toastType(options) {
 function showToast(message, options) {
   if (!toastRegion || !message) return;
   const opts = options || {};
+  // Announcements describe the current state; leave only the latest visible.
+  toastRegion.replaceChildren();
   const toast = document.createElement("div");
   const type = _toastType(opts);
   toast.className = `toast toast-${type}`;
@@ -243,7 +245,7 @@ function showToast(message, options) {
   toast.append(iconEl, copy, close);
   toastRegion.appendChild(toast);
 
-  const timeout = opts.timeout === undefined ? (type === "error" ? 0 : 6500) : opts.timeout;
+  const timeout = opts.timeout === undefined ? (type === "error" ? 0 : 3500) : opts.timeout;
   if (timeout > 0) {
     let timer = setTimeout(() => toast.remove(), timeout);
     const pause = () => { clearTimeout(timer); };
@@ -294,7 +296,7 @@ function announce(message, options) {
       statusMsg.textContent = "";
       statusMsg.classList.remove("is-error");
       _statusTimer = null;
-    }, opts.timeout || 8000);
+    }, opts.timeout || 5000);
   }
 }
 
