@@ -244,7 +244,7 @@ STATES: tuple[CaptureState, ...] = (
     CaptureState(
         "board",
         "Populated board: unsorted, kept and trashed cards, a suggested-name badge, "
-        "category hints, a tracked-folder source tag, and the LLM-offline header control",
+        "category hints and a tracked-folder source tag; the local AI server is offline",
         all_viewports=True,
     ),
     CaptureState("hover", "Card action overlay revealed on hover", _prepare_hover),

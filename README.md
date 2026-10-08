@@ -88,7 +88,7 @@ To enable suggestions:
 1. Install LiteRT-LM and import a compatible vision model with the ID
    `gemma4-e2b`.
 2. Start the server with `litert-lm serve`, or use **Start local AI** from the
-   AI status pill in the app. The default server URL is
+   Local AI section in Settings. The default server URL is
    `http://localhost:9379`.
 3. Use **Suggest All** in Settings for new screenshots. The app shows progress
    and cancellation controls, then lets you accept, dismiss, or edit each
@@ -97,7 +97,7 @@ To enable suggestions:
 The Settings panel also supports a custom model ID and optional
 **Auto-suggest on scan**. AI replies are normalized to safe filenames while
 preserving the source image extension. If LiteRT-LM is stopped or unreachable,
-the app shows an offline status and leaves the rest of the workflow available.
+Settings shows the server status and leaves the rest of the workflow available.
 
 ## Quick Start
 

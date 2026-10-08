@@ -91,13 +91,6 @@ const trackedFoldersList = document.getElementById("tracked-folders-list");
 const addFolderBtn    = document.getElementById("add-folder-btn");
 const trackedFoldersError = document.getElementById("tracked-folders-error");
 
-const llmServerBtn    = document.getElementById("llm-server-btn");
-const llmStatusLabel  = document.getElementById("llm-status-label");
-const llmMenu         = document.getElementById("llm-menu");
-const llmMenuAction   = document.getElementById("llm-menu-action");
-const llmMenuStatus   = document.getElementById("llm-menu-status");
-const llmMenuDesc     = document.getElementById("llm-menu-desc");
-
 const sortSummary        = document.getElementById("sort-summary");
 const progressMeter      = document.getElementById("progress-meter");
 const progressMeterFill  = document.getElementById("progress-meter-fill");
@@ -311,47 +304,29 @@ function announce(message, options) {
   }
 }
 
-// ── Managed LiteRT server status pill ───────────────────────────────────────
-// The state lives on the control itself (class + label + accessible name) so
-// the server condition is never communicated by button text alone.
+// ── Managed LiteRT server controls in Settings ──────────────────────────────
 let llmServerState = "stopped";
 
 const LLM_STATE_COPY = {
-  ready: { label: "AI ready", hint: "Local AI server is running — click to stop it" },
-  stopped: { label: "AI stopped", hint: "Local AI server is stopped — click to start it" },
-  starting: { label: "AI starting", hint: "Local AI server is starting or stopping…" },
-  error: { label: "AI offline", hint: "Local AI server is unreachable — click to try starting it" },
+  ready: "Local AI server is running.",
+  stopped: "Local AI server is stopped.",
+  starting: "Local AI server is starting or stopping…",
+  error: "Local AI server is unavailable. Start it to enable filename suggestions.",
 };
 
 function _setLLMStatus(state, labelOverride) {
   llmServerState = state;
-  const copy = LLM_STATE_COPY[state] || LLM_STATE_COPY.stopped;
-  llmServerBtn.hidden = false;
-  llmServerBtn.classList.remove("is-ready", "is-stopped", "is-starting", "is-error");
-  llmServerBtn.classList.add(`is-${state}`);
-  if (llmStatusLabel) llmStatusLabel.textContent = labelOverride || copy.label;
-  llmServerBtn.disabled = state === "starting";
-  llmServerBtn.setAttribute("aria-label", copy.hint);
-  llmServerBtn.dataset.tooltip = copy.hint;
-  llmServerBtn.setAttribute("aria-expanded", String(!llmMenu.hidden));
-  if (llmMenuStatus) llmMenuStatus.textContent = copy.label.replace(/^AI /, "");
-  if (llmMenuDesc) llmMenuDesc.textContent = state === "error"
-    ? "The local AI server is unavailable. Start it to enable filename suggestions."
-    : "AI suggestions run on this Mac and never upload your screenshots.";
-  if (llmMenuAction) {
-    llmMenuAction.querySelector(".menu-item-label").textContent = state === "ready" ? "Stop local AI" : "Start local AI";
-    llmMenuAction.disabled = state === "starting";
-  }
   if (settingsLLMStatus) {
     settingsLLMStatus.className = `settings-llm-status status-${state}`;
-    settingsLLMStatusText.textContent = copy.hint;
+    settingsLLMStatusText.textContent = labelOverride || LLM_STATE_COPY[state] || LLM_STATE_COPY.stopped;
+    settingsLLMAction.textContent = state === "ready" ? "Stop local AI" : "Start local AI";
+    settingsLLMAction.disabled = state === "starting";
   }
 }
 
 // Label follows the last health verdict.
-function refreshLLMServerButton() {
-  llmServerBtn.hidden = false;
-  llmServerBtn.disabled = true;
+function refreshLLMStatus() {
+  _setLLMStatus("starting", "Checking local AI server…");
   fetch("/api/llm/health")
     .then(r => r.json())
     .then(h => _setLLMStatus(h.ok ? "ready" : (h.error ? "error" : "stopped")))
@@ -360,46 +335,20 @@ function refreshLLMServerButton() {
 
 function performLLMControl() {
   const stopping = llmServerState === "ready";
-  _setLLMStatus("starting", stopping ? "AI stopping…" : "AI starting…");
+  _setLLMStatus("starting", stopping ? "Stopping local AI server…" : "Starting local AI server…");
   fetch(stopping ? "/api/llm/stop" : "/api/llm/start", { method: "POST" })
     .then(r => r.json())
     .then(data => {
       announce(data.message || data.error || "Server control failed.", { error: !data.ok });
-      refreshLLMServerButton();
+      refreshLLMStatus();
     })
     .catch(() => {
       announce("Couldn't reach the server controller.", { error: true });
-      refreshLLMServerButton();
+      refreshLLMStatus();
     });
 }
 
-function toggleLLMMenu() {
-  if (!llmMenu) return;
-  const opening = llmMenu.hidden;
-  closeCardOverflow();
-  llmMenu.hidden = !opening;
-  llmServerBtn.setAttribute("aria-expanded", String(opening));
-  if (opening) {
-    const action = llmMenu.querySelector("[role=menuitem]");
-    if (action) action.focus();
-  }
-}
-
-llmServerBtn.addEventListener("click", toggleLLMMenu);
-if (llmMenuAction) {
-  llmMenuAction.addEventListener("click", () => {
-    llmMenu.hidden = true;
-    llmServerBtn.setAttribute("aria-expanded", "false");
-    performLLMControl();
-  });
-}
 if (settingsLLMAction) settingsLLMAction.addEventListener("click", performLLMControl);
-document.addEventListener("click", event => {
-  if (!llmMenu || llmMenu.hidden) return;
-  if (llmMenu.contains(event.target) || llmServerBtn.contains(event.target)) return;
-  llmMenu.hidden = true;
-  llmServerBtn.setAttribute("aria-expanded", "false");
-});
 
 function fileKey(source, filename) {
   return SsDcl.decisionKey(source || "Desktop", filename);
@@ -533,7 +482,7 @@ function refreshScreenshots() {
 
 function init() {
   loadSettings().then(() => {
-    refreshLLMServerButton();
+    refreshLLMStatus();
     refreshScreenshots();
   });
 }
@@ -2243,7 +2192,7 @@ settingsSave.addEventListener("click", () => {
         settingsSave.textContent = "Save";
         announce("Settings saved.", { type: "success" });
         closeSettingsMenu();
-        refreshLLMServerButton();
+        refreshLLMStatus();
         // Reload board to reflect new sources
         refreshScreenshots();
       } else {

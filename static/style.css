@@ -899,7 +899,6 @@ header h1 {
 }
 
 .header-theme-btn,
-.header-llm-btn,
 .header-settings-btn {
   display: inline-flex;
   align-items: center;
@@ -922,14 +921,12 @@ header h1 {
 }
 
 .header-theme-btn:hover:not(:disabled),
-.header-llm-btn:hover:not(:disabled),
 .header-settings-btn:hover:not(:disabled) {
   background: var(--control-bg-hover);
   border-color: var(--control-border-hover);
 }
 
 .header-theme-btn:disabled,
-.header-llm-btn:disabled,
 .header-settings-btn:disabled {
   background: var(--control-disabled-bg);
   color: var(--control-disabled-text);
@@ -2299,7 +2296,6 @@ header h1 {
   .lightbox-close,
   .lightbox-reveal-btn,
   .header-theme-btn,
-  .header-llm-btn,
   .header-settings-btn,
   .menu-suggest-all-btn,
   #undo-btn,
@@ -2435,12 +2431,6 @@ header h1 {
 .popover-desc {
   margin: var(--space-4) 0;
   max-width: 280px;
-}
-
-.llm-menu {
-  top: 76px;
-  left: var(--space-7);
-  width: min(320px, calc(100vw - var(--space-7) * 2));
 }
 
 .menu-item {
@@ -3238,11 +3228,6 @@ header h1 {
     max-height: none;
   }
 
-  .llm-menu {
-    top: 68px;
-    left: var(--space-5);
-  }
-
   .feedback-banner,
   .suggest-progress {
     top: var(--space-4);
@@ -3431,90 +3416,13 @@ header h1 {
   white-space: nowrap;
 }
 
-/* ── Status pills (local-only, managed LLM server) ────────── */
-.status-pill,
-.header-llm-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-2);
-  min-height: var(--control-height-sm);
-  padding: 0 var(--space-4);
-  border: var(--border-width) solid var(--control-border);
-  border-radius: var(--radius-pill);
-  background: var(--control-bg);
-  color: var(--ink-secondary);
-  font-family: var(--font-sans);
-  font-size: var(--type-label);
-  font-weight: var(--weight-semibold);
-  line-height: var(--type-label-line);
-  white-space: nowrap;
-}
-
-button.status-pill {
-  cursor: pointer;
-  transition:
-    background var(--duration-base) var(--ease-standard),
-    border-color var(--duration-base) var(--ease-standard),
-    color var(--duration-base) var(--ease-standard);
-}
-
-button.status-pill:hover:not(:disabled) {
-  background: var(--control-bg-hover);
-  border-color: var(--control-border-hover);
-}
-
-button.status-pill:disabled {
-  cursor: progress;
-}
-
+/* ── Server status marker in Settings ────────────────────── */
 .status-dot {
   flex: 0 0 auto;
   width: 8px;
   height: 8px;
   border-radius: var(--radius-pill);
   background: var(--status-stopped-fill);
-}
-
-.status-pill-local,
-.status-pill-llm.is-ready {
-  background: var(--accent-keep-soft);
-  border-color: var(--accent-keep-border);
-  color: var(--accent-keep-ink);
-}
-
-.status-pill-local .status-dot,
-.status-pill-llm.is-ready .status-dot {
-  background: var(--status-ready-fill);
-}
-
-.status-pill-llm.is-stopped {
-  background: var(--control-bg);
-  border-color: var(--control-border);
-  color: var(--ink-secondary);
-}
-
-.status-pill-llm.is-stopped .status-dot {
-  background: var(--status-stopped-fill);
-}
-
-.status-pill-llm.is-starting {
-  background: var(--status-warning-soft);
-  border-color: var(--status-warning-border);
-  color: var(--status-warning-ink);
-}
-
-.status-pill-llm.is-starting .status-dot {
-  background: var(--status-starting-fill);
-}
-
-.status-pill-llm.is-error {
-  background: var(--status-error-surface);
-  border-color: var(--accent-trash-border);
-  color: var(--status-error-ink);
-}
-
-.status-pill-llm.is-error .status-dot {
-  background: var(--status-error-fill);
 }
 
 /* ── Progress summary and meter ───────────────────────────── */
@@ -4415,7 +4323,6 @@ button.status-pill:disabled {
    The new shell controls carry their state in colour, so hand each one a
    system-colour boundary when the palette is replaced. */
 @media (forced-colors: active) {
-  .status-pill,
   .compact-switcher-item,
   .brand-mark,
   .progress-meter,
