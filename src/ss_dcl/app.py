@@ -26,7 +26,7 @@ from flask import (
 from send2trash import send2trash
 from werkzeug.serving import WSGIRequestHandler
 
-from ss_dcl import categorize, llm, paths, server, settings, thumbs
+from ss_dcl import categorize, llm, paths, server, settings, thumbs, usage
 from ss_dcl.logging_config import configure_logging, new_request_id, request_id_var
 from ss_dcl.memory import MemoryStore, atomic_write, compute_source_fingerprint
 from ss_dcl.sources import (
@@ -213,6 +213,9 @@ def _scan_source(
     for p in root.glob("Screenshot*.*"):
         if not p.is_file() or (p.suffix.lower() not in SUPPORTED_IMAGE_EXTENSION):
             continue
+        # Metadata queries follow the same containment rule as image/file routes.
+        if not p.resolve().is_relative_to(root.resolve()):
+            continue
         name = p.name
         st = p.stat()
         size = st.st_size
@@ -255,12 +258,14 @@ def _scan_source(
                 "memory_status": memory_status,
                 "suggested_name": suggested_name,
                 "suggested_category": suggested_category,
+                "_path": p.resolve(),
             }
         )
     return any_new_flag
 
 
 def get_screenshots(sort: str = "name") -> list[dict[str, Any]]:
+    scan_now = usage.utc_now()
     memory = _get_memory()
     files: list[dict[str, Any]] = []
     any_new = False
@@ -274,6 +279,15 @@ def get_screenshots(sort: str = "name") -> list[dict[str, Any]]:
     for source_id, root in all_sources:
         any_new = _scan_source(
             root, source_id, memory, decisions, keyword_scores, files, active_fps, any_new
+        )
+    activity = usage.read_usage([f["_path"] for f in files])
+    for f in files:
+        metadata = activity.get(f.pop("_path"), usage.UsageMetadata())
+        f["usage"] = usage.usage_payload(metadata)
+        f["cleanup"] = usage.cleanup_result(
+            metadata,
+            scan_now,
+            unsorted=decisions.get(decision_key(f["source"], f["name"])) not in ("keep", "trash"),
         )
     if any_new:
         memory.save()

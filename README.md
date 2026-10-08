@@ -35,6 +35,9 @@ complete capture matrix.
   suggest safe filenames; accept, dismiss, or edit suggestions
 - **Learned category hints** — past decisions produce subtle “Likely keep” or
   “Likely trash” suggestions without moving files automatically
+- **Inline cleanup suggestions** — review screenshots with a recorded open
+  within five minutes of creation and a last recorded open over ten minutes ago;
+  preview, keep, or queue the selection for Trash inside Unsorted
 - **Direct renaming** — rename from a card, a lightbox preview, or an AI
   suggestion; file extensions are preserved when appropriate
 - **Full-size preview** — double-click a card or use Preview to open the
@@ -55,6 +58,24 @@ complete capture matrix.
 <p align="center">
   <img src="docs/assets/screenshot-confirm.png" alt="Screenshot Declutterer trash confirmation" width="820" />
 </p>
+
+## Cleanup suggestions
+
+The **Cleanup suggestions** group appears above the remaining Unsorted cards
+when filesystem creation time and Spotlight's recorded last-used time match the
+timing rule. It works with the AI server stopped. Missing or ambiguous metadata
+leaves files in the ordinary grid; Keep and Trash decisions always take priority.
+
+All candidates start selected for review. Unchecking a card does not change its
+decision. **Queue N for Trash** parks selected candidates in Trash; **Done** still
+requires confirmation before any file moves on disk. Preview, Keep, drag, and
+per-card undo use the existing workflow. **Dismiss** hides the group until the
+page reloads, including across refreshes. A rescan reads fresh recorded activity.
+
+This signal describes the last recorded open, not a first-open history or proof
+that a file was shared or is no longer needed. Creation time can also be affected
+by copies and restores. Quick Look, uploads, and the app's own previews are not
+established by this signal. See the [screenshots and verification matrix](docs/assets/cleanup-suggestions/README.md).
 
 ## Optional local AI naming
 

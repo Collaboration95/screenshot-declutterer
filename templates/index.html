@@ -118,7 +118,24 @@
             <span class="column-title">Unsorted</span>
             <span class="column-count" id="count-unsorted">0</span>
           </div>
-          <div class="column-cards" id="cards-unsorted"></div>
+          <div class="column-cards" id="cards-unsorted">
+            <section id="cleanup-group" class="cleanup-group" aria-labelledby="cleanup-heading" aria-describedby="cleanup-reason" hidden>
+              <div class="cleanup-header">
+                <h2 id="cleanup-heading">Cleanup suggestions · 0</h2>
+                <button type="button" id="cleanup-dismiss" class="cleanup-quiet">Dismiss</button>
+              </div>
+              <p id="cleanup-reason">Recorded open within 5m of capture; last recorded open over 10m ago.</p>
+              <div id="cleanup-cards" class="unsorted-grid" role="list" aria-label="Cleanup suggestions"></div>
+              <div id="cleanup-footer" class="cleanup-footer">
+                <label class="cleanup-select-all"><input type="checkbox" id="cleanup-select-all"> Select all</label>
+                <button type="button" id="cleanup-queue" class="btn btn-primary" disabled>Queue 0 for Trash</button>
+              </div>
+              <button type="button" id="cleanup-review" class="cleanup-quiet" hidden>Review cleanup selection</button>
+              <span id="cleanup-status" class="sr-only" role="status" aria-live="polite" aria-atomic="true"></span>
+            </section>
+            <p id="remaining-unsorted-label" class="remaining-unsorted-label" hidden>Remaining unsorted screenshots</p>
+            <div id="ordinary-unsorted" class="unsorted-grid"></div>
+          </div>
           <div id="loading-msg" class="board-state board-state-panel" role="status" aria-live="polite">
             <span class="state-icon state-icon-loading" aria-hidden="true"></span>
             <strong>Scanning your screenshots</strong>

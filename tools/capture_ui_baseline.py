@@ -600,8 +600,11 @@ def ensure_workspace(root: Path, *, force: bool = False) -> dict[str, Any]:
 class AppServer:
     """The Flask app, served against an isolated fixture workspace."""
 
-    def __init__(self, workspace: Path, port: int = 0) -> None:
+    def __init__(
+        self, workspace: Path, port: int = 0, *, bootstrap: str = _SERVER_BOOTSTRAP
+    ) -> None:
         self._workspace = workspace
+        self._bootstrap = bootstrap
         self._port = _preferred_port(workspace, port)
         self._process: subprocess.Popen[bytes] | None = None
         self._log: IO[bytes] | None = None
@@ -629,7 +632,7 @@ class AppServer:
         self.log_path.parent.mkdir(parents=True, exist_ok=True)
         self._log = open(self.log_path, "wb")
         self._process = subprocess.Popen(
-            [sys.executable, "-c", _SERVER_BOOTSTRAP, str(self._port)],
+            [sys.executable, "-c", self._bootstrap, str(self._port)],
             env=env,
             stdout=self._log,
             stderr=subprocess.STDOUT,

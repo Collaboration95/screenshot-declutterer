@@ -621,7 +621,8 @@ def test_app_js_defines_batch_drag_ghost(client):
     assert b"setDragImage" in r.data
     # ghost must only kick in when dragging a *selected* card
     assert b"selectedCards.has(card)" in r.data
-    assert b"selectedCards.size > 1" in r.data
+    assert b"selection.length > 1" in r.data
+    assert b"function dragSelection(card)" in r.data
 
 
 def test_pure_module_loads_before_app_js(client):

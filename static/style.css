@@ -3791,10 +3791,127 @@ button.status-pill:disabled {
 }
 
 .column-unsorted .column-cards {
+  display: block;
+}
+
+.unsorted-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(232px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 232px), 1fr));
   align-content: start;
   gap: var(--space-5);
+}
+
+.cleanup-group {
+  padding: var(--space-4);
+  margin-bottom: var(--space-5);
+  border: var(--border-width) solid var(--border-subtle);
+  border-radius: var(--radius-panel);
+  background: var(--accent-ai-soft);
+}
+
+.cleanup-header,
+.cleanup-footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.cleanup-header h2 {
+  margin: 0;
+  color: var(--accent-ai-strong);
+  font-size: var(--type-body);
+  line-height: var(--type-body-line);
+}
+
+#cleanup-reason,
+.remaining-unsorted-label {
+  margin: var(--space-3) 0 var(--space-4);
+  color: var(--ink-secondary);
+  font-size: var(--type-label);
+  line-height: var(--type-body-line);
+}
+
+.cleanup-footer {
+  margin-top: var(--space-4);
+}
+
+.cleanup-quiet {
+  padding: var(--space-2) var(--space-3);
+  min-height: var(--control-height-sm);
+  border: var(--border-width) solid var(--border-subtle);
+  border-radius: var(--radius-control);
+  background: var(--surface-raised);
+  color: var(--ink-secondary);
+  font: inherit;
+  font-size: var(--type-label);
+  cursor: pointer;
+}
+
+.cleanup-select-all {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: var(--control-height-sm);
+  font-size: var(--type-label);
+  color: var(--ink-primary);
+}
+
+.cleanup-select,
+.cleanup-select-all input {
+  width: 20px;
+  height: 20px;
+  accent-color: var(--accent-ai-strong);
+  cursor: pointer;
+}
+
+.cleanup-select {
+  position: absolute;
+  top: var(--space-3);
+  left: var(--space-3);
+  margin: 0;
+}
+
+.cleanup-timing {
+  display: none;
+}
+
+.cleanup-card .cleanup-timing {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: 0 var(--space-4) var(--space-3);
+  color: var(--ink-secondary);
+  font-size: var(--type-label);
+  line-height: var(--type-label-line);
+}
+
+.cleanup-card {
+  min-width: 0;
+}
+
+.cleanup-card .card-actions,
+.cleanup-card:has(.suggestion-badge:hover) .card-actions {
+  position: relative;
+  inset: auto;
+  margin-top: auto;
+  opacity: 1;
+  pointer-events: auto;
+  background: var(--surface-raised);
+  border-top: var(--border-width) solid var(--border-subtle);
+  border-radius: 0 0 var(--radius-card) var(--radius-card);
+}
+
+.cleanup-card .action-btn.btn-preview,
+.cleanup-card .action-btn.btn-more {
+  background: var(--control-bg);
+  color: var(--ink-secondary);
+  border-color: var(--control-border);
+}
+
+.cleanup-card .source-tag {
+  max-width: 100%;
 }
 
 .column-keep .card img,
@@ -4223,8 +4340,74 @@ button.status-pill:disabled {
     display: flex;
   }
 
-  .column-unsorted .column-cards {
-    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  .unsorted-grid {
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, 200px), 1fr));
+  }
+}
+
+@media (max-width: 480px) {
+  .appbar-brand {
+    flex: 1 1 100%;
+    flex-wrap: wrap;
+  }
+
+  .brand-name {
+    flex: 1;
+    font-size: var(--type-title);
+    white-space: normal;
+  }
+
+  .appbar-actions {
+    flex-wrap: wrap;
+    min-width: 0;
+  }
+
+  .cleanup-card {
+    display: grid;
+    grid-template-columns: 76px minmax(0, 1fr);
+    align-content: start;
+  }
+
+  .cleanup-card .card-thumb {
+    grid-row: 1 / span 2;
+    aspect-ratio: 1;
+    margin: var(--space-3) 0 0 var(--space-3);
+    border-radius: var(--radius-control);
+  }
+
+  .cleanup-card .card-meta {
+    grid-column: 2;
+    grid-row: 1;
+    border-top: 0;
+    padding: var(--space-3);
+  }
+
+  .cleanup-card .cleanup-timing {
+    grid-column: 2;
+    grid-row: 2;
+    padding: 0 var(--space-3) var(--space-3);
+  }
+
+  .cleanup-card .card-actions,
+  .cleanup-card .suggestion-badge {
+    grid-column: 1 / -1;
+  }
+
+  .cleanup-card .card-actions {
+    grid-row: 4;
+  }
+
+  .cleanup-card .suggestion-badge {
+    grid-row: 3;
+  }
+
+  .cleanup-card .card-name {
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+
+  .cleanup-footer .btn {
+    width: 100%;
   }
 }
 

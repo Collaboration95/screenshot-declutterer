@@ -14,11 +14,13 @@ Single-file backend + single-file frontend. Zero build steps.
 src/ss_dcl/app.py        Flask backend (all routes, scanning, thumbnails, state, trash, rename, port detection)
 src/ss_dcl/memory.py    Persistent file memory store (fingerprint-keyed identity, status tracking, atomic persistence)
 src/ss_dcl/paths.py      Runtime-root indirection for state/cache dirs (SS_DCL_HOME override)
+src/ss_dcl/usage.py      Optional Spotlight last-used metadata and fixed cleanup timing rule
 static/app.js            Frontend JS (Kanban, drag-and-drop, undo, lightbox, rename modal, confirm modal)
 static/style.css         All CSS (Kanban layout, cards, lightbox, rename modal, confirm modal)
 templates/index.html     SPA shell — three-column layout + lightbox + rename modal + confirm modal
 tools/demo_fixtures.py   Deterministic non-personal demo workspace generator (documentation/baselines)
 tools/capture_ui_baseline.py  Headless-Chrome capture of the canonical UI baseline matrix
+tools/check_cleanup_ui.py    Isolated browser regression checks and issue #118 screenshot matrix
 tests/conftest.py        Shared pytest fixtures and helpers
 tests/test_routes_*.py   Route-specific test files (index, screenshots, image, thumb, state, done, rename, memory split into records/suggest/prune/persistence)
 tests/test_memory.py     Memory store unit tests (fingerprint, CRUD, persistence, status transitions, edge cases)
@@ -48,7 +50,7 @@ tests/test_performance.py     Perf benchmarks, @pytest.mark.perf (scan/thumbs/su
 | Method | Path | Purpose |
 |--------|------|---------|
 | GET | `/` | Serve SPA |
-| GET | `/api/screenshots?sort=<mode>` | List screenshots with fingerprint, memory_status, suggested_name, suggested_category enrichment (sort: name, name_desc, date, date_desc) |
+| GET | `/api/screenshots?sort=<mode>` | List screenshots with fingerprint, memory_status, suggested_name, suggested_category, optional usage timestamps, and cleanup eligibility/reason (sort: name, name_desc, date, date_desc) |
 | GET | `/api/image/<filename>` | Serve full-size image (cache: 1h) |
 | GET | `/api/thumb/<filename>` | Serve thumbnail 800x600 max (cache: 24h), falls back to full image |
 | GET | `/api/state` | Get persisted decisions `{decisions: {filename: "keep"|"trash"}}` |
@@ -84,6 +86,7 @@ All in `static/app.js`:
 - **Rename modal**: Rename button → modal with text input → POST `/api/rename`. Updates card dataset filename, state, thumbnail, and clears category hint
 - **Theme toggle**: ☀/☾ button cycles auto/dark/light; persisted in localStorage; follows system preference in auto mode
 - **Category hints**: Colored left border (green=keep, red=trash) when auto-categorization has sufficient signal; cleared on accept/reject/rename
+- **Cleanup review**: One real card per file in an inline group under `cards-unsorted`; independent page-session checkbox choices, queue scoped to that group, ordinary board selection temporarily owns the sole active batch bar. Dismiss survives refresh but resets on reload. Spotlight queries use four workers, a 750ms per-query timeout, and a three-second per-scan query budget; no persistent activity cache or atime fallback.
 
 ## Runtime Paths
 
