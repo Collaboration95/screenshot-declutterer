@@ -95,15 +95,19 @@
           <div class="column-cards" id="cards-unsorted">
             <section id="cleanup-group" class="cleanup-group" aria-labelledby="cleanup-heading" aria-describedby="cleanup-reason" hidden>
               <div class="cleanup-header">
-                <h2 id="cleanup-heading">Cleanup suggestions · 0</h2>
+                <h2 id="cleanup-heading">Cleanup suggestions · 0 shown · 0 more</h2>
                 <button type="button" id="cleanup-dismiss" class="cleanup-quiet">Dismiss</button>
               </div>
-              <p id="cleanup-reason">Recorded open within 5m of capture; last recorded open over 10m ago.</p>
-              <div id="cleanup-cards" class="unsorted-grid" role="list" aria-label="Cleanup suggestions"></div>
+              <p id="cleanup-reason">Recorded open within 5 minutes of capture; none recorded in the last 10 minutes. Selected for cleanup review.</p>
+              <div id="cleanup-cards" class="unsorted-grid" role="list" aria-label="Cleanup suggestions">
+                <p id="cleanup-empty" class="cleanup-empty" hidden>Batch reviewed. Show the next five when you’re ready.</p>
+              </div>
               <div id="cleanup-footer" class="cleanup-footer">
                 <label class="cleanup-select-all"><input type="checkbox" id="cleanup-select-all"> Select all</label>
                 <button type="button" id="cleanup-queue" class="btn btn-primary" disabled>Queue 0 for Trash</button>
+                <button type="button" id="cleanup-next" class="cleanup-quiet" disabled>Show next 5</button>
               </div>
+              <p class="cleanup-next-hint">Show next 5 leaves unresolved cards in Unsorted for this page session.</p>
               <button type="button" id="cleanup-review" class="cleanup-quiet" hidden>Review cleanup selection</button>
               <span id="cleanup-status" class="sr-only" role="status" aria-live="polite" aria-atomic="true"></span>
             </section>

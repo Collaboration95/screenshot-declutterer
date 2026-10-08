@@ -30,7 +30,7 @@ serve(int(sys.argv[1]))
 """
 
 
-def serve(port: int) -> None:
+def serve(port: int, *, batches: bool = False) -> None:
     from flask import jsonify
     from werkzeug.serving import make_server
 
@@ -49,6 +49,16 @@ def serve(port: int) -> None:
         )
         for path, age, opened in [(original, 28, 2), (duplicate, 21, 3), (suggested, 18, 4)]
     }
+    if batches:
+        paths = sorted(root.joinpath(demo_fixtures.DESKTOP_DIR).glob("Screenshot*.*"))
+        paths += sorted(root.joinpath(demo_fixtures.TRACKED_DIR).glob("Screenshot*.*"))
+        for path in paths:
+            if len(records) == 17:
+                break
+            records.setdefault(
+                path.stat().st_ino,
+                usage.UsageMetadata(NOW - timedelta(minutes=32), NOW - timedelta(minutes=30)),
+            )
     usage.utc_now = lambda: NOW
     usage.read_usage = lambda paths: {
         path: records.get(path.stat().st_ino, usage.UsageMetadata()) for path in paths

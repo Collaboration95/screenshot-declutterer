@@ -86,7 +86,7 @@ All in `static/app.js`:
 - **Rename modal**: Rename button → modal with text input → POST `/api/rename`. Updates card dataset filename, state, thumbnail, and clears category hint
 - **Theme toggle**: ☀/☾ button cycles auto/dark/light; persisted in localStorage; follows system preference in auto mode
 - **Category hints**: Colored left border (green=keep, red=trash) when auto-categorization has sufficient signal; cleared on accept/reject/rename
-- **Cleanup review**: One real card per file in an inline group under `cards-unsorted`; independent page-session checkbox choices, queue scoped to that group, ordinary board selection temporarily owns the sole active batch bar. Dismiss survives refresh but resets on reload. Spotlight queries use four workers, a 750ms per-query timeout, and a three-second per-scan query budget; no persistent activity cache or atime fallback.
+- **Cleanup review**: Five cards per explicit batch under `cards-unsorted`, assigned in scan/sort order by `SsDcl.CleanupBatches`. Page-session membership, deferral, and checkbox choices survive refresh; only Show next 5 advances. Decisions vacate slots without filling them; current-batch undo restores its slot and earlier-batch undo returns ordinary Unsorted. Only displayed cards participate in cleanup selection/queue/drag. Cards scroll within the panel while context/actions stay visible in separate rows. Ordinary board selection temporarily owns the sole active batch bar. Dismiss survives refresh but resets on reload. Spotlight queries use four workers, a 750ms per-query timeout, and a three-second per-scan query budget; no persistent activity cache or atime fallback.
 
 ## Runtime Paths
 

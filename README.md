@@ -66,16 +66,21 @@ when filesystem creation time and Spotlight's recorded last-used time match the
 timing rule. It works with the AI server stopped. Missing or ambiguous metadata
 leaves files in the ordinary grid; Keep and Trash decisions always take priority.
 
-All candidates start selected for review. Unchecking a card does not change its
-decision. **Queue N for Trash** parks selected candidates in Trash; **Done** still
-requires confirmation before any file moves on disk. Preview, Keep, drag, and
-per-card undo use the existing workflow. **Dismiss** hides the group until the
-page reloads, including across refreshes. A rescan reads fresh recorded activity.
+Review five candidates at a time in the current sort order. The heading shows
+the displayed and waiting counts; the explanation and controls stay visible as
+the batch scrolls. Only displayed cards start selected. Unchecking changes
+selection, not the file's decision. **Queue N for Trash** parks selected cards
+in Trash; **Done** still requires confirmation before any file moves on disk.
+Keep and Queue leave slots empty until you choose **Show next 5**. That button
+returns unresolved cards to ordinary Unsorted and defers them for this page
+session. Refresh preserves the batch and unchecked choices while reading fresh
+activity. Undo restores current-batch cards; undoing a previous batch restores
+ordinary Unsorted. **Dismiss** hides the group until the page reloads.
 
 This signal describes the last recorded open, not a first-open history or proof
 that a file was shared or is no longer needed. Creation time can also be affected
 by copies and restores. Quick Look, uploads, and the app's own previews are not
-established by this signal. See the [screenshots and verification matrix](docs/assets/cleanup-suggestions/README.md).
+established by this signal. See the [batch screenshots and verification matrix](docs/assets/cleanup-batches/README.md).
 
 ## Optional local AI naming
 

@@ -21,12 +21,15 @@ const cleanupCards = document.getElementById("cleanup-cards");
 const cleanupHeading = document.getElementById("cleanup-heading");
 const cleanupSelectAll = document.getElementById("cleanup-select-all");
 const cleanupQueue = document.getElementById("cleanup-queue");
+const cleanupNext = document.getElementById("cleanup-next");
+const cleanupEmpty = document.getElementById("cleanup-empty");
 const cleanupFooter = document.getElementById("cleanup-footer");
 const cleanupReview = document.getElementById("cleanup-review");
 const cleanupStatus = document.getElementById("cleanup-status");
 const remainingUnsortedLabel = document.getElementById("remaining-unsorted-label");
 // Page-session review choices, independent of decisions and board selection.
 const cleanupChoices = new Map();
+const cleanupBatches = new SsDcl.CleanupBatches();
 let cleanupDismissed = false;
 
 const colUnsorted = document.getElementById("col-unsorted");
@@ -500,6 +503,7 @@ function loadScreenshots(savedDecisions) {
       if (files.length === 0) {
         totalCards = 0;
         currentFileKeys = new Set();
+        cleanupBatches.reconcile([], []);
         setBoardState("empty");
         updateCounts();
         return;
@@ -533,17 +537,13 @@ function loadScreenshots(savedDecisions) {
         card.dataset.scanOrder = order;
         if (f.cleanup && f.cleanup.timing_match) {
           card.dataset.cleanupMatch = "true";
-          const timing = document.createElement("div");
-          timing.className = "cleanup-timing";
-          const opened = document.createElement("span");
-          opened.textContent = `Recorded open +${cleanupDuration(f.cleanup.opened_after_capture_seconds)}`;
-          const age = document.createElement("span");
-          age.textContent = `Last recorded open ${cleanupDuration(f.cleanup.last_opened_ago_seconds)} ago`;
-          timing.append(opened, age);
-          card.insertBefore(timing, card.querySelector(".card-actions"));
         }
         target.appendChild(card);
       });
+      cleanupBatches.reconcile(
+        cleanupEligibleCards().map(cleanupKey),
+        files.filter(f => f.cleanup && f.cleanup.timing_match).map(SsDcl.fileKey),
+      );
       setBoardState("board");
       updateCounts();
       saveState();
@@ -571,17 +571,17 @@ function loadScreenshots(savedDecisions) {
 }
 
 // ── Inline cleanup review ────────────────────────────────────────────────────
-function cleanupDuration(seconds) {
-  if (seconds < 60) return `${Math.floor(seconds)}s`;
-  return `${Math.floor(seconds / 60)}m`;
-}
-
 function cleanupKey(card) {
   return fileKey(card.dataset.source || "Desktop", card.dataset.filename);
 }
 
 function cleanupCandidates() {
   return [...cleanupCards.querySelectorAll(".card")];
+}
+
+function cleanupEligibleCards() {
+  return [...cardsUnsorted.querySelectorAll('.card[data-cleanup-match="true"]')]
+    .sort((a, b) => Number(a.dataset.scanOrder) - Number(b.dataset.scanOrder));
 }
 
 function syncCleanupSelection() {
@@ -594,6 +594,7 @@ function syncCleanupSelection() {
     if (checked) selected += 1;
   });
   cleanupSelectAll.checked = candidates.length > 0 && selected === candidates.length;
+  cleanupSelectAll.disabled = candidates.length === 0;
   cleanupSelectAll.indeterminate = selected > 0 && selected < candidates.length;
   cleanupQueue.textContent = `Queue ${selected} for Trash`;
   cleanupQueue.disabled = selected === 0;
@@ -601,16 +602,24 @@ function syncCleanupSelection() {
   // yields to its batch bar; review choices are retained and can be resumed.
   cleanupFooter.hidden = selectedCards.size > 0;
   cleanupReview.hidden = selectedCards.size === 0;
-  const message = `${candidates.length} cleanup ${candidates.length === 1 ? "suggestion" : "suggestions"}; ${selected} selected.`;
+  const { waiting } = cleanupBatches.view(cleanupEligibleCards().map(cleanupKey));
+  const message = `${candidates.length} cleanup suggestions shown; ${waiting.length} more; ${selected} selected.`;
   if (cleanupStatus.textContent !== message) cleanupStatus.textContent = message;
 }
 
 function syncCleanupGroup() {
   const unsorted = [...cardsUnsorted.querySelectorAll(".card")]
     .sort((a, b) => Number(a.dataset.scanOrder) - Number(b.dataset.scanOrder));
+  const { shown, waiting } = cleanupBatches.view(cleanupEligibleCards().map(cleanupKey));
+  const shownKeys = new Set(shown);
+  const filenameCounts = new Map();
+  document.querySelectorAll(".card").forEach(card => {
+    const name = card.dataset.filename;
+    filenameCounts.set(name, (filenameCounts.get(name) || 0) + 1);
+  });
   // Also reset controls on cards that just left Unsorted through move/undo.
   document.querySelectorAll(".card").forEach(card => {
-    const candidate = !cleanupDismissed && getCardColumn(card) === "unsorted" && card.dataset.cleanupMatch === "true";
+    const candidate = !cleanupDismissed && shownKeys.has(cleanupKey(card)) && getCardColumn(card) === "unsorted";
     const changed = card.classList.contains("cleanup-card") !== candidate;
     if (changed) {
       selectedCards.delete(card);
@@ -620,12 +629,14 @@ function syncCleanupGroup() {
     }
     card.querySelector(".cleanup-select").hidden = !candidate;
     card.querySelector(".card-select").hidden = candidate;
-    if (candidate && card.dataset.source === "Desktop" && !card.querySelector(".cleanup-source")) {
+    const desktopDuplicate = card.dataset.source === "Desktop" && filenameCounts.get(card.dataset.filename) > 1;
+    if (desktopDuplicate && !card.querySelector(".cleanup-source")) {
       const tag = document.createElement("span");
       tag.className = "source-tag cleanup-source";
       tag.textContent = "in: Desktop";
+      tag.title = "Desktop";
       card.querySelector(".card-meta").appendChild(tag);
-    } else if (!candidate) {
+    } else if (!desktopDuplicate) {
       const tag = card.querySelector(".cleanup-source");
       if (tag) tag.remove();
     }
@@ -644,9 +655,11 @@ function syncCleanupGroup() {
     });
   });
   const count = cleanupCandidates().length;
-  cleanupHeading.textContent = `Cleanup suggestions · ${count}`;
-  cleanupGroup.hidden = count === 0;
-  remainingUnsortedLabel.hidden = count === 0 || ordinaryUnsorted.children.length === 0;
+  cleanupHeading.textContent = `Cleanup suggestions · ${count} shown · ${waiting.length} more`;
+  cleanupNext.disabled = waiting.length === 0;
+  cleanupEmpty.hidden = count > 0;
+  cleanupGroup.hidden = cleanupDismissed || (count === 0 && waiting.length === 0);
+  remainingUnsortedLabel.hidden = cleanupGroup.hidden || ordinaryUnsorted.children.length === 0;
   updateBatchBar();
 }
 
@@ -673,6 +686,13 @@ cleanupQueue.addEventListener("click", () => {
   if (cards.length) announce(`${cards.length} queued in Trash. Press Done when ready.`);
   focusCleanupContext();
 });
+cleanupNext.addEventListener("click", () => {
+  clearSelection();
+  cleanupBatches.advance(cleanupEligibleCards().map(cleanupKey));
+  syncCleanupGroup();
+  cleanupCards.scrollTop = 0;
+  focusCleanupContext();
+});
 document.getElementById("cleanup-dismiss").addEventListener("click", () => {
   cleanupDismissed = true;
   syncCleanupGroup();
@@ -680,7 +700,8 @@ document.getElementById("cleanup-dismiss").addEventListener("click", () => {
   focusCleanupContext();
 });
 function focusCleanupContext() {
-  const target = cleanupCandidates()[0] || ordinaryUnsorted.querySelector(".card") || colUnsorted;
+  const target = cleanupCandidates()[0] || (!cleanupGroup.hidden && !cleanupNext.disabled ? cleanupNext : null)
+    || ordinaryUnsorted.querySelector(".card") || colUnsorted;
   if (target === colUnsorted) target.tabIndex = -1;
   target.focus();
 }
@@ -1666,6 +1687,7 @@ function applyRenameToCard(card, oldName, newName) {
   const source = card.dataset.source || "Desktop";
   const oldKey = fileKey(source, oldName);
   const newKey = fileKey(source, newName);
+  cleanupBatches.rename(oldKey, newKey);
   if (cleanupChoices.has(oldKey)) {
     cleanupChoices.set(newKey, cleanupChoices.get(oldKey));
     cleanupChoices.delete(oldKey);

@@ -6,8 +6,10 @@ an isolated Desktop and tracked folder, and fixed usage metadata at
 No real Desktop, personal screenshot, real Spotlight activity, or disk trash is used.
 The test-only metadata reader and helper routes exist only in the capture process.
 
-The three candidates include identical filenames in Desktop and a tracked folder,
+This small-candidate regression fixture shows one batch. The three candidates include identical filenames in Desktop and a tracked folder,
 plus a card with an AI filename suggestion and a learned category hint.
+See the [five-card batch matrix](../cleanup-batches/README.md) for issue #120 and the
+17-item review sequence.
 
 ## Reproduce
 
@@ -55,7 +57,7 @@ source containment, explicit Keep/Trash precedence, and fresh per-scan reads.
 
 Verified with Chrome 154.0.8037.99; see [machine-readable capture details](verification.json).
 Python verification: **547 passed**, **87.20% coverage** (85% required); new usage
-module: **100% coverage**. Existing JavaScript suite: **56 passed**. Ruff, formatting,
+module: **100% coverage**. JavaScript suite: **62 passed**. Ruff, formatting,
 Pyright, and the dependency audit pass.
 
 The required audit initially found vulnerable transitive dependencies. The lockfile

@@ -3710,11 +3710,38 @@ header h1 {
 }
 
 .cleanup-group {
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr) auto auto auto auto;
+  max-height: calc(100% - var(--space-5));
   padding: var(--space-4);
   margin-bottom: var(--space-5);
   border: var(--border-width) solid var(--border-subtle);
   border-radius: var(--radius-panel);
   background: var(--accent-ai-soft);
+}
+
+/* Only cards scroll. Context and actions occupy their own rows so they never
+   overlay a thumbnail, even when keyboard focus scrolls through the batch. */
+#cleanup-cards {
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+  padding: var(--space-1);
+  scroll-padding: var(--space-3);
+}
+
+.cleanup-empty {
+  grid-column: 1 / -1;
+  margin: var(--space-4) 0;
+  color: var(--ink-secondary);
+  font-size: var(--type-body);
+}
+
+.cleanup-next-hint {
+  margin: var(--space-3) 0 0;
+  color: var(--ink-secondary);
+  font-size: var(--type-label);
+  line-height: var(--type-label-line);
 }
 
 .cleanup-header,
@@ -3779,20 +3806,6 @@ header h1 {
   top: var(--space-3);
   left: var(--space-3);
   margin: 0;
-}
-
-.cleanup-timing {
-  display: none;
-}
-
-.cleanup-card .cleanup-timing {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-1);
-  padding: 0 var(--space-4) var(--space-3);
-  color: var(--ink-secondary);
-  font-size: var(--type-label);
-  line-height: var(--type-label-line);
 }
 
 .cleanup-card {
@@ -4288,12 +4301,6 @@ header h1 {
     grid-row: 1;
     border-top: 0;
     padding: var(--space-3);
-  }
-
-  .cleanup-card .cleanup-timing {
-    grid-column: 2;
-    grid-row: 2;
-    padding: 0 var(--space-3) var(--space-3);
   }
 
   .cleanup-card .card-actions,
