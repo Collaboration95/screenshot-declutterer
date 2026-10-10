@@ -15,12 +15,14 @@ src/ss_dcl/app.py        Flask backend (all routes, scanning, thumbnails, state,
 src/ss_dcl/memory.py    Persistent file memory store (fingerprint-keyed identity, status tracking, atomic persistence)
 src/ss_dcl/paths.py      Runtime-root indirection for state/cache dirs (SS_DCL_HOME override)
 src/ss_dcl/usage.py      Optional Spotlight last-used metadata and fixed cleanup timing rule
+src/ss_dcl/similarity.py Cached BLAKE2b/dHash/color signals and direct screenshot matches
 static/app.js            Frontend JS (Kanban, drag-and-drop, undo, lightbox, rename modal, confirm modal)
 static/style.css         All CSS (Kanban layout, cards, lightbox, rename modal, confirm modal)
 templates/index.html     SPA shell — three-column layout + lightbox + rename modal + confirm modal
 tools/demo_fixtures.py   Deterministic non-personal demo workspace generator (documentation/baselines)
 tools/capture_ui_baseline.py  Headless-Chrome capture of the canonical UI baseline matrix
 tools/check_cleanup_ui.py    Isolated browser regression checks and issue #118 screenshot matrix
+tools/check_similarity_ui.py Isolated exact/near browser checks; optional private screenshot copies
 tests/conftest.py        Shared pytest fixtures and helpers
 tests/test_routes_*.py   Route-specific test files (index, screenshots, image, thumb, state, done, rename, memory split into records/suggest/prune/persistence)
 tests/test_memory.py     Memory store unit tests (fingerprint, CRUD, persistence, status transitions, edge cases)
@@ -50,7 +52,7 @@ tests/test_performance.py     Perf benchmarks, @pytest.mark.perf (scan/thumbs/su
 | Method | Path | Purpose |
 |--------|------|---------|
 | GET | `/` | Serve SPA |
-| GET | `/api/screenshots?sort=<mode>` | List screenshots with fingerprint, memory_status, suggested_name, suggested_category, optional usage timestamps, and cleanup eligibility/reason (sort: name, name_desc, date, date_desc) |
+| GET | `/api/screenshots?sort=<mode>` | List screenshots with stable memory fingerprint, memory_status, suggestions, usage/cleanup, and direct `matches: [{source, name, kind, distance}]` (`kind`: identical/similar; sort: name, name_desc, date, date_desc) |
 | GET | `/api/image/<filename>` | Serve full-size image (cache: 1h) |
 | GET | `/api/thumb/<filename>` | Serve thumbnail 800x600 max (cache: 24h), falls back to full image |
 | GET | `/api/state` | Get persisted decisions `{decisions: {filename: "keep"|"trash"}}` |
@@ -81,6 +83,7 @@ All in `static/app.js`:
 - **Drag-and-drop**: Native HTML5 Drag and Drop API. Cards `draggable="true"`. Columns are drop targets with visual feedback via CSS classes (`dragging`, `drag-over`). Dragging a selected card attaches a Photos-style fanned stack of the whole selection to the cursor (`buildBatchDragGhost()` — composite canvas + `setDragImage`); visual only, drop still batch-moves
 - **Kanban layout**: Three columns — Keep (22% width), Unsorted (CSS Grid, flex:1), Trash (22% width)
 - **Undo**: `performUndo()` pops from stack, reverses the move
+- **Similarity review**: Identical and N similar buttons select the anchor plus direct peers of that type across sources. Selection uses the ordinary batch bar even for cleanup cards; cleanup choices resume after Clear. Matches are symmetric, never transitively expanded, and cannot make decisions. Signal cache lives in `meta.similarity`, keyed by version/size/mtime_ns/ctime_ns/device/inode. File changes invalidate it; renames retain memory identity while the byte size stays unchanged. Approximate comparisons require dHash distance <=10, aspect within 3%, bit population 9..247, grayscale contrast >=8, RGB thumbnail mean error <=12 and regional error <=30 (byte levels). Text differences can still pass; preview before triage.
 - **Lightbox**: Double-click or Preview button → full-size overlay. Escape or backdrop click closes
 - **Confirm modal**: Done button → modal with trash count → POST `/api/done`
 - **Rename modal**: Rename button → modal with text input → POST `/api/rename`. Updates card dataset filename, state, thumbnail, and clears category hint

@@ -240,9 +240,10 @@ ENGINEERING & HARDENING
            PyInstaller → signed .app → `brew install --cask`. The step that
            makes it shareable beyond this machine (also unblocks FE-032).
 
-[ ] FE-038  Duplicate screenshot detection (exact + near)             [P2][M]
-           Hash-based dup highlighting — macOS loves producing "Screenshot
-           (2).png" copies. High user value, cheap to build on thumbnails.
+[x] FE-038  Duplicate screenshot detection (exact + near)             [P2][M]
+           BLAKE2b byte identity and cached dHash256 with contrast/color
+           checks. Direct-match badges select candidates for batch review;
+           no automatic decisions, clustering, or semantic matching.
 
 [ ] FE-039  App-split refactor                                        [P3][L]
            app.py is 800 lines — split routes into blueprints (memory, llm,

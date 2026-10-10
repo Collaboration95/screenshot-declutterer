@@ -29,6 +29,9 @@ complete capture matrix.
   focused-card actions and keyboard shortcuts
 - **Multi-select and batch actions** — select several cards and move the whole
   selection to Keep or Trash; selected cards can also be dragged as a group
+- **Find similar screenshots** — **Identical** badges identify matching file
+  bytes; **N similar** badges flag close visual matches. Select a badge to review
+  that screenshot and its direct matches with the existing batch actions
 - **Multiple sources** — Desktop is always included; add up to ten tracked
   folders from the native macOS folder picker, with source tags on cards
 - **Optional local AI naming** — LiteRT-LM uses an on-device vision model to
@@ -81,6 +84,28 @@ This signal describes the last recorded open, not a first-open history or proof
 that a file was shared or is no longer needed. Creation time can also be affected
 by copies and restores. Quick Look, uploads, and the app's own previews are not
 established by this signal. See the [batch screenshots and verification matrix](docs/assets/cleanup-batches/README.md).
+
+## Find similar screenshots
+
+Matches are computed locally across Desktop and tracked folders, without an AI
+server or additional dependencies. **Identical** means the original file bytes
+have matching size and BLAKE2b-128 hashes. **N similar** means a conservative
+visual comparison passed; different text can still look similar at this scale.
+Preview candidates before deciding which copies to keep.
+
+Each badge selects its screenshot and only the direct matches of that type.
+It replaces the current board selection and temporarily uses the batch bar,
+including when a match appears in Cleanup suggestions. **Keep**, **Trash**, drag,
+and undo work as usual. Badge selection does not make decisions. **Done** remains
+the confirmed disk operation. Refresh recomputes active matches and clears the
+board selection; renames update match references immediately.
+
+Image signals are cached in local memory records and revalidated after file
+changes. First scans decode uncached images; unchanged scans reuse their signals.
+Scrolls, crops, large overlays, and fine text differences are not reliably
+distinguished. There is no clustering or semantic search. See the
+[implementation design](docs/design-fe038-similar-screenshots.md) and
+[synthetic browser evidence](docs/assets/similar-screenshots/README.md).
 
 ## Optional local AI naming
 
