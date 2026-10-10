@@ -54,6 +54,8 @@ def test_hamming_and_aspect_boundaries():
     assert near_distance(a, replace(a, dhash=f"{int(a.dhash, 16) ^ 1023:064x}")) == 10
     assert near_distance(a, replace(a, dhash=f"{int(a.dhash, 16) ^ 2047:064x}")) is None
     assert near_distance(a, replace(a, width=1029)) == 0
+    assert near_distance(a, replace(a, width=1030)) == 0
+    assert near_distance(replace(a, width=1030), a) == 0
     assert near_distance(a, replace(a, width=1031)) is None
     assert near_distance(replace(a, width=1031), a) is None
     assert near_distance(a, replace(a, width=0)) is None

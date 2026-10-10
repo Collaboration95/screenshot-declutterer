@@ -19,7 +19,7 @@ from ss_dcl.memory import FileRecord
 logger = logging.getLogger(__name__)
 SIGNAL_VERSION = 1
 MAX_DISTANCE = 10
-ASPECT_TOLERANCE = 0.03
+ASPECT_TOLERANCE_PERCENT = 3
 
 
 @dataclass(frozen=True)
@@ -119,8 +119,9 @@ def cached_signals(path: Path, record: FileRecord) -> tuple[Signals | None, bool
 def near_distance(a: Signals, b: Signals) -> int | None:
     if not a.dhash or not b.dhash or min(a.width, a.height, b.width, b.height) <= 0:
         return None
-    aspect_a, aspect_b = a.width / a.height, b.width / b.height
-    if max(aspect_a, aspect_b) / min(aspect_a, aspect_b) - 1 > ASPECT_TOLERANCE:
+    # Cross products keep the inclusive 3% boundary exact, in both directions.
+    cross_a, cross_b = a.width * b.height, b.width * a.height
+    if abs(cross_a - cross_b) * 100 > min(cross_a, cross_b) * ASPECT_TOLERANCE_PERCENT:
         return None
     hash_a, hash_b = int(a.dhash, 16), int(b.dhash, 16)
     # Suppress uniform/monotonic images in either gradient direction.

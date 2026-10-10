@@ -51,5 +51,12 @@ Fine text changes can still pass: one changed-text fixture scored dHash distance
 
 ## Remaining blockers
 
+Luna also independently verified the final inclusive aspect-boundary correction:
+**21 focused similarity/route/adversarial tests passed**, and **144 ordered
+dimension pairs** agreed with an exact `Fraction` oracle. Integer cross products
+accept exactly 3% in both directions and reject values above it, avoiding float
+rounding at the boundary. The implementation's rule and thresholds are otherwise
+unchanged.
+
 No software-check blocker remains. Both the independent synthetic verification
 and the implementer's refreshed personal-copy checks are complete.
