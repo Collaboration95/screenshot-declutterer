@@ -1,0 +1,22 @@
+{
+  "browser": "Chrome/154.0.8037.99",
+  "seed": 20260916,
+  "fixed_scan_time": "2026-10-08T09:30:00+00:00",
+  "screenshots": [
+    "1440x900-board-light.png",
+    "1024x768-board-light.png",
+    "320x900-board-light.png",
+    "320x900-footer-light.png",
+    "1440x900-board-dark.png",
+    "1024x768-board-dark.png",
+    "320x900-board-dark.png",
+    "320x900-footer-dark.png",
+    "1440x900-board-auto-light.png",
+    "1024x768-board-auto-light.png",
+    "320x900-board-auto-light.png",
+    "1440x900-board-auto-dark.png",
+    "1024x768-board-auto-dark.png",
+    "320x900-board-auto-dark.png"
+  ],
+  "interaction_checks": "passed"
+}

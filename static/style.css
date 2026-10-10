@@ -899,7 +899,6 @@ header h1 {
 }
 
 .header-theme-btn,
-.header-llm-btn,
 .header-settings-btn {
   display: inline-flex;
   align-items: center;
@@ -922,14 +921,12 @@ header h1 {
 }
 
 .header-theme-btn:hover:not(:disabled),
-.header-llm-btn:hover:not(:disabled),
 .header-settings-btn:hover:not(:disabled) {
   background: var(--control-bg-hover);
   border-color: var(--control-border-hover);
 }
 
 .header-theme-btn:disabled,
-.header-llm-btn:disabled,
 .header-settings-btn:disabled {
   background: var(--control-disabled-bg);
   color: var(--control-disabled-text);
@@ -2299,7 +2296,6 @@ header h1 {
   .lightbox-close,
   .lightbox-reveal-btn,
   .header-theme-btn,
-  .header-llm-btn,
   .header-settings-btn,
   .menu-suggest-all-btn,
   #undo-btn,
@@ -2435,12 +2431,6 @@ header h1 {
 .popover-desc {
   margin: var(--space-4) 0;
   max-width: 280px;
-}
-
-.llm-menu {
-  top: 76px;
-  left: var(--space-7);
-  width: min(320px, calc(100vw - var(--space-7) * 2));
 }
 
 .menu-item {
@@ -3238,11 +3228,6 @@ header h1 {
     max-height: none;
   }
 
-  .llm-menu {
-    top: 68px;
-    left: var(--space-5);
-  }
-
   .feedback-banner,
   .suggest-progress {
     top: var(--space-4);
@@ -3431,90 +3416,13 @@ header h1 {
   white-space: nowrap;
 }
 
-/* ── Status pills (local-only, managed LLM server) ────────── */
-.status-pill,
-.header-llm-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-2);
-  min-height: var(--control-height-sm);
-  padding: 0 var(--space-4);
-  border: var(--border-width) solid var(--control-border);
-  border-radius: var(--radius-pill);
-  background: var(--control-bg);
-  color: var(--ink-secondary);
-  font-family: var(--font-sans);
-  font-size: var(--type-label);
-  font-weight: var(--weight-semibold);
-  line-height: var(--type-label-line);
-  white-space: nowrap;
-}
-
-button.status-pill {
-  cursor: pointer;
-  transition:
-    background var(--duration-base) var(--ease-standard),
-    border-color var(--duration-base) var(--ease-standard),
-    color var(--duration-base) var(--ease-standard);
-}
-
-button.status-pill:hover:not(:disabled) {
-  background: var(--control-bg-hover);
-  border-color: var(--control-border-hover);
-}
-
-button.status-pill:disabled {
-  cursor: progress;
-}
-
+/* ── Server status marker in Settings ────────────────────── */
 .status-dot {
   flex: 0 0 auto;
   width: 8px;
   height: 8px;
   border-radius: var(--radius-pill);
   background: var(--status-stopped-fill);
-}
-
-.status-pill-local,
-.status-pill-llm.is-ready {
-  background: var(--accent-keep-soft);
-  border-color: var(--accent-keep-border);
-  color: var(--accent-keep-ink);
-}
-
-.status-pill-local .status-dot,
-.status-pill-llm.is-ready .status-dot {
-  background: var(--status-ready-fill);
-}
-
-.status-pill-llm.is-stopped {
-  background: var(--control-bg);
-  border-color: var(--control-border);
-  color: var(--ink-secondary);
-}
-
-.status-pill-llm.is-stopped .status-dot {
-  background: var(--status-stopped-fill);
-}
-
-.status-pill-llm.is-starting {
-  background: var(--status-warning-soft);
-  border-color: var(--status-warning-border);
-  color: var(--status-warning-ink);
-}
-
-.status-pill-llm.is-starting .status-dot {
-  background: var(--status-starting-fill);
-}
-
-.status-pill-llm.is-error {
-  background: var(--status-error-surface);
-  border-color: var(--accent-trash-border);
-  color: var(--status-error-ink);
-}
-
-.status-pill-llm.is-error .status-dot {
-  background: var(--status-error-fill);
 }
 
 /* ── Progress summary and meter ───────────────────────────── */
@@ -3791,10 +3699,140 @@ button.status-pill:disabled {
 }
 
 .column-unsorted .column-cards {
+  display: block;
+}
+
+.unsorted-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(232px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 232px), 1fr));
   align-content: start;
   gap: var(--space-5);
+}
+
+.cleanup-group {
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr) auto auto auto auto;
+  max-height: calc(100% - var(--space-5));
+  padding: var(--space-4);
+  margin-bottom: var(--space-5);
+  border: var(--border-width) solid var(--border-subtle);
+  border-radius: var(--radius-panel);
+  background: var(--accent-ai-soft);
+}
+
+/* Only cards scroll. Context and actions occupy their own rows so they never
+   overlay a thumbnail, even when keyboard focus scrolls through the batch. */
+#cleanup-cards {
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+  padding: var(--space-1);
+  scroll-padding: var(--space-3);
+}
+
+.cleanup-empty {
+  grid-column: 1 / -1;
+  margin: var(--space-4) 0;
+  color: var(--ink-secondary);
+  font-size: var(--type-body);
+}
+
+.cleanup-next-hint {
+  margin: var(--space-3) 0 0;
+  color: var(--ink-secondary);
+  font-size: var(--type-label);
+  line-height: var(--type-label-line);
+}
+
+.cleanup-header,
+.cleanup-footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.cleanup-header h2 {
+  margin: 0;
+  color: var(--accent-ai-strong);
+  font-size: var(--type-body);
+  line-height: var(--type-body-line);
+}
+
+#cleanup-reason,
+.remaining-unsorted-label {
+  margin: var(--space-3) 0 var(--space-4);
+  color: var(--ink-secondary);
+  font-size: var(--type-label);
+  line-height: var(--type-body-line);
+}
+
+.cleanup-footer {
+  margin-top: var(--space-4);
+}
+
+.cleanup-quiet {
+  padding: var(--space-2) var(--space-3);
+  min-height: var(--control-height-sm);
+  border: var(--border-width) solid var(--border-subtle);
+  border-radius: var(--radius-control);
+  background: var(--surface-raised);
+  color: var(--ink-secondary);
+  font: inherit;
+  font-size: var(--type-label);
+  cursor: pointer;
+}
+
+.cleanup-select-all {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: var(--control-height-sm);
+  font-size: var(--type-label);
+  color: var(--ink-primary);
+}
+
+.cleanup-select,
+.cleanup-select-all input {
+  width: 20px;
+  height: 20px;
+  accent-color: var(--accent-ai-strong);
+  cursor: pointer;
+}
+
+.cleanup-select {
+  position: absolute;
+  top: var(--space-3);
+  left: var(--space-3);
+  margin: 0;
+}
+
+.cleanup-card {
+  min-width: 0;
+}
+
+.cleanup-card .card-actions,
+.cleanup-card:has(.suggestion-badge:hover) .card-actions {
+  position: relative;
+  inset: auto;
+  margin-top: auto;
+  opacity: 1;
+  pointer-events: auto;
+  background: var(--surface-raised);
+  border-top: var(--border-width) solid var(--border-subtle);
+  border-radius: 0 0 var(--radius-card) var(--radius-card);
+}
+
+.cleanup-card .action-btn.btn-preview,
+.cleanup-card .action-btn.btn-more {
+  background: var(--control-bg);
+  color: var(--ink-secondary);
+  border-color: var(--control-border);
+}
+
+.cleanup-card .source-tag {
+  max-width: 100%;
 }
 
 .column-keep .card img,
@@ -4223,8 +4261,68 @@ button.status-pill:disabled {
     display: flex;
   }
 
-  .column-unsorted .column-cards {
-    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  .unsorted-grid {
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, 200px), 1fr));
+  }
+}
+
+@media (max-width: 480px) {
+  .appbar-brand {
+    flex: 1 1 100%;
+    flex-wrap: wrap;
+  }
+
+  .brand-name {
+    flex: 1;
+    font-size: var(--type-title);
+    white-space: normal;
+  }
+
+  .appbar-actions {
+    flex-wrap: wrap;
+    min-width: 0;
+  }
+
+  .cleanup-card {
+    display: grid;
+    grid-template-columns: 76px minmax(0, 1fr);
+    align-content: start;
+  }
+
+  .cleanup-card .card-thumb {
+    grid-row: 1 / span 2;
+    aspect-ratio: 1;
+    margin: var(--space-3) 0 0 var(--space-3);
+    border-radius: var(--radius-control);
+  }
+
+  .cleanup-card .card-meta {
+    grid-column: 2;
+    grid-row: 1;
+    border-top: 0;
+    padding: var(--space-3);
+  }
+
+  .cleanup-card .card-actions,
+  .cleanup-card .suggestion-badge {
+    grid-column: 1 / -1;
+  }
+
+  .cleanup-card .card-actions {
+    grid-row: 4;
+  }
+
+  .cleanup-card .suggestion-badge {
+    grid-row: 3;
+  }
+
+  .cleanup-card .card-name {
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+
+  .cleanup-footer .btn {
+    width: 100%;
   }
 }
 
@@ -4232,7 +4330,6 @@ button.status-pill:disabled {
    The new shell controls carry their state in colour, so hand each one a
    system-colour boundary when the palette is replaced. */
 @media (forced-colors: active) {
-  .status-pill,
   .compact-switcher-item,
   .brand-mark,
   .progress-meter,

@@ -15,6 +15,22 @@ try {
 const cardsUnsorted = document.getElementById("cards-unsorted");
 const cardsTrash    = document.getElementById("cards-trash");
 const cardsKeep     = document.getElementById("cards-keep");
+const ordinaryUnsorted = document.getElementById("ordinary-unsorted");
+const cleanupGroup = document.getElementById("cleanup-group");
+const cleanupCards = document.getElementById("cleanup-cards");
+const cleanupHeading = document.getElementById("cleanup-heading");
+const cleanupSelectAll = document.getElementById("cleanup-select-all");
+const cleanupQueue = document.getElementById("cleanup-queue");
+const cleanupNext = document.getElementById("cleanup-next");
+const cleanupEmpty = document.getElementById("cleanup-empty");
+const cleanupFooter = document.getElementById("cleanup-footer");
+const cleanupReview = document.getElementById("cleanup-review");
+const cleanupStatus = document.getElementById("cleanup-status");
+const remainingUnsortedLabel = document.getElementById("remaining-unsorted-label");
+// Page-session review choices, independent of decisions and board selection.
+const cleanupChoices = new Map();
+const cleanupBatches = new SsDcl.CleanupBatches();
+let cleanupDismissed = false;
 
 const colUnsorted = document.getElementById("col-unsorted");
 const colTrash    = document.getElementById("col-trash");
@@ -77,13 +93,6 @@ const appbar = document.querySelector(".appbar");
 const trackedFoldersList = document.getElementById("tracked-folders-list");
 const addFolderBtn    = document.getElementById("add-folder-btn");
 const trackedFoldersError = document.getElementById("tracked-folders-error");
-
-const llmServerBtn    = document.getElementById("llm-server-btn");
-const llmStatusLabel  = document.getElementById("llm-status-label");
-const llmMenu         = document.getElementById("llm-menu");
-const llmMenuAction   = document.getElementById("llm-menu-action");
-const llmMenuStatus   = document.getElementById("llm-menu-status");
-const llmMenuDesc     = document.getElementById("llm-menu-desc");
 
 const sortSummary        = document.getElementById("sort-summary");
 const progressMeter      = document.getElementById("progress-meter");
@@ -298,47 +307,29 @@ function announce(message, options) {
   }
 }
 
-// ── Managed LiteRT server status pill ───────────────────────────────────────
-// The state lives on the control itself (class + label + accessible name) so
-// the server condition is never communicated by button text alone.
+// ── Managed LiteRT server controls in Settings ──────────────────────────────
 let llmServerState = "stopped";
 
 const LLM_STATE_COPY = {
-  ready: { label: "AI ready", hint: "Local AI server is running — click to stop it" },
-  stopped: { label: "AI stopped", hint: "Local AI server is stopped — click to start it" },
-  starting: { label: "AI starting", hint: "Local AI server is starting or stopping…" },
-  error: { label: "AI offline", hint: "Local AI server is unreachable — click to try starting it" },
+  ready: "Local AI server is running.",
+  stopped: "Local AI server is stopped.",
+  starting: "Local AI server is starting or stopping…",
+  error: "Local AI server is unavailable. Start it to enable filename suggestions.",
 };
 
 function _setLLMStatus(state, labelOverride) {
   llmServerState = state;
-  const copy = LLM_STATE_COPY[state] || LLM_STATE_COPY.stopped;
-  llmServerBtn.hidden = false;
-  llmServerBtn.classList.remove("is-ready", "is-stopped", "is-starting", "is-error");
-  llmServerBtn.classList.add(`is-${state}`);
-  if (llmStatusLabel) llmStatusLabel.textContent = labelOverride || copy.label;
-  llmServerBtn.disabled = state === "starting";
-  llmServerBtn.setAttribute("aria-label", copy.hint);
-  llmServerBtn.dataset.tooltip = copy.hint;
-  llmServerBtn.setAttribute("aria-expanded", String(!llmMenu.hidden));
-  if (llmMenuStatus) llmMenuStatus.textContent = copy.label.replace(/^AI /, "");
-  if (llmMenuDesc) llmMenuDesc.textContent = state === "error"
-    ? "The local AI server is unavailable. Start it to enable filename suggestions."
-    : "AI suggestions run on this Mac and never upload your screenshots.";
-  if (llmMenuAction) {
-    llmMenuAction.querySelector(".menu-item-label").textContent = state === "ready" ? "Stop local AI" : "Start local AI";
-    llmMenuAction.disabled = state === "starting";
-  }
   if (settingsLLMStatus) {
     settingsLLMStatus.className = `settings-llm-status status-${state}`;
-    settingsLLMStatusText.textContent = copy.hint;
+    settingsLLMStatusText.textContent = labelOverride || LLM_STATE_COPY[state] || LLM_STATE_COPY.stopped;
+    settingsLLMAction.textContent = state === "ready" ? "Stop local AI" : "Start local AI";
+    settingsLLMAction.disabled = state === "starting";
   }
 }
 
 // Label follows the last health verdict.
-function refreshLLMServerButton() {
-  llmServerBtn.hidden = false;
-  llmServerBtn.disabled = true;
+function refreshLLMStatus() {
+  _setLLMStatus("starting", "Checking local AI server…");
   fetch("/api/llm/health")
     .then(r => r.json())
     .then(h => _setLLMStatus(h.ok ? "ready" : (h.error ? "error" : "stopped")))
@@ -347,46 +338,20 @@ function refreshLLMServerButton() {
 
 function performLLMControl() {
   const stopping = llmServerState === "ready";
-  _setLLMStatus("starting", stopping ? "AI stopping…" : "AI starting…");
+  _setLLMStatus("starting", stopping ? "Stopping local AI server…" : "Starting local AI server…");
   fetch(stopping ? "/api/llm/stop" : "/api/llm/start", { method: "POST" })
     .then(r => r.json())
     .then(data => {
       announce(data.message || data.error || "Server control failed.", { error: !data.ok });
-      refreshLLMServerButton();
+      refreshLLMStatus();
     })
     .catch(() => {
       announce("Couldn't reach the server controller.", { error: true });
-      refreshLLMServerButton();
+      refreshLLMStatus();
     });
 }
 
-function toggleLLMMenu() {
-  if (!llmMenu) return;
-  const opening = llmMenu.hidden;
-  closeCardOverflow();
-  llmMenu.hidden = !opening;
-  llmServerBtn.setAttribute("aria-expanded", String(opening));
-  if (opening) {
-    const action = llmMenu.querySelector("[role=menuitem]");
-    if (action) action.focus();
-  }
-}
-
-llmServerBtn.addEventListener("click", toggleLLMMenu);
-if (llmMenuAction) {
-  llmMenuAction.addEventListener("click", () => {
-    llmMenu.hidden = true;
-    llmServerBtn.setAttribute("aria-expanded", "false");
-    performLLMControl();
-  });
-}
 if (settingsLLMAction) settingsLLMAction.addEventListener("click", performLLMControl);
-document.addEventListener("click", event => {
-  if (!llmMenu || llmMenu.hidden) return;
-  if (llmMenu.contains(event.target) || llmServerBtn.contains(event.target)) return;
-  llmMenu.hidden = true;
-  llmServerBtn.setAttribute("aria-expanded", "false");
-});
 
 function fileKey(source, filename) {
   return SsDcl.decisionKey(source || "Desktop", filename);
@@ -520,7 +485,7 @@ function refreshScreenshots() {
 
 function init() {
   loadSettings().then(() => {
-    refreshLLMServerButton();
+    refreshLLMStatus();
     refreshScreenshots();
   });
 }
@@ -538,6 +503,7 @@ function loadScreenshots(savedDecisions) {
       if (files.length === 0) {
         totalCards = 0;
         currentFileKeys = new Set();
+        cleanupBatches.reconcile([], []);
         setBoardState("empty");
         updateCounts();
         return;
@@ -561,14 +527,23 @@ function loadScreenshots(savedDecisions) {
         }
       }
 
-      files.forEach(f => {
+      files.forEach((f, order) => {
         const key = SsDcl.fileKey(f);
         const col = decisions.has(key) ? decisions.get(key) : "unsorted";
         const target = col === "trash" ? cardsTrash
                      : col === "keep"  ? cardsKeep
                      : cardsUnsorted;
-        target.appendChild(makeCard(f.name, f.source, col, f.fingerprint, f.memory_status, f.suggested_name, f.suggested_category));
+        const card = makeCard(f.name, f.source, col, f.fingerprint, f.memory_status, f.suggested_name, f.suggested_category);
+        card.dataset.scanOrder = order;
+        if (f.cleanup && f.cleanup.timing_match) {
+          card.dataset.cleanupMatch = "true";
+        }
+        target.appendChild(card);
       });
+      cleanupBatches.reconcile(
+        cleanupEligibleCards().map(cleanupKey),
+        files.filter(f => f.cleanup && f.cleanup.timing_match).map(SsDcl.fileKey),
+      );
       setBoardState("board");
       updateCounts();
       saveState();
@@ -593,6 +568,142 @@ function loadScreenshots(savedDecisions) {
         timeout: 0,
       });
     });
+}
+
+// ── Inline cleanup review ────────────────────────────────────────────────────
+function cleanupKey(card) {
+  return fileKey(card.dataset.source || "Desktop", card.dataset.filename);
+}
+
+function cleanupCandidates() {
+  return [...cleanupCards.querySelectorAll(".card")];
+}
+
+function cleanupEligibleCards() {
+  return [...cardsUnsorted.querySelectorAll('.card[data-cleanup-match="true"]')]
+    .sort((a, b) => Number(a.dataset.scanOrder) - Number(b.dataset.scanOrder));
+}
+
+function syncCleanupSelection() {
+  const candidates = cleanupCandidates();
+  let selected = 0;
+  candidates.forEach(card => {
+    const checked = cleanupChoices.get(cleanupKey(card)) !== false;
+    card.querySelector(".cleanup-select").checked = checked;
+    card.classList.toggle("selected", checked);
+    if (checked) selected += 1;
+  });
+  cleanupSelectAll.checked = candidates.length > 0 && selected === candidates.length;
+  cleanupSelectAll.disabled = candidates.length === 0;
+  cleanupSelectAll.indeterminate = selected > 0 && selected < candidates.length;
+  cleanupQueue.textContent = `Queue ${selected} for Trash`;
+  cleanupQueue.disabled = selected === 0;
+  // Only one batch action area is active. Selecting a board card temporarily
+  // yields to its batch bar; review choices are retained and can be resumed.
+  cleanupFooter.hidden = selectedCards.size > 0;
+  cleanupReview.hidden = selectedCards.size === 0;
+  const { waiting } = cleanupBatches.view(cleanupEligibleCards().map(cleanupKey));
+  const message = `${candidates.length} cleanup suggestions shown; ${waiting.length} more; ${selected} selected.`;
+  if (cleanupStatus.textContent !== message) cleanupStatus.textContent = message;
+}
+
+function syncCleanupGroup() {
+  const unsorted = [...cardsUnsorted.querySelectorAll(".card")]
+    .sort((a, b) => Number(a.dataset.scanOrder) - Number(b.dataset.scanOrder));
+  const { shown, waiting } = cleanupBatches.view(cleanupEligibleCards().map(cleanupKey));
+  const shownKeys = new Set(shown);
+  const filenameCounts = new Map();
+  document.querySelectorAll(".card").forEach(card => {
+    const name = card.dataset.filename;
+    filenameCounts.set(name, (filenameCounts.get(name) || 0) + 1);
+  });
+  // Also reset controls on cards that just left Unsorted through move/undo.
+  document.querySelectorAll(".card").forEach(card => {
+    const candidate = !cleanupDismissed && shownKeys.has(cleanupKey(card)) && getCardColumn(card) === "unsorted";
+    const changed = card.classList.contains("cleanup-card") !== candidate;
+    if (changed) {
+      selectedCards.delete(card);
+      card.classList.remove("selected");
+      card.classList.toggle("cleanup-card", candidate);
+      setCardActions(card, getCardColumn(card));
+    }
+    card.querySelector(".cleanup-select").hidden = !candidate;
+    card.querySelector(".card-select").hidden = candidate;
+    const desktopDuplicate = card.dataset.source === "Desktop" && filenameCounts.get(card.dataset.filename) > 1;
+    if (desktopDuplicate && !card.querySelector(".cleanup-source")) {
+      const tag = document.createElement("span");
+      tag.className = "source-tag cleanup-source";
+      tag.textContent = "in: Desktop";
+      tag.title = "Desktop";
+      card.querySelector(".card-meta").appendChild(tag);
+    } else if (!desktopDuplicate) {
+      const tag = card.querySelector(".cleanup-source");
+      if (tag) tag.remove();
+    }
+    _syncCardSelection(card);
+  });
+  unsorted.forEach(card => {
+    const target = card.classList.contains("cleanup-card") ? cleanupCards : ordinaryUnsorted;
+    // Avoid detaching/reinserting focused nodes when nothing changed.
+    if (card.parentElement !== target) target.appendChild(card);
+  });
+  // Moves and undo insert at the front of the subtree; restore scan order in
+  // each grid without replacing the real cards (or their event handlers).
+  [cleanupCards, ordinaryUnsorted].forEach(grid => {
+    unsorted.filter(card => card.parentElement === grid).forEach((card, index) => {
+      if (grid.children[index] !== card) grid.insertBefore(card, grid.children[index] || null);
+    });
+  });
+  const count = cleanupCandidates().length;
+  cleanupHeading.textContent = `Cleanup suggestions · ${count} shown · ${waiting.length} more`;
+  cleanupNext.disabled = waiting.length === 0;
+  cleanupEmpty.hidden = count > 0;
+  cleanupGroup.hidden = cleanupDismissed || (count === 0 && waiting.length === 0);
+  remainingUnsortedLabel.hidden = cleanupGroup.hidden || ordinaryUnsorted.children.length === 0;
+  updateBatchBar();
+}
+
+function setCleanupSelection(card, checked) {
+  clearSelection();
+  cleanupChoices.set(cleanupKey(card), checked);
+  syncCleanupSelection();
+}
+
+cleanupSelectAll.addEventListener("change", () => {
+  const checked = cleanupSelectAll.checked;
+  clearSelection();
+  cleanupCandidates().forEach(card => cleanupChoices.set(cleanupKey(card), checked));
+  syncCleanupSelection();
+});
+cleanupReview.addEventListener("click", () => {
+  clearSelection();
+  cleanupSelectAll.focus();
+});
+cleanupQueue.addEventListener("click", () => {
+  const cards = cleanupCandidates().filter(card => cleanupChoices.get(cleanupKey(card)) !== false);
+  clearSelection();
+  cards.forEach(card => moveCard(card, "trash"));
+  if (cards.length) announce(`${cards.length} queued in Trash. Press Done when ready.`);
+  focusCleanupContext();
+});
+cleanupNext.addEventListener("click", () => {
+  clearSelection();
+  cleanupBatches.advance(cleanupEligibleCards().map(cleanupKey));
+  syncCleanupGroup();
+  cleanupCards.scrollTop = 0;
+  focusCleanupContext();
+});
+document.getElementById("cleanup-dismiss").addEventListener("click", () => {
+  cleanupDismissed = true;
+  syncCleanupGroup();
+  announce("Cleanup suggestions dismissed for this page session.");
+  focusCleanupContext();
+});
+function focusCleanupContext() {
+  const target = cleanupCandidates()[0] || (!cleanupGroup.hidden && !cleanupNext.disabled ? cleanupNext : null)
+    || ordinaryUnsorted.querySelector(".card") || colUnsorted;
+  if (target === colUnsorted) target.tabIndex = -1;
+  target.focus();
 }
 
 refreshButtons.forEach(button => button.addEventListener("click", refreshScreenshots));
@@ -770,6 +881,14 @@ function makeCard(filename, source, column, fingerprint, memoryStatus, suggested
 
   thumb.appendChild(img);
   thumb.appendChild(select);
+  const cleanupSelect = document.createElement("input");
+  cleanupSelect.type = "checkbox";
+  cleanupSelect.className = "cleanup-select";
+  cleanupSelect.hidden = true;
+  cleanupSelect.setAttribute("aria-label", `Select cleanup suggestion ${filename} (${source})`);
+  cleanupSelect.addEventListener("click", e => e.stopPropagation());
+  cleanupSelect.addEventListener("change", () => setCleanupSelection(card, cleanupSelect.checked));
+  thumb.appendChild(cleanupSelect);
 
   const meta = document.createElement("div");
   meta.className = "card-meta";
@@ -965,7 +1084,7 @@ function setCardActions(card, column) {
 
   const previewBtn = makeActionBtn("Preview", "btn-preview", () => openLightbox(card), {
     iconName: "preview",
-    iconOnly: true,
+    iconOnly: !card.classList.contains("cleanup-card"),
     ariaLabel: `Preview ${filename}`,
     tooltip: "Preview",
   });
@@ -984,7 +1103,7 @@ function setCardActions(card, column) {
 
   if (column === "unsorted") {
     primary.appendChild(makeActionBtn("Keep", "btn-keep", () => moveCard(card, "keep"), { iconName: "keep" }));
-    primary.appendChild(makeActionBtn("Trash", "btn-trash", () => moveCard(card, "trash"), { iconName: "trash" }));
+    if (!card.classList.contains("cleanup-card")) primary.appendChild(makeActionBtn("Trash", "btn-trash", () => moveCard(card, "trash"), { iconName: "trash" }));
     secondary.appendChild(previewBtn);
     // Unprocessed files get the one-click AI action; processed ones keep it
     // reachable from the overflow menu.
@@ -1027,6 +1146,7 @@ function moveCard(card, toColumn) {
   setCardActions(card, toColumn);
   updateCounts();
   saveState();
+  card.focus();
 }
 
 function getCardColumn(card) {
@@ -1038,6 +1158,13 @@ function getCardColumn(card) {
 // ── HTML5 Drag & Drop ───────────────────────────────────────────────────────
 let draggedCard = null;
 
+function dragSelection(card) {
+  if (card.classList.contains("cleanup-card") && cleanupChoices.get(cleanupKey(card)) !== false) {
+    return cleanupCandidates().filter(candidate => cleanupChoices.get(cleanupKey(candidate)) !== false);
+  }
+  return selectedCards.has(card) ? [...selectedCards] : [card];
+}
+
 function attachDrag(card) {
   card.addEventListener("dragstart", e => {
     draggedCard = card;
@@ -1048,8 +1175,9 @@ function attachDrag(card) {
     // Dragging a selected card: attach a Photos-style fanned stack of the
     // whole selection to the cursor (visual only — the drop still batchMoves).
     _clearGhostCanvas();
-    if (selectedCards.has(card) && selectedCards.size > 1) {
-      const ghost = buildBatchDragGhost([...selectedCards], selectedCards.size);
+    const selection = dragSelection(card);
+    if (selection.length > 1) {
+      const ghost = buildBatchDragGhost(selection, selection.length);
       if (ghost) {
         _ghostCanvas = ghost.canvas;
         e.dataTransfer.setDragImage(ghost.canvas, ghost.offsetX, ghost.offsetY);
@@ -1085,7 +1213,9 @@ columns.forEach(col => {
 
     const targetColumn = col.dataset.column;
     // Dragging a selected card moves the whole selection.
-    if (selectedCards.has(draggedCard)) {
+    if (draggedCard.classList.contains("cleanup-card")) {
+      dragSelection(draggedCard).forEach(card => moveCard(card, targetColumn));
+    } else if (selectedCards.has(draggedCard)) {
       batchMove(targetColumn);
     } else {
       moveCard(draggedCard, targetColumn);
@@ -1118,6 +1248,10 @@ function _syncCardSelection(card) {
 }
 
 function toggleSelect(card) {
+  if (card.classList.contains("cleanup-card")) {
+    setCleanupSelection(card, cleanupChoices.get(cleanupKey(card)) === false);
+    return;
+  }
   if (selectedCards.has(card)) {
     selectedCards.delete(card);
     card.classList.remove("selected");
@@ -1144,6 +1278,7 @@ function updateBatchBar() {
   batchKeepBtn.disabled = n === 0;
   batchTrashBtn.disabled = n === 0;
   batchBar.hidden = n === 0;
+  syncCleanupSelection();
 }
 
 function batchMove(toColumn) {
@@ -1552,6 +1687,11 @@ function applyRenameToCard(card, oldName, newName) {
   const source = card.dataset.source || "Desktop";
   const oldKey = fileKey(source, oldName);
   const newKey = fileKey(source, newName);
+  cleanupBatches.rename(oldKey, newKey);
+  if (cleanupChoices.has(oldKey)) {
+    cleanupChoices.set(newKey, cleanupChoices.get(oldKey));
+    cleanupChoices.delete(oldKey);
+  }
   const col = getCardColumn(card);
   if (col === "unsorted") {
     decisions.delete(oldKey);
@@ -1565,6 +1705,11 @@ function applyRenameToCard(card, oldName, newName) {
     currentFileKeys.add(newKey);
   }
   card.dataset.filename = newName;
+  card.setAttribute("aria-label", `${newName} (${source})`);
+  const cardName = card.querySelector(".card-name");
+  cardName.textContent = newName;
+  cardName.title = newName;
+  card.querySelector(".cleanup-select").setAttribute("aria-label", `Select cleanup suggestion ${newName} (${source})`);
   // A rename always transitions status to "renamed".
   // fingerprint stays unchanged — it's the stable identity key
   // (original macOS name + size), not a derived filename attribute.
@@ -2069,7 +2214,7 @@ settingsSave.addEventListener("click", () => {
         settingsSave.textContent = "Save";
         announce("Settings saved.", { type: "success" });
         closeSettingsMenu();
-        refreshLLMServerButton();
+        refreshLLMStatus();
         // Reload board to reflect new sources
         refreshScreenshots();
       } else {
@@ -2126,6 +2271,7 @@ function performUndo() {
 
 // ── Counts & status ──────────────────────────────────────────────────────────
 function updateCounts() {
+  syncCleanupGroup();
   // Count only decisions whose keys correspond to currently displayed files
   const filtered = new Map();
   for (const [k, v] of decisions) {

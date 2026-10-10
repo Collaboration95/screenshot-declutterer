@@ -13,7 +13,7 @@
 </head>
 <body>
   <div class="app-shell">
-    <!-- Application bar: identity + local/LLM status on the left, the stable
+    <!-- Application bar: identity on the left, the stable
          progress summary in the middle, workflow controls on the right. -->
     <header class="appbar">
       <div class="appbar-brand">
@@ -24,17 +24,6 @@
           </svg>
         </span>
         <h1 class="brand-name">Screenshot Declutterer</h1>
-        <span class="status-pill status-pill-local" data-tooltip="Screenshots stay on this Mac \u2014 nothing is uploaded">
-          <span class="status-dot" aria-hidden="true"></span>
-          <span class="status-pill-text">On-device</span>
-          <span class="sr-only">\u2014 screenshots stay on this Mac</span>
-        </span>
-        <button type="button" id="llm-server-btn" class="status-pill status-pill-llm is-stopped" hidden
-                data-tooltip="Local AI server \u2014 click to start" aria-label="Manage the LLM server"
-                aria-haspopup="menu" aria-expanded="false" aria-controls="llm-menu">
-          <span class="status-dot" aria-hidden="true"></span>
-          <span class="status-pill-text" id="llm-status-label">AI stopped</span>
-        </button>
       </div>
 
       <div class="appbar-progress">
@@ -72,21 +61,6 @@
       </div>
     </header>
 
-    <div id="llm-menu" class="popover llm-menu" hidden role="menu" aria-labelledby="llm-server-btn">
-      <div class="popover-heading">
-        <div>
-          <p class="popover-eyebrow">Local AI</p>
-          <p class="popover-title">Server status</p>
-        </div>
-        <span class="popover-status" id="llm-menu-status">Stopped</span>
-      </div>
-      <p class="popover-desc" id="llm-menu-desc">AI suggestions run on this Mac and never upload your screenshots.</p>
-      <button type="button" id="llm-menu-action" class="menu-item menu-item-primary" role="menuitem">
-        <span class="menu-item-label">Start local AI</span>
-        <span class="menu-item-shortcut">Enter</span>
-      </button>
-    </div>
-
     <!-- Compact (<=1024px) column switcher: one column at a time with counts,
          so the primary actions never squeeze off screen. -->
     <nav id="column-switcher" class="compact-switcher" aria-label="Choose board column">
@@ -118,7 +92,28 @@
             <span class="column-title">Unsorted</span>
             <span class="column-count" id="count-unsorted">0</span>
           </div>
-          <div class="column-cards" id="cards-unsorted"></div>
+          <div class="column-cards" id="cards-unsorted">
+            <section id="cleanup-group" class="cleanup-group" aria-labelledby="cleanup-heading" aria-describedby="cleanup-reason" hidden>
+              <div class="cleanup-header">
+                <h2 id="cleanup-heading">Cleanup suggestions · 0 shown · 0 more</h2>
+                <button type="button" id="cleanup-dismiss" class="cleanup-quiet">Dismiss</button>
+              </div>
+              <p id="cleanup-reason">Recorded open within 5 minutes of capture; none recorded in the last 10 minutes. Selected for cleanup review.</p>
+              <div id="cleanup-cards" class="unsorted-grid" role="list" aria-label="Cleanup suggestions">
+                <p id="cleanup-empty" class="cleanup-empty" hidden>Batch reviewed. Show the next five when you’re ready.</p>
+              </div>
+              <div id="cleanup-footer" class="cleanup-footer">
+                <label class="cleanup-select-all"><input type="checkbox" id="cleanup-select-all"> Select all</label>
+                <button type="button" id="cleanup-queue" class="btn btn-primary" disabled>Queue 0 for Trash</button>
+                <button type="button" id="cleanup-next" class="cleanup-quiet" disabled>Show next 5</button>
+              </div>
+              <p class="cleanup-next-hint">Show next 5 leaves unresolved cards in Unsorted for this page session.</p>
+              <button type="button" id="cleanup-review" class="cleanup-quiet" hidden>Review cleanup selection</button>
+              <span id="cleanup-status" class="sr-only" role="status" aria-live="polite" aria-atomic="true"></span>
+            </section>
+            <p id="remaining-unsorted-label" class="remaining-unsorted-label" hidden>Remaining unsorted screenshots</p>
+            <div id="ordinary-unsorted" class="unsorted-grid"></div>
+          </div>
           <div id="loading-msg" class="board-state board-state-panel" role="status" aria-live="polite">
             <span class="state-icon state-icon-loading" aria-hidden="true"></span>
             <strong>Scanning your screenshots</strong>

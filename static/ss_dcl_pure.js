@@ -62,6 +62,50 @@
     return chunks;
   }
 
+  // Page-session review slots. A decision vacates its slot without filling it;
+  // only an explicit advance assigns a new batch. Retain decided slots so undo
+  // can restore the current batch, and defer previous slots after advancing.
+  class CleanupBatches {
+    constructor(size = 5) {
+      this.size = size;
+      this.initialized = false;
+      this.members = new Set();
+      this.deferred = new Set();
+    }
+
+    reconcile(eligibleKeys, matchingKeys) {
+      const matching = new Set(matchingKeys);
+      for (const key of this.members) {
+        if (!matching.has(key)) this.members.delete(key);
+      }
+      if (!this.initialized) {
+        this.members = new Set(eligibleKeys.slice(0, this.size));
+        this.initialized = true;
+      }
+      return this.view(eligibleKeys);
+    }
+
+    view(eligibleKeys) {
+      return {
+        shown: eligibleKeys.filter(key => this.members.has(key)),
+        waiting: eligibleKeys.filter(key => !this.members.has(key) && !this.deferred.has(key)),
+      };
+    }
+
+    advance(eligibleKeys) {
+      const { waiting } = this.view(eligibleKeys);
+      if (!waiting.length) return;
+      for (const key of this.members) this.deferred.add(key);
+      this.members = new Set(waiting.slice(0, this.size));
+    }
+
+    rename(oldKey, newKey) {
+      for (const keys of [this.members, this.deferred]) {
+        if (keys.delete(oldKey)) keys.add(newKey);
+      }
+    }
+  }
+
   // Stable app-bar progress statement (PLAN 6.2): one sentence plus the meter
   // percentage, so the summary never flickers between transient messages.
   function progressSummary(counts) {
@@ -145,6 +189,7 @@
     Path_name,
     computeCounts,
     chunked,
+    CleanupBatches,
     progressSummary,
     doneLabel,
     DEFAULT_SOURCE,

@@ -35,6 +35,9 @@ complete capture matrix.
   suggest safe filenames; accept, dismiss, or edit suggestions
 - **Learned category hints** — past decisions produce subtle “Likely keep” or
   “Likely trash” suggestions without moving files automatically
+- **Inline cleanup suggestions** — review screenshots with a recorded open
+  within five minutes of creation and a last recorded open over ten minutes ago;
+  preview, keep, or queue the selection for Trash inside Unsorted
 - **Direct renaming** — rename from a card, a lightbox preview, or an AI
   suggestion; file extensions are preserved when appropriate
 - **Full-size preview** — double-click a card or use Preview to open the
@@ -56,6 +59,29 @@ complete capture matrix.
   <img src="docs/assets/screenshot-confirm.png" alt="Screenshot Declutterer trash confirmation" width="820" />
 </p>
 
+## Cleanup suggestions
+
+The **Cleanup suggestions** group appears above the remaining Unsorted cards
+when filesystem creation time and Spotlight's recorded last-used time match the
+timing rule. It works with the AI server stopped. Missing or ambiguous metadata
+leaves files in the ordinary grid; Keep and Trash decisions always take priority.
+
+Review five candidates at a time in the current sort order. The heading shows
+the displayed and waiting counts; the explanation and controls stay visible as
+the batch scrolls. Only displayed cards start selected. Unchecking changes
+selection, not the file's decision. **Queue N for Trash** parks selected cards
+in Trash; **Done** still requires confirmation before any file moves on disk.
+Keep and Queue leave slots empty until you choose **Show next 5**. That button
+returns unresolved cards to ordinary Unsorted and defers them for this page
+session. Refresh preserves the batch and unchecked choices while reading fresh
+activity. Undo restores current-batch cards; undoing a previous batch restores
+ordinary Unsorted. **Dismiss** hides the group until the page reloads.
+
+This signal describes the last recorded open, not a first-open history or proof
+that a file was shared or is no longer needed. Creation time can also be affected
+by copies and restores. Quick Look, uploads, and the app's own previews are not
+established by this signal. See the [batch screenshots and verification matrix](docs/assets/cleanup-batches/README.md).
+
 ## Optional local AI naming
 
 The AI feature is shipped and uses **LiteRT-LM**, not a cloud API. The default
@@ -67,7 +93,7 @@ To enable suggestions:
 1. Install LiteRT-LM and import a compatible vision model with the ID
    `gemma4-e2b`.
 2. Start the server with `litert-lm serve`, or use **Start local AI** from the
-   AI status pill in the app. The default server URL is
+   Local AI section in Settings. The default server URL is
    `http://localhost:9379`.
 3. Use **Suggest All** in Settings for new screenshots. The app shows progress
    and cancellation controls, then lets you accept, dismiss, or edit each
@@ -76,7 +102,7 @@ To enable suggestions:
 The Settings panel also supports a custom model ID and optional
 **Auto-suggest on scan**. AI replies are normalized to safe filenames while
 preserving the source image extension. If LiteRT-LM is stopped or unreachable,
-the app shows an offline status and leaves the rest of the workflow available.
+Settings shows the server status and leaves the rest of the workflow available.
 
 ## Quick Start
 

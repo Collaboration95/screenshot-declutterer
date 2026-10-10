@@ -9,6 +9,7 @@ os.environ.setdefault("SS_DCL_LOG_FILE", "/tmp/ss-dcl-test-app.log")
 
 import ss_dcl.app as flask_app
 import ss_dcl.settings as settings_module
+from ss_dcl import usage
 
 
 @pytest.fixture()
@@ -20,6 +21,8 @@ def client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[tuple[Fl
     monkeypatch.setattr(flask_app, "STATE_FILE", tmp_path / "state.json")
     monkeypatch.setattr(flask_app, "MEMORY_FILE", tmp_path / "memory.json")
     monkeypatch.setattr(settings_module, "SETTINGS_FILE", tmp_path / "settings.json")
+    # Ordinary route tests do not query the host's Spotlight service.
+    monkeypatch.setattr(usage, "read_usage", lambda paths: {})
     flask_app._reset_memory()
     flask_app.app.config["TESTING"] = True
     with flask_app.app.test_client() as c:

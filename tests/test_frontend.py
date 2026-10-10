@@ -278,9 +278,9 @@ def test_phase3_shared_menu_and_activity_surfaces_are_styled(client):
     c, _ = client
     html = c.get("/").data
     css = c.get("/static/style.css").data
-    assert b'id="llm-menu"' in html
-    assert b'role="menu"' in html
-    assert b'aria-haspopup="menu"' in html
+    assert b'id="llm-menu"' not in html
+    assert b'id="settings-menu"' in html
+    assert b'aria-haspopup="dialog"' in html
     assert b'role="progressbar"' in html
     for marker in (
         b".popover",
@@ -378,21 +378,20 @@ def test_app_js_no_longer_uses_sanitise(client):
     assert b"alt = sanitise" not in r.data
 
 
-def test_index_has_llm_server_button(client):
-    """Header hosts the managed LLM start/stop button (hidden until litert)."""
+def test_index_header_has_no_status_widgets(client):
     c, _ = client
     html = c.get("/").data.decode()
-    assert 'id="llm-server-btn"' in html
-    assert 'aria-label="Manage the LLM server"' in html
+    assert 'id="llm-server-btn"' not in html
+    assert "On-device" not in html
+    assert 'id="settings-llm-action"' in html
 
 
-def test_app_js_binds_llm_server_button(client):
-    """JS must declare llmServerBtn, else init() dies before loadScreenshots."""
+def test_app_js_binds_settings_server_control(client):
     c, _ = client
     r = c.get("/static/app.js")
     assert r.status_code == 200
-    assert b"const llmServerBtn" in r.data
-    assert b'getElementById("llm-server-btn")' in r.data
+    assert b"const llmServerBtn" not in r.data
+    assert b'settingsLLMAction.addEventListener("click", performLLMControl)' in r.data
 
 
 def test_app_js_defines_server_control(client):
@@ -400,26 +399,26 @@ def test_app_js_defines_server_control(client):
     c, _ = client
     r = c.get("/static/app.js")
     assert r.status_code == 200
-    assert b"refreshLLMServerButton" in r.data
+    assert b"refreshLLMStatus" in r.data
     assert b'"/api/llm/start"' in r.data
     assert b'"/api/llm/stop"' in r.data
 
 
-def test_app_js_refreshes_server_button_on_init_and_save(client):
-    """Server button state must be recomputed on boot and after saving settings."""
+def test_app_js_refreshes_settings_server_status_on_init_and_save(client):
+    """Settings status must be recomputed on boot and after saving settings."""
     c, _ = client
     r = c.get("/static/app.js")
     assert r.status_code == 200
-    assert b"refreshLLMServerButton();" in r.data
-    assert b"loadSettings().then(() => {\n    refreshLLMServerButton();" in r.data
-    assert b"closeSettingsMenu();\n        refreshLLMServerButton();" in r.data
+    assert b"refreshLLMStatus();" in r.data
+    assert b"loadSettings().then(() => {\n    refreshLLMStatus();" in r.data
+    assert b"closeSettingsMenu();\n        refreshLLMStatus();" in r.data
 
 
-def test_css_has_llm_server_button_style(client):
+def test_css_has_settings_server_status_style(client):
     c, _ = client
     r = c.get("/static/style.css")
     assert r.status_code == 200
-    assert b".header-llm-btn" in r.data
+    assert b".settings-llm-status" in r.data
 
 
 def test_app_js_has_per_provider_error_copy(client):
@@ -621,7 +620,8 @@ def test_app_js_defines_batch_drag_ghost(client):
     assert b"setDragImage" in r.data
     # ghost must only kick in when dragging a *selected* card
     assert b"selectedCards.has(card)" in r.data
-    assert b"selectedCards.size > 1" in r.data
+    assert b"selection.length > 1" in r.data
+    assert b"function dragSelection(card)" in r.data
 
 
 def test_pure_module_loads_before_app_js(client):
@@ -685,7 +685,6 @@ def test_css_has_empty_column_hints(client):
 
 PHASE0_SURFACE_IDS = (
     # Application shell
-    "llm-server-btn",
     "status-msg",
     "sort-select",
     "undo-btn",

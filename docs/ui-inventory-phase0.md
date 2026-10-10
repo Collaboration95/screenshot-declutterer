@@ -44,7 +44,7 @@ The shell and every overlay live in `templates/index.html`; cards are built at r
 | Surface | Elements |
 | --- | --- |
 | Product title | `<h1>Screenshot Declutterer</h1>` |
-| LLM server control | `#llm-server-btn` (`hidden` until the first health verdict, then `▶ Start LLM` / `■ Stop LLM`) |
+| LLM server control | Moved from the header to `#settings-llm-action` in Settings |
 | Operational status | `#status-msg` (`role="status"`, `aria-live="polite"`) |
 | Sort control | `#sort-select` (`date_desc`, `date`, `name`, `name_desc`) |
 | Undo | `#undo-btn` (disabled until a move) |
@@ -103,7 +103,7 @@ Static assets are cache-busted with query strings in `templates/index.html`
 | Selection | `.selected` cards + visible `#batch-bar`; supports click, shift-range, and Photos-style batch drag |
 | Drag and drop | `.dragging` on the card(s), `.drag-over` on the hovered column |
 | Sort | `name`, `name_desc`, `date`, `date_desc` (default `date_desc` on initial load) |
-| LLM server | hidden → disabled probe → `▶ Start LLM` (offline) / `■ Stop LLM` (running) |
+| LLM server | Settings shows status and `Start local AI` / `Stop local AI`; no header status widgets |
 | Loading / empty | `#loading-msg` visible while scanning, `#empty-msg` when no source yields files |
 | Progress | `#suggest-progress` with fill width and `n of m` text; cancellable |
 | Feedback | `#status-msg` copy, plus `207` partial-failure counts after Done |
