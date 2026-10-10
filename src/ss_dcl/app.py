@@ -26,7 +26,7 @@ from flask import (
 from send2trash import send2trash
 from werkzeug.serving import WSGIRequestHandler
 
-from ss_dcl import categorize, llm, paths, server, settings, thumbs, usage
+from ss_dcl import categorize, llm, paths, server, settings, similarity, thumbs, usage
 from ss_dcl.logging_config import configure_logging, new_request_id, request_id_var
 from ss_dcl.memory import MemoryStore, atomic_write, compute_source_fingerprint
 from ss_dcl.sources import (
@@ -228,6 +228,11 @@ def _scan_source(
             # For Desktop, also try legacy bare lookup (pre-source records)
             if existing is None and source == DEFAULT_SOURCE:
                 existing = memory.lookup_by_name(name)
+                if existing and existing.meta.get("source", DEFAULT_SOURCE) != DEFAULT_SOURCE:
+                    existing = None
+            # Rename preserves identity only while the byte size is unchanged.
+            if existing and existing.size != size:
+                existing = None
         if existing is not None:
             memory_status = existing.status
             active_fps.add(existing.fingerprint)
@@ -254,11 +259,12 @@ def _scan_source(
                 "source": source,
                 "size": size,
                 "mtime": st.st_mtime,
-                "fingerprint": fp,
+                "fingerprint": existing.fingerprint,
                 "memory_status": memory_status,
                 "suggested_name": suggested_name,
                 "suggested_category": suggested_category,
                 "_path": p.resolve(),
+                "_record": existing,
             }
         )
     return any_new_flag
@@ -281,14 +287,21 @@ def get_screenshots(sort: str = "name") -> list[dict[str, Any]]:
             root, source_id, memory, decisions, keyword_scores, files, active_fps, any_new
         )
     activity = usage.read_usage([f["_path"] for f in files])
+    signals = []
     for f in files:
-        metadata = activity.get(f.pop("_path"), usage.UsageMetadata())
+        path = f.pop("_path")
+        signal, changed = similarity.cached_signals(path, f.pop("_record"))
+        signals.append(signal)
+        any_new = any_new or changed
+        metadata = activity.get(path, usage.UsageMetadata())
         f["usage"] = usage.usage_payload(metadata)
         f["cleanup"] = usage.cleanup_result(
             metadata,
             scan_now,
             unsorted=decisions.get(decision_key(f["source"], f["name"])) not in ("keep", "trash"),
         )
+    for f, matches in zip(files, similarity.direct_matches(files, signals), strict=True):
+        f["matches"] = matches
     if any_new:
         memory.save()
 

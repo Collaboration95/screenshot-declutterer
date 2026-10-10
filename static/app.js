@@ -296,7 +296,7 @@ function announce(message, options) {
   statusMsg.textContent = message || "";
   statusMsg.classList.toggle("is-error", !!opts.error);
   if (!message) return;
-  showToast(message, opts);
+  if (opts.toast !== false) showToast(message, opts);
   if (opts.persistent) showFeedbackBanner(opts.title, message, opts);
   if (opts.timeout !== 0) {
     _statusTimer = setTimeout(() => {
@@ -534,6 +534,7 @@ function loadScreenshots(savedDecisions) {
                      : col === "keep"  ? cardsKeep
                      : cardsUnsorted;
         const card = makeCard(f.name, f.source, col, f.fingerprint, f.memory_status, f.suggested_name, f.suggested_category);
+        card.similarityMatches = f.matches || [];
         card.dataset.scanOrder = order;
         if (f.cleanup && f.cleanup.timing_match) {
           card.dataset.cleanupMatch = "true";
@@ -590,7 +591,8 @@ function syncCleanupSelection() {
   candidates.forEach(card => {
     const checked = cleanupChoices.get(cleanupKey(card)) !== false;
     card.querySelector(".cleanup-select").checked = checked;
-    card.classList.toggle("selected", checked);
+    card.classList.toggle("selected", selectedCards.size > 0 ? selectedCards.has(card) : checked);
+    card.querySelector(".cleanup-select").checked = selectedCards.size > 0 ? selectedCards.has(card) : checked;
     if (checked) selected += 1;
   });
   cleanupSelectAll.checked = candidates.length > 0 && selected === candidates.length;
@@ -622,8 +624,7 @@ function syncCleanupGroup() {
     const candidate = !cleanupDismissed && shownKeys.has(cleanupKey(card)) && getCardColumn(card) === "unsorted";
     const changed = card.classList.contains("cleanup-card") !== candidate;
     if (changed) {
-      selectedCards.delete(card);
-      card.classList.remove("selected");
+      card.classList.toggle("selected", selectedCards.has(card));
       card.classList.toggle("cleanup-card", candidate);
       setCardActions(card, getCardColumn(card));
     }
@@ -887,7 +888,10 @@ function makeCard(filename, source, column, fingerprint, memoryStatus, suggested
   cleanupSelect.hidden = true;
   cleanupSelect.setAttribute("aria-label", `Select cleanup suggestion ${filename} (${source})`);
   cleanupSelect.addEventListener("click", e => e.stopPropagation());
-  cleanupSelect.addEventListener("change", () => setCleanupSelection(card, cleanupSelect.checked));
+  cleanupSelect.addEventListener("change", () => {
+    if (selectedCards.size > 0) toggleSelect(card);
+    else setCleanupSelection(card, cleanupSelect.checked);
+  });
   thumb.appendChild(cleanupSelect);
 
   const meta = document.createElement("div");
@@ -1159,6 +1163,7 @@ function getCardColumn(card) {
 let draggedCard = null;
 
 function dragSelection(card) {
+  if (selectedCards.has(card)) return [...selectedCards];
   if (card.classList.contains("cleanup-card") && cleanupChoices.get(cleanupKey(card)) !== false) {
     return cleanupCandidates().filter(candidate => cleanupChoices.get(cleanupKey(candidate)) !== false);
   }
@@ -1213,10 +1218,10 @@ columns.forEach(col => {
 
     const targetColumn = col.dataset.column;
     // Dragging a selected card moves the whole selection.
-    if (draggedCard.classList.contains("cleanup-card")) {
-      dragSelection(draggedCard).forEach(card => moveCard(card, targetColumn));
-    } else if (selectedCards.has(draggedCard)) {
+    if (selectedCards.has(draggedCard)) {
       batchMove(targetColumn);
+    } else if (draggedCard.classList.contains("cleanup-card")) {
+      dragSelection(draggedCard).forEach(card => moveCard(card, targetColumn));
     } else {
       moveCard(draggedCard, targetColumn);
     }
@@ -1248,7 +1253,7 @@ function _syncCardSelection(card) {
 }
 
 function toggleSelect(card) {
-  if (card.classList.contains("cleanup-card")) {
+  if (card.classList.contains("cleanup-card") && selectedCards.size === 0) {
     setCleanupSelection(card, cleanupChoices.get(cleanupKey(card)) === false);
     return;
   }
@@ -1270,6 +1275,50 @@ function clearSelection() {
   });
   selectedCards.clear();
   updateBatchBar();
+}
+
+// Direct matches are reviewed through the existing batch actions. Matching
+// never queues files or expands through a neighbor's own neighbors.
+function syncSimilarBadges() {
+  const cards = [...document.querySelectorAll(".card")];
+  const active = new Map(cards.map(card => [cleanupKey(card), card]));
+  cards.forEach(card => {
+    let badges = card.querySelector(".similarity-badges");
+    const matches = (card.similarityMatches || []).filter(match => active.has(SsDcl.fileKey(match)));
+    if (!matches.length) {
+      if (badges) badges.remove();
+      return;
+    }
+    if (!badges) {
+      badges = document.createElement("span");
+      badges.className = "similarity-badges";
+      card.querySelector(".card-meta").appendChild(badges);
+    }
+    badges.replaceChildren();
+    ["identical", "similar"].forEach(kind => {
+      const peers = matches.filter(match => match.kind === kind);
+      if (!peers.length) return;
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = `similarity-badge similarity-${kind}`;
+      button.textContent = kind === "identical" ? "Identical" : `${peers.length} similar`;
+      button.title = `Select this screenshot and ${peers.length} ${kind === "identical" ? "identical" : "visually similar"} ${peers.length === 1 ? "match" : "matches"}. Review before queueing for Trash.`;
+      button.setAttribute("aria-label", `${button.title} ${card.dataset.filename} (${card.dataset.source})`);
+      button.addEventListener("click", event => {
+        event.stopPropagation();
+        clearSelection();
+        [card, ...peers.map(peer => active.get(SsDcl.fileKey(peer)))].forEach(peer => {
+          if (!peer || !document.contains(peer)) return;
+          selectedCards.add(peer);
+          peer.classList.add("selected");
+          _syncCardSelection(peer);
+        });
+        updateBatchBar();
+        announce(`${selectedCards.size} screenshots selected for review. Keep or queue them for Trash when ready.`, { toast: false });
+      });
+      badges.appendChild(button);
+    });
+  });
 }
 
 function updateBatchBar() {
@@ -1687,6 +1736,11 @@ function applyRenameToCard(card, oldName, newName) {
   const source = card.dataset.source || "Desktop";
   const oldKey = fileKey(source, oldName);
   const newKey = fileKey(source, newName);
+  document.querySelectorAll(".card").forEach(peer => {
+    (peer.similarityMatches || []).forEach(match => {
+      if (SsDcl.fileKey(match) === oldKey) match.name = newName;
+    });
+  });
   cleanupBatches.rename(oldKey, newKey);
   if (cleanupChoices.has(oldKey)) {
     cleanupChoices.set(newKey, cleanupChoices.get(oldKey));
@@ -2271,6 +2325,7 @@ function performUndo() {
 
 // ── Counts & status ──────────────────────────────────────────────────────────
 function updateCounts() {
+  syncSimilarBadges();
   syncCleanupGroup();
   // Count only decisions whose keys correspond to currently displayed files
   const filtered = new Map();

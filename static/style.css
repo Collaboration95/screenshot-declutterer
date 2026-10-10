@@ -4013,6 +4013,29 @@ header h1 {
   flex-shrink: 0;
 }
 
+.similarity-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  flex: 0 0 100%;
+}
+
+.similarity-badge {
+  border: var(--border-width) solid var(--border-subtle);
+  border-radius: var(--radius-control);
+  background: var(--surface-raised);
+  color: var(--ink-primary);
+  padding: 4px 8px;
+  font: inherit;
+  font-size: var(--type-caption);
+  line-height: 1.5;
+  cursor: pointer;
+}
+
+.similarity-badge:hover {
+  border-color: var(--ink-secondary);
+}
+
 /* ── Card action bar (hover or keyboard focus) ────────────── */
 .card-actions {
   position: absolute;
