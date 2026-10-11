@@ -753,3 +753,20 @@ def test_phase0_inventory_surface_ids_exist(client):
     html = c.get("/").data.decode()
     missing = [element for element in PHASE0_SURFACE_IDS if f'id="{element}"' not in html]
     assert missing == []
+
+
+def test_index_html_has_no_literal_unicode_escapes(client):
+    """HTML does not interpret backslash-u escapes, so they would render as raw text."""
+    import re
+
+    c, _ = client
+    html = c.get("/").data.decode()
+    assert re.findall(r"\\u[0-9a-fA-F]{4}", html) == []
+
+
+def test_sort_options_and_loading_copy_render_real_characters(client):
+    c, _ = client
+    html = c.get("/").data.decode()
+    assert "Name (A&ndash;Z)" in html
+    assert "Name (Z&ndash;A)" in html
+    assert "Loading&hellip;" in html
