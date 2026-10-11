@@ -212,7 +212,7 @@ const LLM_PROVIDER_MODELS = { litert: "gemma4-e2b" };
 // Fallback offline copy when the health response carries no error message.
 function providerErrorCopy() {
   const label = LLM_PROVIDER_LABELS[llmSettings.llm_provider] || "LiteRT-LM";
-  return `${label} is not running — use the Start button and try again.`;
+  return `${label} is not running. Open Settings and choose Start local AI, then try again.`;
 }
 
 // ── Transient announcements ─────────────────────────────────────────────────

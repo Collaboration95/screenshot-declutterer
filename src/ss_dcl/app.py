@@ -852,7 +852,11 @@ def api_llm_health():
     """LiteRT reachability check used by the frontend before a suggest batch."""
     ok = llm._litert_healthy()
     message = (
-        "" if ok else "LiteRT server is not running — use the Start button above and try again."
+        ""
+        if ok
+        else (
+            "LiteRT server is not running. Open Settings and choose Start local AI, then try again."
+        )
     )
     return jsonify({"ok": ok, "provider": "litert", "error": message}), 200 if ok else 503
 
