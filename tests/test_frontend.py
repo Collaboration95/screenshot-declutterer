@@ -125,6 +125,24 @@ def test_action_bar_is_reachable_by_hover_and_keyboard_focus(client):
     assert b".card:focus-within .card-actions" in css
 
 
+def test_new_cards_offer_one_click_suggest(client):
+    """UI-008: the per-card AI action belongs to unprocessed ("new") cards."""
+    c, _ = client
+    js = c.get("/static/app.js").data.decode()
+    assert 'if (isNew) {\n    secondary.appendChild(makeActionBtn("Suggest name"' in js
+
+
+def test_suggestion_badge_does_not_cover_card_actions(client):
+    """UI-006: a suggested card keeps Keep/Trash/Preview/More in their own row."""
+    c, _ = client
+    css = c.get("/static/style.css").data.decode()
+    assert ".card:has(.suggestion-badge) .card-actions,\n" in css
+    rule = css.split(".card:has(.suggestion-badge:hover) .card-actions {", 1)[1]
+    rule = rule.split("}", 1)[0]
+    assert "position: relative;" in rule
+    assert "opacity: 1;" in rule
+
+
 def test_category_hints_render_as_labelled_badges(client):
     """A categorised card names its suggestion instead of tinting silently."""
     c, _ = client

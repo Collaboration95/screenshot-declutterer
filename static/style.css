@@ -1269,14 +1269,6 @@ header h1 {
   pointer-events: auto;
 }
 
-/* The suggestion badge must stay interactive on hover: the card-actions
-   overlay covers the whole card, so raise the badge above it and suppress
-   the overlay while the badge itself is hovered. */
-.card:has(.suggestion-badge:hover) .card-actions {
-  opacity: 0;
-  pointer-events: none;
-}
-
 /* ── Card action buttons ──────────────────────────────────── */
 .action-btn {
   display: inline-flex;
@@ -4060,11 +4052,18 @@ header h1 {
   pointer-events: auto;
 }
 
-/* The suggestion badge must stay interactive: raise it above the overlay and
-   suppress the overlay while the badge itself is hovered. */
+/* A card with a pending suggestion gives the action bar its own row below the
+   badge (as cleanup cards do), so the overlay never covers Accept/Dismiss/Edit
+   and Keep, Trash, Preview and More (Rename) stay reachable. */
+.card:has(.suggestion-badge) .card-actions,
 .card:has(.suggestion-badge:hover) .card-actions {
-  opacity: 0;
-  pointer-events: none;
+  position: relative;
+  inset: auto;
+  opacity: 1;
+  pointer-events: auto;
+  background: var(--surface-raised);
+  border-top: var(--border-width) solid var(--border-subtle);
+  border-radius: 0 0 var(--radius-card) var(--radius-card);
 }
 
 .card-action-primary,

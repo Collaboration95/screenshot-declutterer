@@ -1101,23 +1101,24 @@ function setCardActions(card, column) {
     () => revealInFinder(card.dataset.filename, card.dataset.source),
     { iconName: "reveal" }
   );
-  const suggestBtn = makeActionBtn("Suggest name", "btn-suggest", () => suggestSingle(card), {
-    iconName: "suggest",
-  });
-
   if (column === "unsorted") {
     primary.appendChild(makeActionBtn("Keep", "btn-keep", () => moveCard(card, "keep"), { iconName: "keep" }));
     if (!card.classList.contains("cleanup-card")) primary.appendChild(makeActionBtn("Trash", "btn-trash", () => moveCard(card, "trash"), { iconName: "trash" }));
-    secondary.appendChild(previewBtn);
-    // Unprocessed files get the one-click AI action; processed ones keep it
-    // reachable from the overflow menu.
-    const overflow = isNew ? [renameBtn, revealBtn] : [suggestBtn, renameBtn, revealBtn];
-    secondary.appendChild(makeOverflowMenu(overflow, filename));
   } else {
     primary.appendChild(makeActionBtn("Unsorted", "btn-undo", () => moveCard(card, "unsorted"), { iconName: "undo" }));
-    secondary.appendChild(previewBtn);
-    secondary.appendChild(makeOverflowMenu([renameBtn, revealBtn], filename));
   }
+  secondary.appendChild(previewBtn);
+  // Unprocessed files get the one-click AI action in every column. The
+  // backend only names "new" files, so it is not offered once processed.
+  if (isNew) {
+    secondary.appendChild(makeActionBtn("Suggest name", "btn-suggest", () => suggestSingle(card), {
+      iconName: "suggest",
+      iconOnly: !card.classList.contains("cleanup-card"),
+      ariaLabel: `Suggest a name for ${filename}`,
+      tooltip: "Suggest name",
+    }));
+  }
+  secondary.appendChild(makeOverflowMenu([renameBtn, revealBtn], filename));
 
   actions.appendChild(primary);
   actions.appendChild(secondary);
