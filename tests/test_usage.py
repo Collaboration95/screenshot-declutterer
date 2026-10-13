@@ -144,6 +144,54 @@ def test_platform_and_fresh_per_scan_reads(tmp_path, monkeypatch):
     assert usage.read_usage([tmp_path])[tmp_path].last_opened_at == CREATED
 
 
+def test_batch_uses_one_query_and_keeps_order(tmp_path, monkeypatch):
+    monkeypatch.setattr(usage, "_birth_time", lambda path: CREATED)
+    query = Mock(
+        return_value=SimpleNamespace(returncode=0, stdout="2026-10-08 09:02:00 +0000\x00(null)")
+    )
+    monkeypatch.setattr(usage.subprocess, "run", query)
+    first, second = usage._read_batch([tmp_path / "a.png", tmp_path / "b.png"], 1e12)
+    assert query.call_count == 1
+    assert query.call_args.args[0][-2:] == [str(tmp_path / "a.png"), str(tmp_path / "b.png")]
+    assert query.call_args.kwargs["timeout"] <= usage.METADATA_TIMEOUT_SECONDS
+    assert first.last_opened_at == CREATED + timedelta(minutes=2)
+    assert second == usage.UsageMetadata(CREATED)
+
+
+@pytest.mark.parametrize(
+    "outcome",
+    [
+        SimpleNamespace(returncode=1, stdout="2026-10-08 09:02:00 +0000"),  # mdls stopped early
+        SimpleNamespace(returncode=0, stdout="2026-10-08 09:02:00 +0000"),  # one value short
+        subprocess.TimeoutExpired("mdls", 0.75),
+    ],
+)
+def test_unusable_batch_falls_back_to_per_file_reads(tmp_path, monkeypatch, outcome):
+    """A partial batch is never aligned by position onto the wrong files."""
+    monkeypatch.setattr(usage, "_birth_time", lambda path: CREATED)
+    monkeypatch.setattr(usage.subprocess, "run", Mock(side_effect=[outcome]))
+    reader = Mock(side_effect=lambda path, deadline: usage.UsageMetadata(CREATED, CREATED))
+    monkeypatch.setattr(usage, "_read_file", reader)
+    paths = [tmp_path / "a.png", tmp_path / "b.png"]
+    assert usage._read_batch(paths, 1e12) == [usage.UsageMetadata(CREATED, CREATED)] * 2
+    assert [call.args[0] for call in reader.call_args_list] == paths
+
+
+def test_read_usage_splits_paths_into_batches(tmp_path, monkeypatch):
+    monkeypatch.setattr(usage.sys, "platform", "darwin")
+    seen = []
+
+    def read_batch(batch, deadline):
+        seen.append(len(batch))
+        return [usage.UsageMetadata(CREATED, CREATED) for _ in batch]
+
+    monkeypatch.setattr(usage, "_read_batch", read_batch)
+    paths = [tmp_path / f"{i}.png" for i in range(usage.METADATA_BATCH_SIZE * 2 + 1)]
+    result = usage.read_usage(paths)
+    assert sorted(seen) == [1, usage.METADATA_BATCH_SIZE, usage.METADATA_BATCH_SIZE]
+    assert list(result) == paths
+
+
 def test_usage_payload_is_optional_and_timezone_aware():
     assert usage.usage_payload(usage.UsageMetadata()) == {
         "created_at": None,

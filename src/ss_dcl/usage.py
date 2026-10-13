@@ -14,6 +14,8 @@ LAST_OPEN_AGE_SECONDS = 600
 METADATA_TIMEOUT_SECONDS = 0.75
 SCAN_METADATA_BUDGET_SECONDS = 3.0
 METADATA_WORKERS = 4
+# One mdls process per batch: process startup, not the query, dominates.
+METADATA_BATCH_SIZE = 64
 CLEANUP_REASON = "Recorded open within 5m of capture; last recorded open over 10m ago."
 
 
@@ -67,6 +69,33 @@ def _read_file(path: Path, deadline: float) -> UsageMetadata:
         return UsageMetadata(created)
 
 
+def _read_batch(paths: list[Path], deadline: float) -> list[UsageMetadata]:
+    """Query a batch with one mdls process; per-file reads if it is unusable."""
+    created = [_birth_time(path) for path in paths]
+    remaining = deadline - time.monotonic()
+    if len(paths) > 1 and None not in created and remaining > 0:
+        try:
+            result = subprocess.run(
+                ["/usr/bin/mdls", "-raw", "-name", "kMDItemLastUsedDate", *map(str, paths)],
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                timeout=min(METADATA_TIMEOUT_SECONDS, remaining),
+                check=False,
+            )
+            # -raw joins values with NUL. mdls stops at the first unreadable
+            # path and exits non-zero, so only a complete batch is aligned.
+            values = result.stdout.split("\0")
+            if result.returncode == 0 and len(values) == len(paths):
+                return [
+                    UsageMetadata(birth, parse_last_used(value))
+                    for birth, value in zip(created, values, strict=True)
+                ]
+        except (OSError, subprocess.TimeoutExpired, UnicodeError):
+            pass
+    return [_read_file(path, deadline) for path in paths]
+
+
 def read_usage(paths: list[Path]) -> dict[Path, UsageMetadata]:
     """Fresh reads per scan, capped concurrency and total query time.
 
@@ -77,9 +106,13 @@ def read_usage(paths: list[Path]) -> dict[Path, UsageMetadata]:
     if sys.platform != "darwin" or not paths:
         return {}
     deadline = time.monotonic() + SCAN_METADATA_BUDGET_SECONDS
+    batches = [
+        paths[i : i + METADATA_BATCH_SIZE] for i in range(0, len(paths), METADATA_BATCH_SIZE)
+    ]
     with ThreadPoolExecutor(max_workers=METADATA_WORKERS) as executor:
-        records = executor.map(lambda path: _read_file(path, deadline), paths)
-        return dict(zip(paths, records, strict=True))
+        results = executor.map(lambda batch: _read_batch(batch, deadline), batches)
+        records = [record for batch in results for record in batch]
+    return dict(zip(paths, records, strict=True))
 
 
 def cleanup_result(usage: UsageMetadata, now: datetime, *, unsorted: bool = True) -> dict:
