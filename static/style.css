@@ -1957,6 +1957,7 @@ header h1 {
   display: flex;
   align-items: center;
   justify-content: center;
+  padding: 64px var(--space-7) var(--space-7);
 }
 
 .lightbox-backdrop {
@@ -1970,20 +1971,28 @@ header h1 {
 .lightbox-content {
   position: relative;
   z-index: 1;
-  display: inline-flex;
+  display: flex;
   flex-direction: column;
   align-items: center;
   gap: var(--space-4);
-  max-height: 90vh;
-  overflow: hidden;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+}
+
+.lightbox-stage {
+  flex: 1 1 0;
+  width: 100%;
+  min-height: 0;
 }
 
 .lightbox-img {
   position: relative;
-  max-width: 90vw;
-  max-height: calc(90vh - 80px);
-  border-radius: var(--radius-control);
-  box-shadow: var(--elevation-3);
+  display: block;
+  width: 100%;
+  height: 100%;
+  /* Explicit dimensions let contain enlarge small screenshots as well as
+     shrink large ones. The flexible stage reserves space for the toolbar. */
   object-fit: contain;
 }
 
@@ -1995,8 +2004,8 @@ header h1 {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: var(--space-9);
-  height: var(--space-9);
+  width: 44px;
+  height: 44px;
   border: none;
   border-radius: var(--radius-pill);
   background: var(--overlay-control);
@@ -2014,55 +2023,94 @@ header h1 {
 
 /* ── Lightbox rename bar ──────────────────────────────────── */
 .lightbox-bar-top {
-  display: flex;
+  display: grid;
+  grid-template-columns: 44px auto minmax(0, 1fr) auto auto 44px;
+  grid-template-areas: "previous position filename rename finder next";
   align-items: center;
-  justify-content: center;
-  gap: var(--space-3);
+  width: 100%;
+  gap: var(--space-4);
 }
 
+.lightbox-prev { grid-area: previous; }
+.lightbox-next { grid-area: next; }
+.lightbox-rename-btn { grid-area: rename; }
+.lightbox-reveal-btn { grid-area: finder; }
+
+.lightbox-position {
+  grid-area: position;
+  color: var(--overlay-ink);
+  font-size: var(--type-body);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.lightbox-nav,
+.lightbox-rename-btn,
 .lightbox-reveal-btn {
-  flex-shrink: 0;
-  padding: var(--space-1) var(--space-4);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0 var(--space-4);
   border: var(--border-width) solid var(--overlay-control-border);
   border-radius: var(--radius-control);
   background: var(--overlay-control);
   color: var(--overlay-ink);
   font-family: var(--font-sans);
-  font-size: var(--type-caption);
+  font-size: var(--type-body);
   font-weight: var(--weight-semibold);
   cursor: pointer;
   transition: background var(--duration-base) var(--ease-standard);
 }
 
+.lightbox-nav:hover:not(:disabled),
+.lightbox-rename-btn:hover,
 .lightbox-reveal-btn:hover {
   background: var(--overlay-control-hover);
+}
+
+.lightbox-nav {
+  padding: 0;
+  font-size: var(--type-display-sm);
+}
+
+.lightbox-nav:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
 }
 
 .lightbox-bar {
   z-index: 2;
   display: flex;
   flex-direction: column;
-  align-items: center;
-  min-width: 280px;
-  max-width: 60vw;
-  padding: var(--space-5) var(--space-7);
+  flex: 0 0 auto;
+  width: min(1080px, 100%);
+  min-width: 0;
+  padding: var(--space-4);
+  border: var(--border-width) solid var(--overlay-control-border);
   border-radius: var(--radius-panel);
   background: var(--overlay-surface);
+  box-shadow: var(--elevation-3);
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
 }
 
 .lightbox-filename {
+  grid-area: filename;
+  min-width: 0;
   max-width: 100%;
-  padding: var(--space-2) var(--space-5);
+  height: 44px;
+  padding: 10px var(--space-3);
   border-radius: var(--radius-control);
   color: var(--overlay-ink);
   font-family: var(--font-mono);
-  font-size: var(--type-body);
+  font-size: 16px;
+  line-height: 24px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  text-align: center;
+  text-align: left;
   cursor: text;
   transition: background var(--duration-slow) var(--ease-standard);
 }
@@ -2072,9 +2120,12 @@ header h1 {
 }
 
 .lightbox-rename-input {
+  grid-area: filename;
   width: 100%;
+  min-width: 0;
   max-width: 100%;
-  padding: var(--space-2) var(--space-5);
+  min-height: 44px;
+  padding: var(--space-3);
   border: var(--border-width-emphasis) solid var(--focus-ring-color);
   border-radius: var(--radius-control);
   background: var(--overlay-control);
@@ -2083,8 +2134,9 @@ header h1 {
   box-shadow: 0 0 0 3px var(--focus-ring-glow);
   color: var(--overlay-ink);
   font-family: var(--font-mono);
-  font-size: var(--type-body);
-  text-align: center;
+  font-size: 16px;
+  line-height: 24px;
+  text-align: left;
   outline: none;
 }
 
@@ -2095,10 +2147,15 @@ header h1 {
 
 .lightbox-rename-error {
   min-height: 0;
-  margin-top: var(--space-1);
+  margin: var(--space-3) 0 0;
   color: var(--overlay-danger-ink);
-  font-size: var(--type-caption);
-  text-align: center;
+  font-size: var(--type-body);
+  line-height: var(--type-body-line);
+  text-align: left;
+}
+
+.lightbox-rename-error:empty {
+  display: none;
 }
 
 /* ── Confirm modal ────────────────────────────────────────── */
@@ -2372,8 +2429,7 @@ header h1 {
 .popover-heading,
 .activity-panel-heading,
 .settings-sticky-header,
-.settings-actions,
-.lightbox-bar-top {
+.settings-actions {
   display: flex;
   align-items: center;
   gap: var(--space-3);
@@ -3095,91 +3151,6 @@ header h1 {
   margin-top: var(--space-7);
 }
 
-.lightbox-bar {
-  width: min(860px, calc(100vw - var(--space-7) * 2));
-  border: var(--border-width) solid var(--overlay-control-border);
-  border-radius: var(--radius-panel);
-  background: var(--overlay-surface);
-  box-shadow: var(--elevation-3);
-  backdrop-filter: blur(16px);
-}
-
-.lightbox-bar-top {
-  min-height: var(--control-height);
-  padding: var(--space-3) var(--space-4);
-}
-
-.lightbox-filename {
-  flex: 1 1 auto;
-  min-width: 0;
-  color: var(--overlay-ink);
-  font-family: var(--font-mono);
-  font-size: var(--type-caption);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.lightbox-position {
-  flex: 0 0 auto;
-  color: var(--overlay-ink);
-  font-size: var(--type-caption);
-  font-variant-numeric: tabular-nums;
-}
-
-.lightbox-nav,
-.lightbox-rename-btn,
-.lightbox-reveal-btn,
-.lightbox-close {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: var(--control-hit-target);
-  min-height: var(--control-hit-target);
-  padding: 0 var(--space-3);
-  border: var(--border-width) solid var(--overlay-control-border);
-  border-radius: var(--radius-control);
-  background: var(--overlay-control);
-  color: var(--overlay-ink);
-  font-size: var(--type-caption);
-  font-weight: var(--weight-semibold);
-  cursor: pointer;
-}
-
-.lightbox-nav:hover:not(:disabled),
-.lightbox-rename-btn:hover,
-.lightbox-reveal-btn:hover,
-.lightbox-close:hover {
-  background: var(--overlay-control-hover);
-}
-
-.lightbox-nav:disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
-}
-
-.lightbox-close {
-  top: var(--space-5);
-  right: var(--space-5);
-}
-
-.lightbox-rename-input {
-  width: calc(100% - var(--space-7) * 2);
-  margin: 0 var(--space-7) var(--space-3);
-  min-height: var(--control-height-sm);
-  padding: 0 var(--space-3);
-  border: var(--border-width) solid var(--overlay-control-border);
-  border-radius: var(--radius-control);
-  background: var(--overlay-control);
-  color: var(--overlay-ink);
-}
-
-.lightbox-rename-error {
-  margin: 0 var(--space-7) var(--space-4);
-  color: var(--overlay-danger-ink);
-  font-size: var(--type-caption);
-}
-
 .card-image-error {
   position: absolute;
   inset: 0;
@@ -3242,22 +3213,25 @@ header h1 {
     grid-column: 1;
   }
 
+  .lightbox {
+    padding: 64px var(--space-4) var(--space-4);
+  }
+
   .lightbox-bar-top {
-    flex-wrap: wrap;
+    grid-template-columns: 44px minmax(0, 1fr) auto auto;
+    grid-template-areas:
+      "filename filename filename position"
+      "previous rename finder next";
+    gap: var(--space-3);
   }
 
-  .lightbox-filename {
-    order: 2;
-    flex-basis: calc(100% - var(--space-7));
-  }
-
-  .lightbox-position {
-    order: 1;
+  .lightbox-bar {
+    padding: var(--space-3);
   }
 
   .lightbox-rename-btn,
   .lightbox-reveal-btn {
-    order: 3;
+    padding: 0 var(--space-3);
   }
 }
 
