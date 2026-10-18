@@ -2,7 +2,7 @@
 
 > A local-first macOS workspace for reviewing, renaming, and cleaning up screenshots.
 
-![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue)
+![Python 3.14](https://img.shields.io/badge/python-3.14-blue)
 ![License: MIT](https://img.shields.io/badge/license-MIT-green)
 ![macOS only](https://img.shields.io/badge/platform-macOS-lightgrey)
 
@@ -131,6 +131,9 @@ Settings shows the server status and leaves the rest of the workflow available.
 
 ## Quick Start
 
+Use Python **3.14** and `uv`. The repository's `.python-version` selects 3.14
+for local development and CI; older Python versions are no longer supported.
+
 ```bash
 git clone https://github.com/Collaboration95/screenshot-declutterer.git
 cd screenshot-declutterer
@@ -206,6 +209,15 @@ directory for demos or tests.
 See [DEVELOPMENT.md](DEVELOPMENT.md) for the project layout, make targets, and
 test commands. The project uses Flask, vanilla HTML/CSS/JavaScript, Pillow,
 `send2trash`, Ruff, Pyright, and pytest with no frontend build step.
+
+CI runs only for pull requests targeting `main`, with one macOS job using
+Python 3.14. It checks Ruff lint and formatting, Pyright, Python tests and
+coverage, JavaScript tests, and dependency security. There are no push-triggered
+runs or Python version matrix.
+
+Changes to `main` must go through a pull request with a passing `Checks` job.
+GitHub branch protection blocks direct pushes, including administrator pushes,
+as well as force pushes and branch deletion.
 
 See [backlog-features.txt](backlog-features.txt) for proposed features and
 future ideas, and [CHANGELOG.md](CHANGELOG.md) for shipped changes.

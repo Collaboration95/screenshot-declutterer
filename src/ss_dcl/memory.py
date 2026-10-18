@@ -15,7 +15,7 @@ import logging
 import os
 import tempfile
 from dataclasses import asdict, dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
@@ -110,15 +110,15 @@ class FileRecord:
 
 
 def _now_iso() -> str:
-    return datetime.now(tz=timezone.utc).isoformat()
+    return datetime.now(tz=UTC).isoformat()
 
 
 def _parse_iso(dt_str: str) -> datetime:
     """Parse an ISO 8601 datetime string, returning epoch on failure."""
     try:
         return datetime.fromisoformat(dt_str)
-    except (ValueError, TypeError):
-        return datetime(1970, 1, 1, tzinfo=timezone.utc)
+    except ValueError, TypeError:
+        return datetime(1970, 1, 1, tzinfo=UTC)
 
 
 # ---------------------------------------------------------------------------
@@ -392,7 +392,7 @@ class MemoryStore:
 
         Returns the number of pruned records.
         """
-        now = datetime.now(tz=timezone.utc)
+        now = datetime.now(tz=UTC)
         to_prune: list[str] = []
         for fp, rec in self._files.items():
             if fp in active_fingerprints:

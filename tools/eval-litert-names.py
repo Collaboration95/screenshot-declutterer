@@ -25,7 +25,7 @@ import re
 import sys
 import time
 from dataclasses import asdict, dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -212,7 +212,7 @@ def run_evaluation(
 ) -> Path:
     """Run the full evaluation across all models and screenshots."""
     report = EvalReport(
-        generated_at=datetime.now(tz=timezone.utc).isoformat(),
+        generated_at=datetime.now(tz=UTC).isoformat(),
         eval_config={
             "screenshot_count": len(screenshots),
             "model_count": len(models),

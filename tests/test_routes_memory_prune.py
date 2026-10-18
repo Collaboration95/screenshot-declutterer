@@ -1,6 +1,7 @@
 """Integration tests for MemoryStore wired into Flask routes - pruning slice (audit #93)."""
 
 import json
+from datetime import UTC
 
 import ss_dcl.app as flask_app
 import ss_dcl.settings as settings_module
@@ -152,9 +153,9 @@ def test_scan_triggers_prune_stale(client):
     orphan = memory.record_file("Screenshot old-orphan.png", 9999)
     orphan.status = "trashed"
     # Backdate last_updated to 100 days ago
-    from datetime import datetime, timedelta, timezone
+    from datetime import datetime, timedelta
 
-    orphan.last_updated = (datetime.now(tz=timezone.utc) - timedelta(days=100)).isoformat()
+    orphan.last_updated = (datetime.now(tz=UTC) - timedelta(days=100)).isoformat()
     memory.save()
 
     assert memory.lookup(orphan.fingerprint) is not None
@@ -186,9 +187,9 @@ def test_prune_respects_settings_age(client):
     memory = flask_app._get_memory()
     orphan = memory.record_file("Screenshot old.png", 8888)
     orphan.status = "trashed"
-    from datetime import datetime, timedelta, timezone
+    from datetime import datetime, timedelta
 
-    orphan.last_updated = (datetime.now(tz=timezone.utc) - timedelta(days=5)).isoformat()
+    orphan.last_updated = (datetime.now(tz=UTC) - timedelta(days=5)).isoformat()
     memory.save()
 
     flask_app._reset_memory()
@@ -214,9 +215,9 @@ def test_prune_keeps_active_entries(client):
     fp = json.loads(r.data)[0]["fingerprint"]
     rec = memory.lookup(fp)
     assert rec is not None
-    from datetime import datetime, timedelta, timezone
+    from datetime import datetime, timedelta
 
-    rec.last_updated = (datetime.now(tz=timezone.utc) - timedelta(days=200)).isoformat()
+    rec.last_updated = (datetime.now(tz=UTC) - timedelta(days=200)).isoformat()
     memory.save()
 
     flask_app._reset_memory()
@@ -267,10 +268,10 @@ def test_prune_keeps_recent_inactive(client):
     fp = json.loads(r.data)[0]["fingerprint"]
     rec = memory.lookup(fp)
     assert rec is not None
-    from datetime import datetime, timedelta, timezone
+    from datetime import datetime, timedelta
 
     rec.status = "trashed"
-    rec.last_updated = (datetime.now(tz=timezone.utc) - timedelta(days=5)).isoformat()
+    rec.last_updated = (datetime.now(tz=UTC) - timedelta(days=5)).isoformat()
     memory.save()
 
     # Remove file from disk (simulating trash)

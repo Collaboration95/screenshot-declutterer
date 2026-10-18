@@ -12,7 +12,7 @@ Covers:
 """
 
 import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 import pytest
@@ -496,7 +496,7 @@ class TestPruneStale:
 
         rec = store.record_file(name, size)
         # Wind back last_updated to simulate age
-        old_time = datetime.now(tz=timezone.utc) - timedelta(days=days_old)
+        old_time = datetime.now(tz=UTC) - timedelta(days=days_old)
         rec.last_updated = old_time.isoformat()
         return rec
 

@@ -68,7 +68,7 @@ def compute_signals(path: Path) -> Signals:
                     color.tobytes().hex(),
                     ImageStat.Stat(small).stddev[0],
                 )
-    except (OSError, ValueError, Image.DecompressionBombError, Image.DecompressionBombWarning):
+    except OSError, ValueError, Image.DecompressionBombError, Image.DecompressionBombWarning:
         # Identical bytes remain useful even if a preview cannot be decoded.
         return Signals(digest.hexdigest())
 
@@ -100,7 +100,7 @@ def cached_signals(path: Path, record: FileRecord) -> tuple[Signals | None, bool
                     )
                 ):
                     return signals, False
-            except (KeyError, TypeError, ValueError):
+            except KeyError, TypeError, ValueError:
                 pass
         signals = compute_signals(path)
         if stat_key(path.stat()) != key:

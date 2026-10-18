@@ -13,7 +13,7 @@ def _parse_thumb_size(raw: str) -> tuple[int, int]:
     try:
         parts = raw.split("x")
         return (int(parts[0]), int(parts[1]))
-    except (ValueError, IndexError):
+    except ValueError, IndexError:
         return (800, 600)
 
 
