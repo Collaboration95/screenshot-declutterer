@@ -58,7 +58,6 @@ const lightboxImg = document.getElementById("lightbox-img");
 const lightboxFilename = document.getElementById("lightbox-filename");
 const lightboxRenameInput = document.getElementById("lightbox-rename-input");
 const lightboxRenameError = document.getElementById("lightbox-rename-error");
-const lightboxBar = document.querySelector(".lightbox-bar");
 const cardTooltip = document.getElementById("card-tooltip");
 const lightboxPrev = document.getElementById("lightbox-prev");
 const lightboxNext = document.getElementById("lightbox-next");
@@ -1688,7 +1687,6 @@ function _updateLightboxBar(filename) {
   lightboxFilename.hidden = false;
   lightboxRenameError.textContent = "";
   lightboxRenameInput.classList.remove("error");
-  lightboxBar.style.minWidth = "";
 }
 
 lightboxFilename.addEventListener("click", () => _startLightboxRename());
@@ -1698,8 +1696,6 @@ lightboxFilename.addEventListener("keydown", e => {
 
 function _startLightboxRename() {
   const filename = lightbox.dataset.currentFilename;
-  const bar = document.querySelector(".lightbox-bar");
-  bar.style.minWidth = bar.offsetWidth + "px";
   lightboxFilename.hidden = true;
   lightboxRenameInput.hidden = false;
   lightboxRenameInput.value = filename;
@@ -1728,7 +1724,6 @@ function _cancelLightboxRename() {
   lightboxRenameInput.classList.remove("error");
   lightboxRenameError.textContent = "";
   lightboxFilename.hidden = false;
-  lightboxBar.style.minWidth = "";
 }
 
 function applyRenameToCard(card, oldName, newName) {
