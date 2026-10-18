@@ -1,6 +1,7 @@
 """Tests for tracking folders feature (issue #70)."""
 
 import json
+from datetime import UTC
 from unittest.mock import patch
 
 import ss_dcl.app as flask_app
@@ -463,7 +464,7 @@ class TestMemorySourceAware:
         assert loaded.meta["source"] == "/tmp/extra"
 
     def test_prune_stale_source_aware(self, tmp_path):
-        from datetime import datetime, timedelta, timezone
+        from datetime import datetime, timedelta
 
         from ss_dcl.memory import MemoryStore
 
@@ -471,7 +472,7 @@ class TestMemorySourceAware:
         rec1 = store.record_file("Screenshot A.png", 100, source="Desktop")
         rec2 = store.record_file("Screenshot A.png", 100, source="/tmp/extra")
         # Make rec2 old
-        old_time = datetime.now(tz=timezone.utc) - timedelta(days=100)
+        old_time = datetime.now(tz=UTC) - timedelta(days=100)
         rec2.last_updated = old_time.isoformat()
         # Active only rec1
         pruned = store.prune_stale(active_fingerprints={rec1.fingerprint}, max_age_days=90)

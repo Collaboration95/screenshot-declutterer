@@ -1,5 +1,5 @@
 import subprocess
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta, timezone
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock
@@ -8,7 +8,7 @@ import pytest
 
 from ss_dcl import usage
 
-CREATED = datetime(2026, 10, 8, 9, tzinfo=timezone.utc)
+CREATED = datetime(2026, 10, 8, 9, tzinfo=UTC)
 
 
 @pytest.mark.parametrize(

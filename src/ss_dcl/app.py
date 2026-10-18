@@ -390,7 +390,7 @@ def _apply_rename(
             if moved:
                 atomic_write(STATE_FILE, json.dumps(state))
                 state_updated = True
-        except (json.JSONDecodeError, KeyError):
+        except json.JSONDecodeError, KeyError:
             logger.warning("State file corruption detected during rename of %s", old_name)
 
     memory_updated = False
@@ -682,7 +682,7 @@ def api_done():
                     decisions.pop(fn, None)
                     decisions.pop(f"Desktop|{fn}", None)
             atomic_write(STATE_FILE, json.dumps(state))
-        except (json.JSONDecodeError, KeyError):
+        except json.JSONDecodeError, KeyError:
             logger.warning("State file corruption detected during cleanup")
 
     # Best-effort memory update: only mark files that were actually trashed
@@ -1065,7 +1065,7 @@ def _read_decisions() -> dict[str, str]:
         try:
             state = json.loads(STATE_FILE.read_text())
             return state.get("decisions", {})
-        except (json.JSONDecodeError, OSError):
+        except json.JSONDecodeError, OSError:
             return {}
     return {}
 

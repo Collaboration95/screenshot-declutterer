@@ -257,7 +257,7 @@ def _litert_healthy() -> bool:
             f"{LITERT_BASE_URL}/v1/models", timeout=LITERT_HEALTH_TIMEOUT
         ) as resp:
             ok = resp.status == 200
-    except (urllib.error.URLError, OSError):
+    except urllib.error.URLError, OSError:
         ok = False
 
     _litert_health_cache = (time.monotonic(), ok)

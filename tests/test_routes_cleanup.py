@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import ss_dcl.app as flask_app
 from ss_dcl import usage
@@ -14,7 +14,7 @@ def test_source_identity_decisions_sorting_and_rescan(client, monkeypatch):
     (tracked / name).write_bytes(b"tracked")
     (desktop / "Screenshot other.jpg").write_bytes(b"other")
     c.put("/api/settings", json={"tracked_folders": [str(tracked)]})
-    created = datetime(2026, 10, 8, 9, tzinfo=timezone.utc)
+    created = datetime(2026, 10, 8, 9, tzinfo=UTC)
     now = created + timedelta(minutes=13)
     monkeypatch.setattr(usage, "utc_now", lambda: now)
     records = {
