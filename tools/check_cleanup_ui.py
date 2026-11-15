@@ -12,13 +12,13 @@ import contextlib
 import json
 import sys
 import tempfile
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import capture_ui_baseline as baseline
 import demo_fixtures
 
-NOW = datetime(2026, 10, 8, 9, 30, tzinfo=timezone.utc)
+NOW = datetime(2026, 10, 8, 9, 30, tzinfo=UTC)
 OUT = baseline._REPO_ROOT / "docs" / "assets" / "cleanup-suggestions"
 ROOT = baseline._REPO_ROOT / ".cache" / "cleanup-fixtures"
 BOOTSTRAP = """

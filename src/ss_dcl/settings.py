@@ -47,7 +47,7 @@ def _load_settings() -> dict[str, Any]:
     if SETTINGS_FILE.exists():
         try:
             data = json.loads(SETTINGS_FILE.read_text())
-        except (json.JSONDecodeError, OSError):
+        except json.JSONDecodeError, OSError:
             return {}
         # LiteRT is the only provider; normalize any legacy/stale value.
         if data.get("llm_provider") != "litert":

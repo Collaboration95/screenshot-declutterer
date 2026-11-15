@@ -272,7 +272,7 @@ def _preferred_port(workspace: Path, requested: int = 0) -> int:
         return requested
     try:
         advertised = int(demo_fixtures.load_manifest(workspace)["env"]["SS_DCL_PORT"])
-    except (KeyError, TypeError, ValueError, OSError, json.JSONDecodeError):
+    except KeyError, TypeError, ValueError, OSError, json.JSONDecodeError:
         advertised = 0
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
         try:
@@ -553,7 +553,7 @@ class ChromeSession:
     def _version(self, port: int) -> dict[str, Any] | None:
         try:
             return _http_json(f"http://127.0.0.1:{port}/json/version", timeout=2.0)
-        except (urllib.error.URLError, OSError, ValueError):
+        except urllib.error.URLError, OSError, ValueError:
             return None
 
     def version(self) -> str:
@@ -659,7 +659,7 @@ class AppServer:
                 )
             try:
                 health = _http_json(f"{self.base_url}/api/health", timeout=2.0)
-            except (urllib.error.URLError, OSError, ValueError):
+            except urllib.error.URLError, OSError, ValueError:
                 time.sleep(0.2)
                 continue
             if health.get("ok"):

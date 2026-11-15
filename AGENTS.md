@@ -137,10 +137,13 @@ documentation runs never read the real Desktop or write real state).
 
 `pyproject.toml` is the single source of truth for tooling config; the summary below mirrors it (checked at 0.5.0).
 
-- **Ruff**: target py310, line-length 100, rules: E, F, W, I, UP, B, SIM, RUF
-- **Pyright**: pythonVersion 3.10, typeCheckingMode basic, include src/tests/tools
+- **Python**: 3.14 for local development and CI, selected by `.python-version`; package minimum 3.14
+- **Ruff**: target py314, line-length 100, rules: E, F, W, I, UP, B, SIM, RUF
+- **Pyright**: pythonVersion 3.14, typeCheckingMode basic, include src/tests/tools
 - **pytest**: testpaths `["tests"]`, pythonpath `["src"]`, coverage gate `--cov-fail-under=85`
 - **Pre-commit**: Ruff (lint+format), Pyright, pytest
+- **CI**: pull requests targeting `main` only; one macOS `Checks` job on Python 3.14, no push trigger or version matrix
+- **Main protection**: PR and passing `Checks` required, including administrators; direct pushes, force pushes, and deletion blocked. Configured in GitHub branch protection, not in the workflow.
 
 ## Key Gotchas
 

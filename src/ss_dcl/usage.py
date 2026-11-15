@@ -6,7 +6,7 @@ import sys
 import time
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 CAPTURE_WINDOW_SECONDS = 300
@@ -26,14 +26,14 @@ class UsageMetadata:
 
 
 def utc_now() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 def parse_last_used(value: str) -> datetime | None:
     """mdls dates have second precision and an explicit UTC offset."""
     try:
         return datetime.strptime(value.strip().strip("\x00"), "%Y-%m-%d %H:%M:%S %z").astimezone(
-            timezone.utc
+            UTC
         )
     except ValueError:
         return None
@@ -44,8 +44,8 @@ def _birth_time(path: Path) -> datetime | None:
         birth = getattr(path.stat(), "st_birthtime", None)
         if birth is None or not math.isfinite(birth):
             return None
-        return datetime.fromtimestamp(birth, timezone.utc)
-    except (OSError, ValueError, OverflowError):
+        return datetime.fromtimestamp(birth, UTC)
+    except OSError, ValueError, OverflowError:
         return None
 
 
@@ -65,7 +65,7 @@ def _read_file(path: Path, deadline: float) -> UsageMetadata:
         )
         opened = parse_last_used(result.stdout) if result.returncode == 0 else None
         return UsageMetadata(created, opened)
-    except (OSError, subprocess.TimeoutExpired, UnicodeError):
+    except OSError, subprocess.TimeoutExpired, UnicodeError:
         return UsageMetadata(created)
 
 
@@ -91,7 +91,7 @@ def _read_batch(paths: list[Path], deadline: float) -> list[UsageMetadata]:
                     UsageMetadata(birth, parse_last_used(value))
                     for birth, value in zip(created, values, strict=True)
                 ]
-        except (OSError, subprocess.TimeoutExpired, UnicodeError):
+        except OSError, subprocess.TimeoutExpired, UnicodeError:
             pass
     return [_read_file(path, deadline) for path in paths]
 
@@ -127,9 +127,9 @@ def cleanup_result(usage: UsageMetadata, now: datetime, *, unsorted: bool = True
     if any(value is None or value.utcoffset() is None for value in (created, opened, now)):
         return result
     assert created is not None and opened is not None
-    created = created.astimezone(timezone.utc)
-    opened = opened.astimezone(timezone.utc)
-    now = now.astimezone(timezone.utc)
+    created = created.astimezone(UTC)
+    opened = opened.astimezone(UTC)
+    now = now.astimezone(UTC)
     after_capture = (opened - created).total_seconds()
     age = (now - opened).total_seconds()
     if (

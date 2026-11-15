@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Standardized local development and CI on Python 3.14 using `.python-version`;
+  raised the package minimum and Ruff/Pyright targets to 3.14.
+- CI now runs one macOS `Checks` job only for pull requests targeting `main`;
+  removed push-triggered runs and the Python 3.10–3.13 compatibility matrix.
+- Protected `main` requires a pull request and a passing `Checks` job, including
+  for administrators; direct pushes, force pushes, and branch deletion are blocked.
+
 ## [0.6.0] - 2026-08-14
 
 ### Added

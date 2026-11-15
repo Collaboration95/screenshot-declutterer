@@ -36,7 +36,7 @@ import shutil
 import sys
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -70,7 +70,7 @@ STATE_DIR = ".ss-dcl"
 DESKTOP_SOURCE = "Desktop"
 
 #: Fixed mtime origin so date sorting is stable across captures.
-FIRST_MTIME = datetime(2026, 3, 1, 9, 0, 0, tzinfo=timezone.utc)
+FIRST_MTIME = datetime(2026, 3, 1, 9, 0, 0, tzinfo=UTC)
 FIRST_SEEN = "2026-03-01T09:00:00+00:00"
 LAST_UPDATED = "2026-03-10T02:15:00+00:00"
 #: Point the app at a closed port to reproduce the LLM-offline state.
@@ -615,7 +615,7 @@ def write_workspace(root: Path, *, force: bool = False, seed: int = DEMO_SEED) -
                 "keywords": list(entry.keywords),
                 "decision": entry.decision,
                 "column": entry.decision or "unsorted",
-                "mtime": datetime.fromtimestamp(mtime, tz=timezone.utc).isoformat(),
+                "mtime": datetime.fromtimestamp(mtime, tz=UTC).isoformat(),
             }
         )
 

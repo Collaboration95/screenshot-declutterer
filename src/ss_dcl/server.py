@@ -45,7 +45,7 @@ def _read_litert_pid() -> int | None:
     """Read the pidfile; returns None when absent or malformed."""
     try:
         return int(Path(LITERT_PIDFILE).read_text().strip())
-    except (FileNotFoundError, ValueError, OSError):
+    except FileNotFoundError, ValueError, OSError:
         return None
 
 
