@@ -182,17 +182,19 @@
     <div class="lightbox-content">
       <span id="lightbox-title" class="sr-only">Image preview</span>
       <span id="lightbox-description" class="sr-only">Use the previous and next buttons or arrow keys to browse screenshots.</span>
-      <img class="lightbox-img" id="lightbox-img" src="" alt="" decoding="async" />
+      <div class="lightbox-stage">
+        <img class="lightbox-img" id="lightbox-img" src="" alt="" decoding="async" />
+      </div>
       <div class="lightbox-bar">
         <div class="lightbox-bar-top">
           <button class="lightbox-nav lightbox-prev" id="lightbox-prev" type="button" data-tooltip="Previous screenshot" aria-label="Previous screenshot"><span aria-hidden="true">&#8592;</span></button>
           <span class="lightbox-position" id="lightbox-position" aria-live="polite"></span>
           <span class="lightbox-filename" id="lightbox-filename" role="button" tabindex="0" aria-label="Click to rename"></span>
+          <input class="lightbox-rename-input" id="lightbox-rename-input" type="text" autocomplete="off" spellcheck="false" hidden aria-label="Rename filename" aria-describedby="lightbox-rename-error" />
           <button class="lightbox-rename-btn" id="lightbox-rename-btn" type="button" data-tooltip="Rename screenshot" aria-label="Rename screenshot">Rename</button>
           <button class="lightbox-reveal-btn" id="lightbox-reveal-btn" type="button" data-tooltip="Reveal in Finder" aria-label="Reveal in Finder">Finder</button>
           <button class="lightbox-nav lightbox-next" id="lightbox-next" type="button" data-tooltip="Next screenshot" aria-label="Next screenshot"><span aria-hidden="true">&#8594;</span></button>
         </div>
-        <input class="lightbox-rename-input" id="lightbox-rename-input" type="text" autocomplete="off" spellcheck="false" hidden aria-label="Rename filename" />
         <p id="lightbox-rename-error" class="lightbox-rename-error" role="alert"></p>
       </div>
     </div>
